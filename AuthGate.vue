@@ -1,126 +1,334 @@
-<template>
-  <slot v-if="session" />
+import type { Component } from 'vue'
 
-  <div v-else class="auth-gate-page">
-    <form class="auth-card" @submit.prevent="submit">
-      <div class="auth-heading">
-        <span>
-          <LockKeyhole :size="22" />
-        </span>
-        <div>
-          <h1>{{ pendingLogin ? 'Two-Factor Verification' : 'Cronos Login' }}</h1>
-          <p>{{ pendingLogin ? 'Enter the 6-digit code from your authenticator app.' : 'Sign in to access the procurement workspace.' }}</p>
-        </div>
-      </div>
+export type AppRole = 'Admin' | 'Procurement Team' | 'Accounting' | 'Executive'
 
-      <template v-if="!pendingLogin">
-        <label class="auth-field">
-          <span>Email</span>
-          <input v-model="email" type="email" autocomplete="username" />
-        </label>
-
-        <label class="auth-field">
-          <span>Password</span>
-          <input v-model="password" type="password" autocomplete="current-password" />
-        </label>
-      </template>
-
-      <template v-else>
-        <div v-if="pendingLogin.setupSecret" class="auth-setup-panel">
-          <h2>Set up authenticator</h2>
-          <p>Add this account in Google Authenticator, Microsoft Authenticator, 1Password, or another TOTP app.</p>
-          <label class="auth-field">
-            <span>Setup key</span>
-            <input :value="formatSecret(pendingLogin.setupSecret)" readonly />
-          </label>
-          <a v-if="pendingLogin.setupUri" class="auth-setup-link" :href="pendingLogin.setupUri">Open in authenticator app</a>
-        </div>
-
-        <label class="auth-field">
-          <span>Authenticator Code</span>
-          <input v-model="twoFactorCode" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="000000" />
-        </label>
-      </template>
-
-      <p v-if="message" class="auth-error">{{ message }}</p>
-
-      <button type="submit">{{ pendingLogin ? 'Verify & Sign In' : 'Continue' }}</button>
-      <button v-if="pendingLogin" class="auth-secondary-button" type="button" @click="resetLogin">Use a different login</button>
-
-      <div class="auth-note">
-        <p>Access is restricted to active Cronos users.</p>
-        <p>Two-factor authentication is required before the workspace opens.</p>
-      </div>
-    </form>
-  </div>
-</template>
-
-<script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
-import { LockKeyhole } from '@lucide/vue'
-import { beginLogin, completeLogin, fetchSession } from '../services/auth'
-import type { PendingLogin } from '../services/auth'
-import type { UserSession } from '../types'
-
-const session = ref<UserSession | null>(null)
-const email = ref('')
-const password = ref('')
-const twoFactorCode = ref('')
-const pendingLogin = ref<PendingLogin | null>(null)
-const message = ref('')
-
-onMounted(() => {
-  refreshSession()
-  window.addEventListener('cronos:session-changed', refreshSession)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('cronos:session-changed', refreshSession)
-})
-
-function refreshSession() {
-  session.value = fetchSession()
+export type UserProfile = {
+  id: string
+  name: string
+  email: string
+  password?: string
+  twoFactorSecret?: string
+  twoFactorEnabled?: boolean
+  role: AppRole
+  title: string
+  phone: string
+  active: boolean
 }
 
-async function submit() {
-  if (pendingLogin.value) {
-    await verifyTwoFactor()
-  } else {
-    startLogin()
-  }
+export type UserSession = {
+  id: string
+  name: string
+  email: string
+  role: AppRole
+  title: string
 }
 
-function startLogin() {
-  try {
-    pendingLogin.value = beginLogin(email.value, password.value)
-    twoFactorCode.value = ''
-    message.value = ''
-  } catch (error) {
-    message.value = error instanceof Error ? error.message : 'Login failed. Check the email, password, and active status.'
-  }
+export type Tone = 'default' | 'warning' | 'danger' | 'success'
+
+export type NavItem = {
+  href: string
+  match: string
+  label: string
+  icon: Component
 }
 
-async function verifyTwoFactor() {
-  if (!pendingLogin.value) return
-  try {
-    session.value = await completeLogin(pendingLogin.value.id, twoFactorCode.value)
-    pendingLogin.value = null
-    password.value = ''
-    twoFactorCode.value = ''
-    message.value = ''
-  } catch (error) {
-    message.value = error instanceof Error ? error.message : 'Authenticator verification failed.'
-  }
+export type Metric = {
+  label: string
+  value: string | number
+  action: string
+  tone?: Tone
+  icon: Component
 }
 
-function resetLogin() {
-  pendingLogin.value = null
-  password.value = ''
-  twoFactorCode.value = ''
-  message.value = ''
+export type PipelineRow = {
+  label: string
+  value: string
+  color: string
+  href: string
 }
 
-function formatSecret(secret: string) {
-  return secret.replace(/(.{4})/g, '$1 ').trim()
+export type QuickAction = {
+  label: string
+  href?: string
+  onClick?: () => void
+  icon: Component
+  colorClass: string
 }
-</script>
+
+export type ProjectType = 'Design & Install' | 'Resale' | 'Checkbook'
+
+export type Status =
+  | 'Quoted'
+  | 'Customer Approved'
+  | 'Pending Procurement'
+  | 'PO Generated'
+  | 'PO Issued'
+  | 'Ordered'
+  | 'Awaiting Vendor Shipment'
+  | 'In Transit to Cronos'
+  | 'Partially Received'
+  | 'Received'
+  | 'Received at Cronos'
+  | 'Stored'
+  | 'Allocated to Kit'
+  | 'Kitted'
+  | 'Staged'
+  | 'Ready to Ship'
+  | 'Partially Shipped'
+  | 'Shipped to Customer'
+  | 'Shipped'
+  | 'Delivered'
+  | 'RMA'
+  | 'RMA / Issue'
+  | 'Cancelled'
+  | 'Backordered'
+
+export type ProjectFormInput = {
+  projectType: ProjectType
+  checkbookStartingBalance: number
+  assignedUserIds: string[]
+  projectNumber: string
+  projectName: string
+  customer: string
+  customerContactName: string
+  customerEmail: string
+  customerPhone: string
+  shippingContactName: string
+  shippingEmail: string
+  shippingPhone: string
+  shippingInstructions: string
+  contractNumber: string
+  primeOrSub: 'Prime' | 'Subcontractor'
+  projectManager: string
+  engineer: string
+  startDate: string
+  endDate: string
+  status: Status
+  deliveryAddress: string
+  notes: string
+}
+
+export type QuoteLine = {
+  id: string
+  clin: string
+  partNumber: string
+  manufacturer: string
+  description: string
+  quantity: number
+  unitCost: number
+  pricingMode?: 'markup' | 'margin'
+  marginPercent?: number
+  markupPercent: number
+  vendor: string
+  quoteNumber: string
+  leadTime: string
+  approved: boolean
+}
+
+export type CustomerQuote = {
+  id: string
+  quoteNumber: string
+  projectId: string
+  projectNumber: string
+  projectName: string
+  customer: string
+  status: Status
+  createdAt: string
+  expirationDays?: 30 | 60 | 90
+  contractFeeEnabled?: boolean
+  shippingCost?: number
+  lines: QuoteLine[]
+}
+
+export type Project = ProjectFormInput & {
+  id: string
+  quotes: CustomerQuote[]
+  quoteLines: QuoteLine[]
+  purchaseOrders: PurchaseOrder[]
+  inventory: InventoryItem[]
+  kitStatus: Status
+  shipmentStatus: Status
+}
+
+export type PurchaseOrderLine = {
+  id: string
+  itemNumber?: string
+  clin: string
+  partNumber: string
+  manufacturer?: string
+  description: string
+  quantityOrdered: number
+  quantityReceived: number
+  unitCost: number
+  status: Status
+  vendorOrderNumber?: string
+  estimatedShipDate?: string
+  receivedDate?: string
+  carrier?: string
+  trackingNumber?: string
+  trackingUrl?: string
+  notes?: string
+}
+
+export type PurchaseOrder = {
+  id: string
+  poNumber: string
+  quoteId?: string
+  vendor: string
+  description?: string
+  dateIssued: string
+  status: Status
+  totalCost: number
+  customerTotalCost?: number
+  estimatedShipDate?: string
+  expectedDeliveryDate?: string
+  carrier?: string
+  trackingNumber?: string
+  trackingUrl?: string
+  customerUpdateNotes?: string
+  requestor?: string
+  lines: PurchaseOrderLine[]
+}
+
+export type InventoryItem = {
+  id: string
+  projectId?: string
+  projectNumber?: string
+  projectName?: string
+  poNumber: string
+  clin: string
+  partNumber: string
+  manufacturer: string
+  description: string
+  quantityOrdered: number
+  quantityReceived: number
+  quantityRemaining: number
+  serialNumber?: string
+  assetTag?: string
+  warehouseId?: string
+  warehouseLocation?: string
+  rack?: string
+  bin?: string
+  palletNumber?: string
+  status: Status
+  receivedDate?: string
+  receivedBy?: string
+  notes?: string
+}
+
+export type ProjectPurchaseOrder = PurchaseOrder & {
+  projectId: string
+  projectNumber: string
+  projectName: string
+}
+
+export type CustomerOrderStatus =
+  | 'Pending Procurement'
+  | 'PO Issued'
+  | 'Backordered'
+  | 'Awaiting Vendor Shipment'
+  | 'In Transit to Cronos'
+  | 'Received at Cronos'
+  | 'Kitted'
+  | 'Partially Shipped'
+  | 'Shipped to Customer'
+  | 'Delivered'
+  | 'Cancelled'
+  | 'RMA / Issue'
+
+export type CustomerOrderItem = {
+  id: string
+  lineNumber: string
+  manufacturer: string
+  partNumber: string
+  description: string
+  quantityOrdered: number
+  quantityReceived: number
+  quantityShipped: number
+  vendor: string
+  vendorPoNumber: string
+  vendorPoDate: string
+  expectedShipDate: string
+  carrier: string
+  trackingNumber: string
+  status: CustomerOrderStatus
+  customerVisibleNotes: string
+  internalNotes: string
+  createdAt: string
+  updatedAt: string
+}
+
+export type OrderTrackingToken = {
+  id: string
+  tokenHash: string
+  isActive: boolean
+  createdAt: string
+  disabledAt?: string
+  lastAccessedAt?: string
+}
+
+export type OrderStatusHistory = {
+  id: string
+  customerOrderId: string
+  customerOrderItemId?: string
+  previousStatus?: CustomerOrderStatus
+  newStatus: CustomerOrderStatus
+  changedBy: string
+  customerVisible: boolean
+  note: string
+  createdAt: string
+}
+
+export type PublicLookupAuditLog = {
+  id: string
+  timestamp: string
+  lookupType: 'token' | 'order-or-po'
+  orderNumber?: string
+  customerPoNumber?: string
+  customerOrderId?: string
+  success: boolean
+  userAgent: string
+}
+
+export type CustomerOrder = {
+  id: string
+  sourceProjectId?: string
+  sourceQuoteId?: string
+  orderNumber: string
+  customerPoNumber: string
+  customerName: string
+  projectName: string
+  orderDate: string
+  overallStatus: CustomerOrderStatus
+  customerContactName: string
+  customerContactEmail: string
+  cronosContactName: string
+  cronosContactEmail: string
+  estimatedShipDate: string
+  publicNotes: string
+  internalNotes: string
+  createdAt: string
+  updatedAt: string
+  items: CustomerOrderItem[]
+  trackingTokens: OrderTrackingToken[]
+  statusHistory: OrderStatusHistory[]
+}
+
+export type CustomerOrderInput = Pick<
+  CustomerOrder,
+  | 'orderNumber'
+  | 'customerPoNumber'
+  | 'customerName'
+  | 'projectName'
+  | 'orderDate'
+  | 'overallStatus'
+  | 'customerContactName'
+  | 'customerContactEmail'
+  | 'cronosContactName'
+  | 'cronosContactEmail'
+  | 'estimatedShipDate'
+  | 'publicNotes'
+  | 'internalNotes'
+>
+
+export type CustomerOrderItemInput = Omit<CustomerOrderItem, 'id' | 'createdAt' | 'updatedAt'>
