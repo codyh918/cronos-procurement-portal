@@ -26,6 +26,7 @@ export async function exportCustomerQuotePdf(quote: CustomerQuote, project?: Pro
     ['Shipping', currency(summary.shippingCost)],
     ['Quote Total', currency(summary.customerTotal)],
   ])
+  drawDocumentFooter(doc)
   doc.save(`${quote.quoteNumber}.pdf`)
 }
 
@@ -43,6 +44,7 @@ export async function exportPurchaseOrderPdf(po: PurchaseOrder | ProjectPurchase
 
   y = drawPoLines(doc, y + 8, po)
   drawTotals(doc, y + 10, [['Total Cost', currency(po.totalCost)]])
+  drawDocumentFooter(doc)
   doc.save(`${po.poNumber}.pdf`)
 }
 
@@ -69,6 +71,7 @@ export async function exportCustomerTrackingUpdatePdf(po: PurchaseOrder | Projec
   }
 
   drawPoLines(doc, y + 8, po, true)
+  drawDocumentFooter(doc)
   doc.save(`${po.poNumber}-customer-update.pdf`)
 }
 
@@ -98,6 +101,7 @@ export async function exportCheckbookReportPdf(project: Project) {
     y += 32
   })
 
+  drawDocumentFooter(doc)
   doc.save(`${project.projectNumber}-checkbook-report.pdf`)
 }
 
@@ -123,9 +127,9 @@ export async function exportCustomerConsolidatedTrackingReportPdf(project: Proje
 
   await drawLandscapeReportHeader(doc, 'Consolidated Shipping Tracking Report')
   doc.setFontSize(10)
-  doc.text(`Project: ${project.projectNumber}`, 42, 70)
-  doc.text(`Customer: ${project.customer}`, 42, 86)
-  doc.text(`Date: ${new Intl.DateTimeFormat('en-US').format(new Date())}`, 42, 102)
+  doc.text(`Project: ${project.projectNumber}`, 42, 112)
+  doc.text(`Customer: ${project.customer}`, 42, 128)
+  doc.text(`Date: ${new Intl.DateTimeFormat('en-US').format(new Date())}`, 42, 144)
 
   const received = rows.filter(row => row.receivedDate).length
   const tracking = rows.filter(row => row.trackingNumber).length
@@ -138,18 +142,18 @@ export async function exportCustomerConsolidatedTrackingReportPdf(project: Proje
 
   doc.setDrawColor(222, 229, 238)
   doc.setFillColor(248, 251, 255)
-  doc.roundedRect(42, 126, 720, 58, 4, 4, 'FD')
+  doc.roundedRect(42, 166, 720, 58, 4, 4, 'FD')
   summary.forEach(([label, value], index) => {
     const x = 58 + index * 172
     doc.setFontSize(8)
     doc.setTextColor(82, 97, 121)
-    doc.text(label, x, 148)
+    doc.text(label, x, 188)
     doc.setFontSize(15)
     doc.setTextColor(6, 22, 61)
-    doc.text(value, x, 170)
+    doc.text(value, x, 210)
   })
 
-  let y = drawTrackingReportHeader(doc, 210)
+  let y = drawTrackingReportHeader(doc, 250)
   rows.forEach((row, index) => {
     const descriptionLines = doc.splitTextToSize(row.description || '-', 146).slice(0, 3)
     const partLines = doc.splitTextToSize(row.partNumber || '-', 82).slice(0, 2)
@@ -194,31 +198,42 @@ async function createDocument() {
 }
 
 async function drawHeader(doc: JsPdf, title: string) {
-  doc.setFillColor(6, 22, 61)
-  doc.rect(0, 0, 612, 78, 'F')
-  doc.setTextColor(255, 255, 255)
-  doc.setFont('helvetica', 'bold')
   doc.setFillColor(255, 255, 255)
-  doc.roundedRect(34, 12, 132, 54, 4, 4, 'F')
-  await drawLogo(doc, 40, 16, 120, 46)
-  doc.setTextColor(255, 255, 255)
-  doc.setFontSize(18)
-  doc.text(title, 360, 44)
+  doc.rect(0, 0, 612, 128, 'F')
+  doc.setFillColor(6, 22, 61)
+  doc.rect(0, 0, 612, 8, 'F')
+  doc.setDrawColor(222, 229, 238)
+  doc.line(40, 116, 572, 116)
+  await drawLogo(doc, 40, 20, 132, 90)
+  doc.setTextColor(6, 22, 61)
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(21)
+  doc.text(title, 572, 46, { align: 'right' })
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8)
+  doc.setTextColor(82, 97, 121)
+  doc.text(`Generated ${new Intl.DateTimeFormat('en-US').format(new Date())}`, 572, 64, { align: 'right' })
   doc.setTextColor(7, 27, 73)
   doc.setFontSize(10)
-  return 104
+  return 144
 }
 
 async function drawLandscapeReportHeader(doc: JsPdf, title: string) {
+  doc.setFillColor(255, 255, 255)
+  doc.rect(0, 0, 792, 106, 'F')
+  doc.setFillColor(6, 22, 61)
+  doc.rect(0, 0, 792, 8, 'F')
+  doc.setDrawColor(222, 229, 238)
+  doc.line(42, 100, 750, 100)
+  await drawLogo(doc, 42, 18, 116, 78)
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(18)
   doc.setTextColor(6, 22, 61)
-  doc.setFillColor(255, 255, 255)
-  doc.roundedRect(36, 14, 132, 54, 4, 4, 'F')
-  doc.setDrawColor(222, 229, 238)
-  doc.roundedRect(36, 14, 132, 54, 4, 4)
-  await drawLogo(doc, 42, 18, 120, 46)
   doc.text(title, 176, 46)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8)
+  doc.setTextColor(82, 97, 121)
+  doc.text(`Generated ${new Intl.DateTimeFormat('en-US').format(new Date())}`, 176, 62)
   doc.setTextColor(6, 22, 61)
 }
 
@@ -258,15 +273,28 @@ async function getLogoDataUrl() {
 }
 
 function drawKeyValue(doc: JsPdf, startY: number, rows: string[][]) {
+  const visibleRows = rows.filter(([, value]) => value)
+  const preparedRows = visibleRows.map(([label, value]) => ({
+    label,
+    value: doc.splitTextToSize(String(value), 338),
+  }))
+  const cardHeight = Math.max(42, 22 + preparedRows.reduce((total, row) => total + Math.max(16, row.value.length * 11), 0))
+  doc.setFillColor(248, 251, 255)
+  doc.setDrawColor(222, 229, 238)
+  doc.roundedRect(36, startY - 18, 540, cardHeight, 4, 4, 'FD')
   let y = startY
-  rows.filter(([, value]) => value).forEach(([label, value]) => {
+  preparedRows.forEach(({ label, value }) => {
     doc.setFont('helvetica', 'bold')
-    doc.text(label, 40, y)
+    doc.setFontSize(8)
+    doc.setTextColor(82, 97, 121)
+    doc.text(label.toUpperCase(), 52, y)
     doc.setFont('helvetica', 'normal')
-    doc.text(String(value), 170, y)
-    y += 16
+    doc.setFontSize(9)
+    doc.setTextColor(7, 27, 73)
+    doc.text(value, 176, y)
+    y += Math.max(16, value.length * 11)
   })
-  return y
+  return startY + cardHeight + 8
 }
 
 function drawQuoteLines(doc: JsPdf, startY: number, quote: CustomerQuote) {
@@ -320,11 +348,9 @@ function drawPoLines(doc: JsPdf, startY: number, po: PurchaseOrder | ProjectPurc
 
 function drawTableHeader(doc: JsPdf, y: number, headers: string[]) {
   doc.setFontSize(8)
-  doc.setTextColor(7, 27, 73)
-  doc.setFillColor(249, 251, 253)
-  doc.rect(36, y - 14, 540, 24, 'F')
-  doc.setDrawColor(222, 229, 238)
-  doc.line(36, y + 12, 576, y + 12)
+  doc.setTextColor(255, 255, 255)
+  doc.setFillColor(6, 22, 61)
+  doc.roundedRect(36, y - 14, 540, 24, 3, 3, 'F')
   doc.setFont('helvetica', 'bold')
   const x = [40, 76, 158, 362, 404, 488]
   headers.forEach((header, index) => doc.text(header, x[index], y))
@@ -334,10 +360,18 @@ function drawTableHeader(doc: JsPdf, y: number, headers: string[]) {
 }
 
 function drawTotals(doc: JsPdf, startY: number, rows: string[][]) {
+  const boxHeight = 18 + rows.length * 18
+  doc.setFillColor(248, 251, 255)
+  doc.setDrawColor(222, 229, 238)
+  doc.roundedRect(366, startY - 14, 210, boxHeight, 4, 4, 'FD')
   let y = startY
   rows.forEach(([label, value]) => {
     doc.setFont('helvetica', 'bold')
+    doc.setFontSize(8)
+    doc.setTextColor(82, 97, 121)
     doc.text(label, 386, y)
+    doc.setFontSize(9)
+    doc.setTextColor(7, 27, 73)
     doc.text(value, 500, y)
     y += 18
   })
@@ -356,6 +390,22 @@ function drawTableRow(doc: JsPdf, y: number, height: number) {
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8)
   doc.setTextColor(7, 27, 73)
+}
+
+function drawDocumentFooter(doc: JsPdf) {
+  const pages = doc.getNumberOfPages()
+  for (let page = 1; page <= pages; page += 1) {
+    doc.setPage(page)
+    const height = doc.internal.pageSize.getHeight()
+    const width = doc.internal.pageSize.getWidth()
+    doc.setDrawColor(222, 229, 238)
+    doc.line(40, height - 34, width - 40, height - 34)
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(7)
+    doc.setTextColor(82, 97, 121)
+    doc.text('Cronos LLC', 40, height - 18)
+    doc.text(`Page ${page} of ${pages}`, width - 40, height - 18, { align: 'right' })
+  }
 }
 
 function ensurePage(doc: JsPdf, y: number, rowHeight = 30) {
