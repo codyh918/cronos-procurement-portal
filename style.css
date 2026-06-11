@@ -4706,6 +4706,38 @@ table {
   font-weight: 800;
 }
 
+.auth-setup-panel {
+  margin-top: 20px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  padding: 14px;
+}
+
+.auth-setup-panel h2 {
+  margin: 0;
+  color: var(--app-heading);
+  font-size: 16px;
+  font-weight: 900;
+}
+
+.auth-setup-panel p {
+  margin: 6px 0 0;
+  color: var(--app-muted);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.5;
+}
+
+.auth-setup-link {
+  display: inline-flex;
+  margin-top: 12px;
+  color: #155fdb;
+  font-size: 13px;
+  font-weight: 900;
+  text-decoration: none;
+}
+
 .auth-card button {
   width: 100%;
   margin-top: 24px;
@@ -4715,6 +4747,13 @@ table {
   padding: 10px 16px;
   font-size: 14px;
   font-weight: 900;
+}
+
+.auth-card .auth-secondary-button {
+  margin-top: 10px;
+  border: 1px solid var(--app-border);
+  background: #ffffff;
+  color: var(--app-text);
 }
 
 .auth-note {

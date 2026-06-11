@@ -7,6 +7,8 @@ export type UserProfile = {
   name: string
   email: string
   password?: string
+  twoFactorSecret?: string
+  twoFactorEnabled?: boolean
   role: AppRole
   title: string
   phone: string
