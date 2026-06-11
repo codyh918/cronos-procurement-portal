@@ -197,9 +197,12 @@ async function drawHeader(doc: JsPdf, title: string) {
   doc.rect(0, 0, 612, 78, 'F')
   doc.setTextColor(255, 255, 255)
   doc.setFont('helvetica', 'bold')
-  await drawLogo(doc, 38, 16, 112, 42)
+  doc.setFillColor(255, 255, 255)
+  doc.roundedRect(34, 12, 132, 54, 4, 4, 'F')
+  await drawLogo(doc, 40, 16, 120, 46)
+  doc.setTextColor(255, 255, 255)
   doc.setFontSize(8)
-  doc.text('SALES & PROCUREMENT SOLUTIONS', 42, 64)
+  doc.text('SALES & PROCUREMENT SOLUTIONS', 184, 62)
   doc.setFontSize(18)
   doc.text(title, 360, 44)
   doc.setTextColor(7, 27, 73)
@@ -211,29 +214,41 @@ async function drawLandscapeReportHeader(doc: JsPdf, title: string) {
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(18)
   doc.setTextColor(6, 22, 61)
-  await drawLogo(doc, 42, 20, 112, 42)
+  doc.setFillColor(255, 255, 255)
+  doc.roundedRect(36, 14, 132, 54, 4, 4, 'F')
+  doc.setDrawColor(222, 229, 238)
+  doc.roundedRect(36, 14, 132, 54, 4, 4)
+  await drawLogo(doc, 42, 18, 120, 46)
   doc.text(title, 176, 46)
   doc.setFontSize(8)
   doc.setTextColor(82, 97, 121)
-  doc.text('SALES & PROCUREMENT SOLUTIONS', 44, 72)
+  doc.text('SALES & PROCUREMENT SOLUTIONS', 176, 64)
   doc.setTextColor(6, 22, 61)
 }
 
 async function drawLogo(doc: JsPdf, x: number, y: number, width: number, height: number) {
   const logo = await getLogoDataUrl()
   if (logo) {
-    doc.addImage(logo, 'JPEG', x, y, width, height, undefined, 'FAST')
-  } else {
-    doc.setFont('helvetica', 'bold')
-    doc.text('CRONOS', x, y + 20)
+    try {
+      doc.addImage(logo, 'JPEG', x, y, width, height, undefined, 'FAST')
+      return
+    } catch {
+      logoDataUrl = null
+    }
   }
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(20)
+  doc.setTextColor(6, 22, 61)
+  doc.text('CRONOS', x + 4, y + 30)
 }
 
 async function getLogoDataUrl() {
   if (logoDataUrl !== undefined) return logoDataUrl
 
   try {
-    const response = await fetch('/cronos-logo.jpg')
+    const response = await fetch('/cronos-logo-pdf.jpg')
+    if (!response.ok) throw new Error('Logo image unavailable')
     const blob = await response.blob()
     logoDataUrl = await new Promise<string>((resolve, reject) => {
       const reader = new FileReader()
@@ -263,15 +278,19 @@ function drawKeyValue(doc: JsPdf, startY: number, rows: string[][]) {
 function drawQuoteLines(doc: JsPdf, startY: number, quote: CustomerQuote) {
   let y = drawTableHeader(doc, startY, ['CLIN', 'Part', 'Description', 'Qty', 'Unit', 'Extended'])
   quote.lines.forEach(line => {
-    y = ensurePage(doc, y)
     const totals = calculateLineTotals(line)
-    doc.text(line.clin, 40, y)
-    doc.text(line.partNumber || '-', 76, y)
-    doc.text(doc.splitTextToSize(line.description || '-', 188), 158, y)
-    doc.text(String(line.quantity), 362, y)
-    doc.text(currency(totals.sellPrice), 404, y)
-    doc.text(currency(totals.extendedSellPrice), 488, y)
-    y += 30
+    const partLines = doc.splitTextToSize(line.partNumber || '-', 72)
+    const descriptionLines = doc.splitTextToSize(line.description || '-', 188)
+    const rowHeight = getPdfRowHeight(partLines, descriptionLines)
+    y = ensurePage(doc, y, rowHeight)
+    drawTableRow(doc, y, rowHeight)
+    doc.text(line.clin, 40, y + 16)
+    doc.text(partLines, 76, y + 16)
+    doc.text(descriptionLines, 158, y + 16)
+    doc.text(String(line.quantity), 362, y + 16)
+    doc.text(currency(totals.sellPrice), 404, y + 16)
+    doc.text(currency(totals.extendedSellPrice), 488, y + 16)
+    y += rowHeight
   })
   return y
 }
@@ -282,30 +301,41 @@ function drawPoLines(doc: JsPdf, startY: number, po: PurchaseOrder | ProjectPurc
     : ['CLIN', 'Part', 'Description', 'Qty', 'Unit', 'Extended']
   let y = drawTableHeader(doc, startY, headers)
   po.lines.forEach(line => {
-    y = ensurePage(doc, y)
-    doc.text(line.clin, 40, y)
-    doc.text(line.partNumber || '-', 76, y)
-    doc.text(doc.splitTextToSize(line.description || '-', 188), 158, y)
-    doc.text(String(line.quantityOrdered), 362, y)
+    const partLines = doc.splitTextToSize(line.partNumber || '-', 72)
+    const descriptionLines = doc.splitTextToSize(line.description || '-', 188)
+    const statusLines = trackingOnly ? doc.splitTextToSize(line.status || '-', 72) : []
+    const trackingLines = trackingOnly ? doc.splitTextToSize(line.trackingNumber || po.trackingNumber || '-', 80) : []
+    const rowHeight = getPdfRowHeight(partLines, descriptionLines, statusLines, trackingLines)
+    y = ensurePage(doc, y, rowHeight)
+    drawTableRow(doc, y, rowHeight)
+    doc.text(line.clin, 40, y + 16)
+    doc.text(partLines, 76, y + 16)
+    doc.text(descriptionLines, 158, y + 16)
+    doc.text(String(line.quantityOrdered), 362, y + 16)
     if (trackingOnly) {
-      doc.text(line.status, 404, y)
-      doc.text(line.trackingNumber || po.trackingNumber || '-', 488, y)
+      doc.text(statusLines, 404, y + 16)
+      doc.text(trackingLines, 488, y + 16)
     } else {
-      doc.text(currency(line.unitCost), 404, y)
-      doc.text(currency(line.unitCost * line.quantityOrdered), 488, y)
+      doc.text(currency(line.unitCost), 404, y + 16)
+      doc.text(currency(line.unitCost * line.quantityOrdered), 488, y + 16)
     }
-    y += 30
+    y += rowHeight
   })
   return y
 }
 
 function drawTableHeader(doc: JsPdf, y: number, headers: string[]) {
+  doc.setFontSize(8)
+  doc.setTextColor(7, 27, 73)
   doc.setFillColor(249, 251, 253)
   doc.rect(36, y - 14, 540, 24, 'F')
+  doc.setDrawColor(222, 229, 238)
+  doc.line(36, y + 12, 576, y + 12)
   doc.setFont('helvetica', 'bold')
   const x = [40, 76, 158, 362, 404, 488]
   headers.forEach((header, index) => doc.text(header, x[index], y))
   doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8)
   return y + 28
 }
 
@@ -319,8 +349,23 @@ function drawTotals(doc: JsPdf, startY: number, rows: string[][]) {
   })
 }
 
-function ensurePage(doc: JsPdf, y: number) {
-  if (y < 740) return y
+function getPdfRowHeight(...columns: string[][]) {
+  const lineCount = Math.max(1, ...columns.map(column => column.length))
+  return Math.max(34, 18 + lineCount * 10)
+}
+
+function drawTableRow(doc: JsPdf, y: number, height: number) {
+  doc.setFillColor(255, 255, 255)
+  doc.rect(36, y, 540, height, 'F')
+  doc.setDrawColor(230, 235, 243)
+  doc.line(36, y + height, 576, y + height)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8)
+  doc.setTextColor(7, 27, 73)
+}
+
+function ensurePage(doc: JsPdf, y: number, rowHeight = 30) {
+  if (y + rowHeight < 740) return y
   doc.addPage()
   return 54
 }
