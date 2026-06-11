@@ -15,6 +15,14 @@ export function hasRemoteRecords() {
   return Boolean(getClient())
 }
 
+export function getRemoteConfigStatus() {
+  return {
+    hasUrl: Boolean(import.meta.env.VITE_SUPABASE_URL),
+    hasKey: Boolean(import.meta.env.VITE_SUPABASE_ANON_KEY),
+    ready: Boolean(getClient()),
+  }
+}
+
 export async function loadRemoteRecord<T>(recordType: string, recordKey: string): Promise<T | null> {
   const supabase = getClient()
   if (!supabase) return null
@@ -36,7 +44,9 @@ export async function loadRemoteRecord<T>(recordType: string, recordKey: string)
 
 export async function saveRemoteRecord<T>(recordType: string, recordKey: string, data: T) {
   const supabase = getClient()
-  if (!supabase) return
+  if (!supabase) {
+    throw new Error('Supabase is not configured. Check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in Railway variables.')
+  }
 
   const { error } = await supabase.from('app_records').upsert(
     {
@@ -49,6 +59,31 @@ export async function saveRemoteRecord<T>(recordType: string, recordKey: string,
 
   if (error) {
     console.warn(`Unable to save ${recordType}:${recordKey} to Supabase`, error)
+    throw new Error(error.message)
+  }
+}
+
+export async function testRemoteConnection() {
+  const status = getRemoteConfigStatus()
+  if (!status.ready) {
+    return {
+      ok: false,
+      message: `Supabase config missing. URL: ${status.hasUrl ? 'found' : 'missing'}, key: ${status.hasKey ? 'found' : 'missing'}.`,
+    }
+  }
+
+  try {
+    await saveRemoteRecord('diagnostics', 'last_test', {
+      timestamp: new Date().toISOString(),
+      userAgent: navigator.userAgent,
+      origin: window.location.origin,
+    })
+    return { ok: true, message: 'Supabase write succeeded. Check app_records for diagnostics / last_test.' }
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : 'Supabase write failed.',
+    }
   }
 }
 
@@ -71,7 +106,11 @@ export async function hydrateLocalCollection<T>(
 
   const local = readLocalCollection<T>(storageKey)
   if (local.length) {
-    await saveRemoteRecord(recordType, recordKey, local)
+    try {
+      await saveRemoteRecord(recordType, recordKey, local)
+    } catch {
+      // Keep the local cache usable even if the remote write is temporarily unavailable.
+    }
   }
 
   return local
@@ -80,7 +119,9 @@ export async function hydrateLocalCollection<T>(
 export function saveLocalAndRemoteCollection<T>(storageKey: string, recordType: string, recordKey: string, items: T[], eventName?: string) {
   window.localStorage.setItem(storageKey, JSON.stringify(items))
   if (eventName) window.dispatchEvent(new Event(eventName))
-  void saveRemoteRecord(recordType, recordKey, items)
+  void saveRemoteRecord(recordType, recordKey, items).catch(error => {
+    window.dispatchEvent(new CustomEvent('cronos:remote-sync-error', { detail: error instanceof Error ? error.message : 'Supabase sync failed.' }))
+  })
 }
 
 export function readLocalCollection<T>(storageKey: string) {

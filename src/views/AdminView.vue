@@ -41,6 +41,22 @@
       </label>
     </section>
 
+    <section class="admin-card admin-sync-card">
+      <div class="admin-card-heading">
+        <h2>Database Sync</h2>
+        <p>Test the Supabase connection used for shared team data.</p>
+      </div>
+      <div class="sync-status-grid">
+        <span :class="{ active: remoteStatus.hasUrl }">URL {{ remoteStatus.hasUrl ? 'found' : 'missing' }}</span>
+        <span :class="{ active: remoteStatus.hasKey }">Key {{ remoteStatus.hasKey ? 'found' : 'missing' }}</span>
+        <span :class="{ active: remoteStatus.ready }">Client {{ remoteStatus.ready ? 'ready' : 'not ready' }}</span>
+      </div>
+      <button class="secondary-action admin-save-button" type="button" @click="runSyncTest">
+        Test Supabase Write
+      </button>
+      <p v-if="syncMessage" class="sync-message" :class="{ success: syncOk }">{{ syncMessage }}</p>
+    </section>
+
     <section class="admin-card">
       <div class="admin-card-heading">
         <h2>Add User</h2>
@@ -175,6 +191,7 @@ import {
   setRolePreview,
   updateUser,
 } from '../services/auth'
+import { getRemoteConfigStatus, testRemoteConnection } from '../services/remoteRecords'
 import type { AppRole, UserProfile, UserSession } from '../types'
 
 type NewUserForm = Omit<UserProfile, 'id'>
@@ -195,6 +212,9 @@ const previewRole = ref<AppRole | null>(null)
 const message = ref('')
 const createdCredentials = ref<{ name: string; email: string; password: string; role: AppRole } | null>(null)
 const newUser = reactive<NewUserForm>({ ...emptyUser })
+const remoteStatus = ref(getRemoteConfigStatus())
+const syncMessage = ref('')
+const syncOk = ref(false)
 
 const isAdmin = computed(() => session.value?.role === 'Admin')
 const activeUserCount = computed(() => users.value.filter(user => user.active).length)
@@ -222,6 +242,7 @@ function refreshAdminState() {
   session.value = fetchSession()
   previewRole.value = getRolePreview()
   users.value = loadUsers()
+  remoteStatus.value = getRemoteConfigStatus()
 }
 
 function changePreviewRole(role: AppRole | '') {
@@ -287,6 +308,15 @@ async function copyCredentials() {
   } catch {
     window.alert('Copy failed. Select the login text and copy it manually.')
   }
+}
+
+async function runSyncTest() {
+  remoteStatus.value = getRemoteConfigStatus()
+  syncMessage.value = 'Testing Supabase...'
+  syncOk.value = false
+  const result = await testRemoteConnection()
+  syncOk.value = result.ok
+  syncMessage.value = result.message
 }
 
 function inputValue(event: Event) {

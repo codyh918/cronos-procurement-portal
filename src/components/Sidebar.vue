@@ -81,7 +81,7 @@ import {
   Sun,
   Users,
 } from '@lucide/vue'
-import { appRoles, ensureDefaultAdminSession, fetchSession, getEffectiveRole, getRolePreview, logoutUser, setRolePreview } from '../services/auth'
+import { appRoles, fetchSession, getEffectiveRole, getRolePreview, logoutUser, setRolePreview } from '../services/auth'
 import type { AppRole, NavItem, UserSession } from '../types'
 
 const route = useRoute()
@@ -169,7 +169,7 @@ function handleNavClick(event: MouseEvent, item: NavItem) {
 }
 
 function refreshSession() {
-  session.value = import.meta.env.VITE_REQUIRE_AUTH === '1' ? fetchSession() : ensureDefaultAdminSession()
+  session.value = fetchSession()
   previewRole.value = getRolePreview()
 }
 
