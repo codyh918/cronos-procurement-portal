@@ -1,16 +1,12 @@
-import { createApp } from 'vue'
-import { createPinia } from 'pinia'
-import App from './App.vue'
-import router from './router'
-import './styles/tokens.css'
-import './styles/ui.css'
-import './style.css'
+<template>
+  <AuthGate>
+    <AppShell>
+      <RouterView />
+    </AppShell>
+  </AuthGate>
+</template>
 
-const savedTheme = localStorage.getItem('cronos.theme')
-const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches
-document.documentElement.dataset.theme = savedTheme ?? (prefersDark ? 'dark' : 'light')
-
-const app = createApp(App)
-app.use(createPinia())
-app.use(router)
-app.mount('#app')
+<script setup lang="ts">
+import AppShell from './components/AppShell.vue'
+import AuthGate from './components/AuthGate.vue'
+</script>

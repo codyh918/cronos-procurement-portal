@@ -1,71 +1,240 @@
-<template>
-  <slot v-if="session" />
+import type { TrackingImportInput } from '../services/trackingImport'
 
-  <div v-else class="auth-gate-page">
-    <form class="auth-card" @submit.prevent="submit">
-      <div class="auth-heading">
-        <span>
-          <LockKeyhole :size="22" />
-        </span>
-        <div>
-          <h1>Cronos Login</h1>
-          <p>Sign in to access the procurement workspace.</p>
-        </div>
-      </div>
-
-      <label class="auth-field">
-        <span>Email</span>
-        <input v-model="email" type="email" autocomplete="username" />
-      </label>
-
-      <label class="auth-field">
-        <span>Password</span>
-        <input v-model="password" type="password" autocomplete="current-password" />
-      </label>
-
-      <p v-if="message" class="auth-error">{{ message }}</p>
-
-      <button type="submit">Sign In</button>
-
-      <div class="auth-note">
-        <p>Access is restricted to active Cronos users.</p>
-      </div>
-    </form>
-  </div>
-</template>
-
-<script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
-import { LockKeyhole } from '@lucide/vue'
-import { beginLogin, completeLogin, fetchSession } from '../services/auth'
-import type { UserSession } from '../types'
-
-const session = ref<UserSession | null>(null)
-const email = ref('')
-const password = ref('')
-const message = ref('')
-
-onMounted(() => {
-  refreshSession()
-  window.addEventListener('cronos:session-changed', refreshSession)
-})
-
-onUnmounted(() => {
-  window.removeEventListener('cronos:session-changed', refreshSession)
-})
-
-function refreshSession() {
-  session.value = fetchSession()
-}
-
-async function submit() {
-  try {
-    const pendingLogin = await beginLogin(email.value, password.value)
-    session.value = await completeLogin(pendingLogin.id)
-    password.value = ''
-    message.value = ''
-  } catch (error) {
-    message.value = error instanceof Error ? error.message : 'Login failed. Check the email, password, and active status.'
-  }
-}
-</script>
+export const TRACKING_25_100_ROWS: TrackingImportInput[] = [
+  {
+    itemNumber: '77',
+    projectNumber: '25-100',
+    poNumber: '6406-25-100-Provantage',
+    vendor: 'Provantage',
+    vendorOrderNumber: '9818082',
+    partNumber: 'RAPODFLAP16',
+    manufacturer: 'Wrightline',
+    description: "RAPODFLAP16 16' roll flap seal",
+    quantity: 11,
+    estimatedShipDate: '2026-05-05',
+    notes: '',
+  },
+  {
+    itemNumber: '78',
+    projectNumber: '25-100',
+    poNumber: '6398-25-100-D&H',
+    vendor: 'D&H',
+    vendorOrderNumber: '96582558',
+    partNumber: '6901',
+    manufacturer: 'Cisco',
+    description: 'Cisco small form factor IP phone',
+    quantity: 15,
+    estimatedShipDate: '2026-05-16',
+    notes: '',
+  },
+  {
+    itemNumber: '79',
+    projectNumber: '25-100',
+    poNumber: '6403-25-100-Provantage',
+    vendor: 'Provantage',
+    vendorOrderNumber: '9816437',
+    partNumber: '9076C',
+    manufacturer: '10Zig',
+    description: '10 Zig Technology Inc VESA Mounting Bracket (Includes Short DP-DP Cable) 6100 Series',
+    quantity: 21,
+    trackingNumber: '514577821715',
+    receivedDate: '2026-04-28',
+    carrier: 'Fedex',
+    notes: '',
+  },
+  {
+    itemNumber: '80',
+    projectNumber: '25-100',
+    poNumber: '6398-25-100-D&H',
+    vendor: 'D&H',
+    vendorOrderNumber: '96582558',
+    partNumber: 'SFP-10G-SR-S=',
+    manufacturer: 'Cisco',
+    description: 'Cisco - SFP+ transceiver module - 10GbE',
+    quantity: 40,
+    trackingNumber: '524542787973',
+    receivedDate: '2026-05-14',
+    carrier: 'Fedex',
+    notes: '',
+  },
+  {
+    itemNumber: '81',
+    projectNumber: '25-100',
+    poNumber: '6398-25-100-D&H',
+    vendor: 'D&H',
+    vendorOrderNumber: '96582558',
+    partNumber: 'QSFP-100G-CU1M=',
+    manufacturer: 'Cisco',
+    description: 'Cisco 100GBASE-CR4 Passive Copper Cable - direct attach cable - 1 m',
+    quantity: 16,
+    trackingNumber: '524542787594',
+    receivedDate: '2026-05-14',
+    carrier: 'Fedex',
+    notes: '',
+  },
+  {
+    itemNumber: '82',
+    projectNumber: '25-100',
+    poNumber: '6398-25-100-D&H',
+    vendor: 'D&H',
+    vendorOrderNumber: '96582558',
+    partNumber: 'CAB-SPWR-30CM=',
+    manufacturer: 'Cisco',
+    description: '30CM power stacking cables',
+    quantity: 275,
+    trackingNumber: '302674224193',
+    receivedDate: '2026-05-08',
+    carrier: 'Fedex',
+    notes: '',
+  },
+  {
+    itemNumber: '83',
+    projectNumber: '25-100',
+    poNumber: '6393-25-100-U-Line',
+    vendor: 'U-Line',
+    vendorOrderNumber: '50795268',
+    partNumber: 'H-6710',
+    manufacturer: 'Uline',
+    description: 'Uline Industrial Pallet Truck - Narrow Fork',
+    quantity: 2,
+    trackingNumber: '413051124',
+    receivedDate: '2026-04-15',
+    carrier: 'Averitt Express',
+    notes: '',
+  },
+  {
+    itemNumber: '84',
+    projectNumber: '25-100',
+    poNumber: '6392-25-100-Home Depot',
+    vendor: 'Home Depot',
+    vendorOrderNumber: 'WK21595394',
+    partNumber: 'Model # D2755',
+    manufacturer: 'Klein',
+    description: '5 in. Light Weight Flush Cutter Pliers',
+    quantity: 12,
+    trackingNumber: '495055348618',
+    receivedDate: '2026-04-15',
+    carrier: 'Fedex',
+    notes: '',
+  },
+  {
+    itemNumber: '85',
+    projectNumber: '25-100',
+    poNumber: '6399-25-100-Staples',
+    vendor: 'Staples',
+    vendorOrderNumber: '9937133447',
+    partNumber: 'W2184X4PKVB',
+    manufacturer: 'HP',
+    description: 'HP 218X Black/Cyan/Magenta/Yellow High Yield Toner Cartridge, 4/Pack (W2184X4PK-VB)',
+    quantity: 4,
+    trackingNumber: '9770594977354',
+    receivedDate: '2026-04-20',
+    carrier: 'Courier Express',
+    notes: '',
+  },
+  {
+    itemNumber: '86',
+    projectNumber: '25-100',
+    poNumber: '6393-25-100-U-Line',
+    vendor: 'U-Line',
+    vendorOrderNumber: '50795268',
+    partNumber: 'S-5832',
+    manufacturer: 'Uline',
+    description: 'Cable Tie, 11" Long, 3" Bundle Diameter, 50 lb. Break Strength, Black (1000pk)',
+    quantity: 30,
+    trackingNumber: '413051124',
+    receivedDate: '2026-04-15',
+    carrier: 'Averitt Express',
+    notes: '',
+  },
+  {
+    itemNumber: '87',
+    projectNumber: '25-100',
+    poNumber: '6402-25-100-Cabinet Screws',
+    vendor: 'Cabinet Screws',
+    vendorOrderNumber: 'Y88855HFL',
+    partNumber: '8X34QRWDT17Z:1000',
+    manufacturer: 'Cabinet Screws',
+    description: '#8 | 3/4 Inch | Quadrex Drive | Round Washer Head | Deep Thread | Type 17 Point | Zinc Finish Pk:1000',
+    quantity: 12,
+    trackingNumber: '1Z4469570399639494',
+    receivedDate: '2026-04-21',
+    carrier: 'UPS',
+    notes: '',
+  },
+  {
+    itemNumber: '88',
+    projectNumber: '25-100',
+    poNumber: '6394-25-100-Digikey',
+    vendor: 'Digikey',
+    vendorOrderNumber: '98629008',
+    partNumber: 'AL-SM8-0-C (#8 Bolt)',
+    manufacturer: 'ACT',
+    description: 'ACT AL-SM8-0-C Screw Mount, UV Resistant, #8 Screw Size, Black',
+    quantity: 10000,
+    trackingNumber: '522511873165',
+    receivedDate: '2026-04-21',
+    carrier: 'Fedex',
+    notes: '',
+  },
+  {
+    itemNumber: '89',
+    projectNumber: '25-100',
+    poNumber: '6392-25-100-Home Depot',
+    vendor: 'Home Depot',
+    vendorOrderNumber: 'WK21595394',
+    partNumber: '30002653',
+    manufacturer: 'Commercial Electric',
+    description: '0.75 in. x 60 ft. 7 mil Vinyl Electrical Tape - Black (10-Pack)',
+    quantity: 10,
+    trackingNumber: '173325322',
+    receivedDate: '2026-04-14',
+    carrier: 'Doordash',
+    notes: '',
+  },
+  {
+    itemNumber: '90',
+    projectNumber: '25-100',
+    poNumber: '6396-25-100-Legrand',
+    vendor: 'Legrand',
+    vendorOrderNumber: '4191570',
+    partNumber: 'L5-RRKIT3343',
+    manufacturer: 'Legrand',
+    description: '12 RU L5 Lectern Series Additional Rackrail Kit for 33 Inch and 43 Inch Lecterns',
+    quantity: 48,
+    trackingNumber: '9773441370',
+    receivedDate: '2026-04-29',
+    carrier: '',
+    notes: '',
+  },
+  {
+    itemNumber: '91',
+    projectNumber: '25-100',
+    poNumber: '6400-25-100-Zoro',
+    vendor: 'Zoro',
+    vendorOrderNumber: 'WB9427335718',
+    partNumber: 'F6W0.50BK',
+    manufacturer: 'TECHFLEX',
+    description: 'Techflex F6W0.50BK F6 Woven Wrap PT, 1/2" Blk 300ft Box',
+    quantity: 50,
+    trackingNumber: '447108994034',
+    receivedDate: '2026-05-12',
+    carrier: '',
+    notes: 'Woven wrap',
+  },
+  {
+    itemNumber: '92',
+    projectNumber: '25-100',
+    poNumber: '6401-25-100-Northern Tool',
+    vendor: 'Northern Tool',
+    vendorOrderNumber: '25825392',
+    partNumber: 'PRTW85005',
+    manufacturer: 'Northern Tool',
+    description: 'Performance Tool - 40In 6-Caster Creeper - 350 lb Capacity - PRTW85005',
+    quantity: 4,
+    trackingNumber: '870875298860',
+    receivedDate: '2026-04-22',
+    carrier: 'Fedex',
+    notes: 'Mechanics Creeper',
+  },
+]

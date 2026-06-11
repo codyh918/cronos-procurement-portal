@@ -1,334 +1,133 @@
-import type { Component } from 'vue'
+<template>
+  <button
+    class="atlas-fab"
+    type="button"
+    aria-label="Open Cronos assistant"
+    title="Atlas"
+    @click="open = true"
+  >
+    <MessageSquare :size="24" />
+  </button>
 
-export type AppRole = 'Admin' | 'Procurement Team' | 'Accounting' | 'Executive'
+  <div v-if="open" class="atlas-overlay">
+    <button class="atlas-backdrop" type="button" aria-label="Close assistant overlay" @click="open = false" />
+    <aside class="atlas-drawer" aria-label="Atlas assistant">
+      <header class="atlas-header">
+        <div class="atlas-title-row">
+          <span class="atlas-avatar"><Bot :size="22" /></span>
+          <div>
+            <h2>Atlas</h2>
+            <p>Projects, POs, tracking, receiving</p>
+          </div>
+        </div>
+        <button class="atlas-close" type="button" aria-label="Close assistant" @click="open = false">
+          <X :size="20" />
+        </button>
+      </header>
 
-export type UserProfile = {
-  id: string
-  name: string
-  email: string
-  password?: string
-  twoFactorSecret?: string
-  twoFactorEnabled?: boolean
-  role: AppRole
-  title: string
-  phone: string
-  active: boolean
+      <div ref="listRef" class="atlas-messages">
+        <div
+          v-for="(message, index) in messages"
+          :key="`${message.role}-${index}`"
+          class="atlas-message-row"
+          :class="{ 'is-user': message.role === 'user' }"
+        >
+          <div class="atlas-message" :class="{ 'is-user': message.role === 'user' }">
+            {{ message.content }}
+          </div>
+        </div>
+        <div v-if="loading" class="atlas-message-row">
+          <div class="atlas-thinking">
+            <Loader2 class="spin" :size="16" />
+            <span>Thinking</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="atlas-composer-panel">
+        <div class="atlas-starters">
+          <button v-for="starter in starters" :key="starter" type="button" @click="submitQuestion(starter)">
+            <Sparkles :size="13" />
+            <span>{{ starter }}</span>
+          </button>
+        </div>
+        <form class="atlas-composer" @submit.prevent="submitQuestion()">
+          <textarea
+            v-model="input"
+            placeholder="Ask about a project, PO, tracking, receiving..."
+            @keydown.enter.exact.prevent="submitQuestion()"
+          />
+          <button type="submit" :disabled="loading || !input.trim()" aria-label="Send message">
+            <Send :size="18" />
+          </button>
+        </form>
+      </div>
+    </aside>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { Bot, Loader2, MessageSquare, Send, Sparkles, X } from '@lucide/vue'
+import { answerAssistantQuestion, type AssistantMessage } from '../services/assistant'
+import { loadProjects } from '../services/localProjects'
+
+const starters = [
+  'Summarize project 25-100.',
+  'Which POs are missing tracking?',
+  'What receiving work is still open?',
+  'Draft a customer tracking update.',
+]
+
+const open = ref(false)
+const input = ref('')
+const loading = ref(false)
+const listRef = ref<HTMLElement | null>(null)
+const messages = ref<AssistantMessage[]>([
+  {
+    role: 'assistant',
+    content: 'Hi, I am Atlas, the Cronos AI assistant. Ask me about projects, quotes, POs, tracking, receiving, or customer updates.',
+  },
+])
+
+watch([messages, loading, open], () => {
+  void nextTick(scrollToLatest)
+}, { deep: true })
+
+onMounted(() => {
+  window.addEventListener('cronos:open-assistant', openAssistant)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('cronos:open-assistant', openAssistant)
+})
+
+function openAssistant() {
+  open.value = true
 }
 
-export type UserSession = {
-  id: string
-  name: string
-  email: string
-  role: AppRole
-  title: string
+function submitQuestion(override?: string) {
+  const question = (override ?? input.value).trim()
+  if (!question || loading.value) return
+
+  messages.value = [...messages.value, { role: 'user', content: question }]
+  input.value = ''
+  loading.value = true
+
+  window.setTimeout(() => {
+    messages.value = [
+      ...messages.value,
+      {
+        role: 'assistant',
+        content: answerAssistantQuestion(question, loadProjects()),
+      },
+    ]
+    loading.value = false
+  }, 180)
 }
 
-export type Tone = 'default' | 'warning' | 'danger' | 'success'
-
-export type NavItem = {
-  href: string
-  match: string
-  label: string
-  icon: Component
+function scrollToLatest() {
+  if (!listRef.value) return
+  listRef.value.scrollTo({ top: listRef.value.scrollHeight, behavior: 'smooth' })
 }
-
-export type Metric = {
-  label: string
-  value: string | number
-  action: string
-  tone?: Tone
-  icon: Component
-}
-
-export type PipelineRow = {
-  label: string
-  value: string
-  color: string
-  href: string
-}
-
-export type QuickAction = {
-  label: string
-  href?: string
-  onClick?: () => void
-  icon: Component
-  colorClass: string
-}
-
-export type ProjectType = 'Design & Install' | 'Resale' | 'Checkbook'
-
-export type Status =
-  | 'Quoted'
-  | 'Customer Approved'
-  | 'Pending Procurement'
-  | 'PO Generated'
-  | 'PO Issued'
-  | 'Ordered'
-  | 'Awaiting Vendor Shipment'
-  | 'In Transit to Cronos'
-  | 'Partially Received'
-  | 'Received'
-  | 'Received at Cronos'
-  | 'Stored'
-  | 'Allocated to Kit'
-  | 'Kitted'
-  | 'Staged'
-  | 'Ready to Ship'
-  | 'Partially Shipped'
-  | 'Shipped to Customer'
-  | 'Shipped'
-  | 'Delivered'
-  | 'RMA'
-  | 'RMA / Issue'
-  | 'Cancelled'
-  | 'Backordered'
-
-export type ProjectFormInput = {
-  projectType: ProjectType
-  checkbookStartingBalance: number
-  assignedUserIds: string[]
-  projectNumber: string
-  projectName: string
-  customer: string
-  customerContactName: string
-  customerEmail: string
-  customerPhone: string
-  shippingContactName: string
-  shippingEmail: string
-  shippingPhone: string
-  shippingInstructions: string
-  contractNumber: string
-  primeOrSub: 'Prime' | 'Subcontractor'
-  projectManager: string
-  engineer: string
-  startDate: string
-  endDate: string
-  status: Status
-  deliveryAddress: string
-  notes: string
-}
-
-export type QuoteLine = {
-  id: string
-  clin: string
-  partNumber: string
-  manufacturer: string
-  description: string
-  quantity: number
-  unitCost: number
-  pricingMode?: 'markup' | 'margin'
-  marginPercent?: number
-  markupPercent: number
-  vendor: string
-  quoteNumber: string
-  leadTime: string
-  approved: boolean
-}
-
-export type CustomerQuote = {
-  id: string
-  quoteNumber: string
-  projectId: string
-  projectNumber: string
-  projectName: string
-  customer: string
-  status: Status
-  createdAt: string
-  expirationDays?: 30 | 60 | 90
-  contractFeeEnabled?: boolean
-  shippingCost?: number
-  lines: QuoteLine[]
-}
-
-export type Project = ProjectFormInput & {
-  id: string
-  quotes: CustomerQuote[]
-  quoteLines: QuoteLine[]
-  purchaseOrders: PurchaseOrder[]
-  inventory: InventoryItem[]
-  kitStatus: Status
-  shipmentStatus: Status
-}
-
-export type PurchaseOrderLine = {
-  id: string
-  itemNumber?: string
-  clin: string
-  partNumber: string
-  manufacturer?: string
-  description: string
-  quantityOrdered: number
-  quantityReceived: number
-  unitCost: number
-  status: Status
-  vendorOrderNumber?: string
-  estimatedShipDate?: string
-  receivedDate?: string
-  carrier?: string
-  trackingNumber?: string
-  trackingUrl?: string
-  notes?: string
-}
-
-export type PurchaseOrder = {
-  id: string
-  poNumber: string
-  quoteId?: string
-  vendor: string
-  description?: string
-  dateIssued: string
-  status: Status
-  totalCost: number
-  customerTotalCost?: number
-  estimatedShipDate?: string
-  expectedDeliveryDate?: string
-  carrier?: string
-  trackingNumber?: string
-  trackingUrl?: string
-  customerUpdateNotes?: string
-  requestor?: string
-  lines: PurchaseOrderLine[]
-}
-
-export type InventoryItem = {
-  id: string
-  projectId?: string
-  projectNumber?: string
-  projectName?: string
-  poNumber: string
-  clin: string
-  partNumber: string
-  manufacturer: string
-  description: string
-  quantityOrdered: number
-  quantityReceived: number
-  quantityRemaining: number
-  serialNumber?: string
-  assetTag?: string
-  warehouseId?: string
-  warehouseLocation?: string
-  rack?: string
-  bin?: string
-  palletNumber?: string
-  status: Status
-  receivedDate?: string
-  receivedBy?: string
-  notes?: string
-}
-
-export type ProjectPurchaseOrder = PurchaseOrder & {
-  projectId: string
-  projectNumber: string
-  projectName: string
-}
-
-export type CustomerOrderStatus =
-  | 'Pending Procurement'
-  | 'PO Issued'
-  | 'Backordered'
-  | 'Awaiting Vendor Shipment'
-  | 'In Transit to Cronos'
-  | 'Received at Cronos'
-  | 'Kitted'
-  | 'Partially Shipped'
-  | 'Shipped to Customer'
-  | 'Delivered'
-  | 'Cancelled'
-  | 'RMA / Issue'
-
-export type CustomerOrderItem = {
-  id: string
-  lineNumber: string
-  manufacturer: string
-  partNumber: string
-  description: string
-  quantityOrdered: number
-  quantityReceived: number
-  quantityShipped: number
-  vendor: string
-  vendorPoNumber: string
-  vendorPoDate: string
-  expectedShipDate: string
-  carrier: string
-  trackingNumber: string
-  status: CustomerOrderStatus
-  customerVisibleNotes: string
-  internalNotes: string
-  createdAt: string
-  updatedAt: string
-}
-
-export type OrderTrackingToken = {
-  id: string
-  tokenHash: string
-  isActive: boolean
-  createdAt: string
-  disabledAt?: string
-  lastAccessedAt?: string
-}
-
-export type OrderStatusHistory = {
-  id: string
-  customerOrderId: string
-  customerOrderItemId?: string
-  previousStatus?: CustomerOrderStatus
-  newStatus: CustomerOrderStatus
-  changedBy: string
-  customerVisible: boolean
-  note: string
-  createdAt: string
-}
-
-export type PublicLookupAuditLog = {
-  id: string
-  timestamp: string
-  lookupType: 'token' | 'order-or-po'
-  orderNumber?: string
-  customerPoNumber?: string
-  customerOrderId?: string
-  success: boolean
-  userAgent: string
-}
-
-export type CustomerOrder = {
-  id: string
-  sourceProjectId?: string
-  sourceQuoteId?: string
-  orderNumber: string
-  customerPoNumber: string
-  customerName: string
-  projectName: string
-  orderDate: string
-  overallStatus: CustomerOrderStatus
-  customerContactName: string
-  customerContactEmail: string
-  cronosContactName: string
-  cronosContactEmail: string
-  estimatedShipDate: string
-  publicNotes: string
-  internalNotes: string
-  createdAt: string
-  updatedAt: string
-  items: CustomerOrderItem[]
-  trackingTokens: OrderTrackingToken[]
-  statusHistory: OrderStatusHistory[]
-}
-
-export type CustomerOrderInput = Pick<
-  CustomerOrder,
-  | 'orderNumber'
-  | 'customerPoNumber'
-  | 'customerName'
-  | 'projectName'
-  | 'orderDate'
-  | 'overallStatus'
-  | 'customerContactName'
-  | 'customerContactEmail'
-  | 'cronosContactName'
-  | 'cronosContactEmail'
-  | 'estimatedShipDate'
-  | 'publicNotes'
-  | 'internalNotes'
->
-
-export type CustomerOrderItemInput = Omit<CustomerOrderItem, 'id' | 'createdAt' | 'updatedAt'>
+</script>

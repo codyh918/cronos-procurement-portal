@@ -1196,6 +1196,49 @@ table {
   font-weight: 700;
 }
 
+.admin-sync-card {
+  display: grid;
+  gap: 14px;
+}
+
+.sync-status-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.sync-status-grid span {
+  border: 1px solid #fecdd3;
+  border-radius: 999px;
+  background: #fff1f2;
+  color: #be123c;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 850;
+}
+
+.sync-status-grid span.active {
+  border-color: #bbf7d0;
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.sync-message {
+  margin: 0;
+  border: 1px solid #fecdd3;
+  border-radius: 6px;
+  background: #fff1f2;
+  color: #be123c;
+  padding: 10px 12px;
+  font-weight: 800;
+}
+
+.sync-message.success {
+  border-color: #bbf7d0;
+  background: #ecfdf5;
+  color: #047857;
+}
+
 .admin-form-grid {
   display: grid;
   gap: 16px;
