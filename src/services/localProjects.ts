@@ -5,19 +5,26 @@ import type { CheckbookPoImportInput } from './checkbookImport'
 import { syncCustomerOrdersFromApprovedProjects } from './customerOrders'
 import { recordPurchaseOrdersInCatalog } from './partCatalog'
 import { buildInventoryItem, getPurchaseOrderStatus, receiveLine, type ReceiveWarehouseInput } from './receiving'
+import { hydrateLocalCollection, readLocalCollection, saveLocalAndRemoteCollection } from './remoteRecords'
 import type { TrackingImportInput } from './trackingImport'
 
 const STORAGE_KEY = 'cronos.projects'
+const REMOTE_TYPE = 'projects'
+const REMOTE_KEY = 'all'
+let hydrationStarted = false
 
 export function loadProjects(): Project[] {
-  const raw = window.localStorage.getItem(STORAGE_KEY)
-  if (!raw) return []
+  hydrateProjects()
+  return readLocalCollection<Project>(STORAGE_KEY).map(normalizeProject)
+}
 
-  try {
-    return (JSON.parse(raw) as Project[]).map(normalizeProject)
-  } catch {
-    return []
-  }
+function hydrateProjects() {
+  if (hydrationStarted || typeof window === 'undefined') return
+  hydrationStarted = true
+  void hydrateLocalCollection<Project>(STORAGE_KEY, REMOTE_TYPE, REMOTE_KEY, {
+    eventName: 'cronos:projects-changed',
+    normalize: projects => projects.map(normalizeProject),
+  })
 }
 
 export function saveProject(input: ProjectFormInput): Project {
@@ -33,8 +40,7 @@ export function saveProject(input: ProjectFormInput): Project {
     shipmentStatus: 'Quoted',
   }
 
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify([project, ...loadProjects()]))
-  window.dispatchEvent(new Event('cronos:projects-changed'))
+  saveProjects([project, ...loadProjects()])
   return project
 }
 
@@ -75,8 +81,7 @@ export function updateProjectFromInput(id: string, input: ProjectFormInput): Pro
 
   if (!updatedProject) return undefined
 
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(projects))
-  window.dispatchEvent(new Event('cronos:projects-changed'))
+  saveProjects(projects)
   return updatedProject
 }
 
@@ -132,8 +137,7 @@ export function createQuoteForProject(
       : current,
   )
 
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(projects))
-  window.dispatchEvent(new Event('cronos:projects-changed'))
+  saveProjects(projects)
   return quote
 }
 
@@ -176,8 +180,7 @@ export function updateQuoteForProject(
       : current,
   )
 
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(projects))
-  window.dispatchEvent(new Event('cronos:projects-changed'))
+  saveProjects(projects)
   return updatedQuote
 }
 
@@ -616,8 +619,7 @@ function normalizeProject(project: Project): Project {
 }
 
 function saveProjects(projects: Project[]) {
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(projects))
-  window.dispatchEvent(new Event('cronos:projects-changed'))
+  saveLocalAndRemoteCollection(STORAGE_KEY, REMOTE_TYPE, REMOTE_KEY, projects.map(normalizeProject), 'cronos:projects-changed')
 }
 
 function nextQuoteNumber(project: Project) {

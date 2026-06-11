@@ -289,7 +289,7 @@
 import { computed, defineComponent, h, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Search } from '@lucide/vue'
-import { ensureDefaultAdminSession, fetchSession, getEffectiveRole, loadUsers } from '../services/auth'
+import { fetchSession, getEffectiveRole, loadUsers } from '../services/auth'
 import {
   loadProcurementDashboardData,
   updateProcurementTask,
@@ -309,7 +309,7 @@ type ViewMode = 'my' | 'team'
 type DueOutCategory = 'today' | 'week' | 'overdue' | 'vendor' | 'internal' | 'customer'
 type BadgeTone = 'default' | 'success' | 'warning' | 'danger' | 'critical' | 'muted'
 
-const session = ref(import.meta.env.VITE_REQUIRE_AUTH === '1' ? fetchSession() : ensureDefaultAdminSession())
+const session = ref(fetchSession())
 const users = ref<UserProfile[]>([])
 const data = ref(loadProcurementDashboardData([]))
 const viewMode = ref<ViewMode>('my')
@@ -421,17 +421,19 @@ onMounted(() => {
   refresh()
   window.addEventListener('cronos:projects-changed', refresh)
   window.addEventListener('cronos:session-changed', refresh)
+  window.addEventListener('cronos:users-changed', refresh)
   window.addEventListener('cronos:procurement-dashboard-changed', refresh)
 })
 
 onUnmounted(() => {
   window.removeEventListener('cronos:projects-changed', refresh)
   window.removeEventListener('cronos:session-changed', refresh)
+  window.removeEventListener('cronos:users-changed', refresh)
   window.removeEventListener('cronos:procurement-dashboard-changed', refresh)
 })
 
 function refresh() {
-  session.value = import.meta.env.VITE_REQUIRE_AUTH === '1' ? fetchSession() : ensureDefaultAdminSession()
+  session.value = fetchSession()
   users.value = loadUsers()
   data.value = loadProcurementDashboardData(users.value)
   if (!canTeamView.value) viewMode.value = 'my'

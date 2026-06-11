@@ -86,13 +86,13 @@ async function submit() {
   if (pendingLogin.value) {
     await verifyTwoFactor()
   } else {
-    startLogin()
+    await startLogin()
   }
 }
 
-function startLogin() {
+async function startLogin() {
   try {
-    pendingLogin.value = beginLogin(email.value, password.value)
+    pendingLogin.value = await beginLogin(email.value, password.value)
     twoFactorCode.value = ''
     message.value = ''
   } catch (error) {

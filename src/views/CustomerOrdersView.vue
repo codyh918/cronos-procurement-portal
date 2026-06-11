@@ -129,7 +129,7 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref } from 'vue'
+import { onMounted, onUnmounted, reactive, ref } from 'vue'
 import { ExternalLink, Plus } from '@lucide/vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import { loadProjects } from '../services/localProjects'
@@ -146,11 +146,25 @@ const orders = ref<CustomerOrder[]>(syncCustomerOrdersFromApprovedProjects(loadP
 const form = reactive<CustomerOrderInput>(emptyOrder())
 const message = ref('')
 
+onMounted(() => {
+  window.addEventListener('cronos:customer-orders-changed', refreshOrders)
+  window.addEventListener('cronos:projects-changed', refreshOrders)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('cronos:customer-orders-changed', refreshOrders)
+  window.removeEventListener('cronos:projects-changed', refreshOrders)
+})
+
 function createOrder() {
   const order = createCustomerOrder({ ...form })
-  orders.value = loadCustomerOrders()
+  refreshOrders()
   Object.assign(form, emptyOrder())
   message.value = `${order.orderNumber} created.`
+}
+
+function refreshOrders() {
+  orders.value = syncCustomerOrdersFromApprovedProjects(loadProjects())
 }
 
 function emptyOrder(): CustomerOrderInput {

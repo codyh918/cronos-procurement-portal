@@ -7,11 +7,15 @@ import type {
   Project,
   PublicLookupAuditLog,
 } from '../types'
+import { hydrateLocalCollection, readLocalCollection, saveLocalAndRemoteCollection } from './remoteRecords'
 
 const ORDERS_KEY = 'cronos.customerOrders'
 const AUDIT_KEY = 'cronos.publicLookupAuditLog'
 const RATE_KEY = 'cronos.publicLookupRate'
 const TOKEN_PREFIX = 'cronos_ot_'
+const REMOTE_TYPE = 'customer_orders'
+const REMOTE_KEY = 'all'
+let hydrationStarted = false
 
 export const customerOrderStatuses: CustomerOrderStatus[] = [
   'Pending Procurement',
@@ -33,25 +37,26 @@ export const timelineSteps = ['Order Received', 'Procurement Started', 'Vendor P
 export function loadCustomerOrders(): CustomerOrder[] {
   if (typeof window === 'undefined') return []
 
-  const raw = window.localStorage.getItem(ORDERS_KEY)
-  if (!raw) {
-    return []
-  }
+  hydrateCustomerOrders()
+  const orders = readLocalCollection<CustomerOrder>(ORDERS_KEY).map(normalizeOrder)
+  const cleaned = orders.filter(order => order.id !== 'sample-order-26-077')
+  if (cleaned.length !== orders.length) saveCustomerOrders(cleaned)
+  return cleaned
+}
 
-  try {
-    const orders = (JSON.parse(raw) as CustomerOrder[]).map(normalizeOrder)
-    const cleaned = orders.filter(order => order.id !== 'sample-order-26-077')
-    if (cleaned.length !== orders.length) saveCustomerOrders(cleaned)
-    return cleaned
-  } catch {
-    return []
-  }
+function hydrateCustomerOrders() {
+  if (hydrationStarted || typeof window === 'undefined') return
+  hydrationStarted = true
+  void hydrateLocalCollection<CustomerOrder>(ORDERS_KEY, REMOTE_TYPE, REMOTE_KEY, {
+    eventName: 'cronos:customer-orders-changed',
+    normalize: orders => orders.map(normalizeOrder).filter(order => order.id !== 'sample-order-26-077'),
+  })
 }
 
 export function saveCustomerOrders(orders: CustomerOrder[]) {
   if (typeof window === 'undefined') return
 
-  window.localStorage.setItem(ORDERS_KEY, JSON.stringify(orders.map(normalizeOrder)))
+  saveLocalAndRemoteCollection(ORDERS_KEY, REMOTE_TYPE, REMOTE_KEY, orders.map(normalizeOrder), 'cronos:customer-orders-changed')
 }
 
 export function loadCustomerOrder(id: string) {

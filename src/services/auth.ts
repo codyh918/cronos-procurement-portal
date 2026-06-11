@@ -1,9 +1,13 @@
 import type { AppRole, UserProfile, UserSession } from '../types'
+import { hydrateLocalCollection, readLocalCollection, saveLocalAndRemoteCollection } from './remoteRecords'
 
 const USERS_KEY = 'cronos.users'
 const SESSION_KEY = 'cronos.session'
 const ROLE_PREVIEW_KEY = 'cronos.rolePreview'
-const CURRENT_AUTH_VERSION = 2
+const CURRENT_AUTH_VERSION = 3
+const USERS_REMOTE_TYPE = 'app_users'
+const USERS_REMOTE_KEY = 'all'
+let usersHydration: Promise<UserProfile[]> | null = null
 
 export const appRoles: AppRole[] = ['Admin', 'Procurement Team', 'Accounting', 'Executive']
 
@@ -68,7 +72,8 @@ export function loginUser(email: string, password: string) {
   return session
 }
 
-export function beginLogin(email: string, password: string): PendingLogin {
+export async function beginLogin(email: string, password: string): Promise<PendingLogin> {
+  await hydrateUsers(true)
   const user = findActiveUser(email, password)
   if (!user.twoFactorSecret) {
     const secret = generateTotpSecret()
@@ -81,6 +86,7 @@ export function beginLogin(email: string, password: string): PendingLogin {
 }
 
 export async function completeLogin(userId: string, code: string) {
+  await hydrateUsers(true)
   const users = readStoredUsers()
   const user = users.find(item => item.id === userId)
   if (!user?.active || !user.twoFactorSecret) {
@@ -115,6 +121,7 @@ export function logoutUser() {
 }
 
 export function loadUsers() {
+  void hydrateUsers()
   return readStoredUsers().map(redactPassword)
 }
 
@@ -203,12 +210,24 @@ export function getEffectiveRole(session: UserSession | null = fetchSession()) {
 }
 
 function readStoredUsers() {
-  const users = readJson<UserProfile[]>(USERS_KEY, [])
+  void hydrateUsers()
+  const users = readLocalCollection<UserProfile>(USERS_KEY)
   const normalized = ensureSeededAdmin(users)
   if (JSON.stringify(normalized) !== JSON.stringify(users)) {
     saveUsers(normalized)
   }
   return normalized
+}
+
+function hydrateUsers(force = false) {
+  if (typeof window === 'undefined') return Promise.resolve([] as UserProfile[])
+  if (usersHydration && !force) return usersHydration
+
+  usersHydration = hydrateLocalCollection<UserProfile>(USERS_KEY, USERS_REMOTE_TYPE, USERS_REMOTE_KEY, {
+    eventName: 'cronos:users-changed',
+    normalize: ensureSeededAdmin,
+  })
+  return usersHydration
 }
 
 function findActiveUser(email: string, password: string) {
@@ -220,7 +239,7 @@ function findActiveUser(email: string, password: string) {
 }
 
 function saveUsers(users: UserProfile[]) {
-  window.localStorage.setItem(USERS_KEY, JSON.stringify(users))
+  saveLocalAndRemoteCollection(USERS_KEY, USERS_REMOTE_TYPE, USERS_REMOTE_KEY, users, 'cronos:users-changed')
 }
 
 function readJson<T>(key: string, fallback: T): T {

@@ -209,11 +209,13 @@ onMounted(() => {
   refreshAdminState()
   window.addEventListener('cronos:session-changed', refreshAdminState)
   window.addEventListener('cronos:role-preview-changed', refreshAdminState)
+  window.addEventListener('cronos:users-changed', refreshAdminState)
 })
 
 onUnmounted(() => {
   window.removeEventListener('cronos:session-changed', refreshAdminState)
   window.removeEventListener('cronos:role-preview-changed', refreshAdminState)
+  window.removeEventListener('cronos:users-changed', refreshAdminState)
 })
 
 function refreshAdminState() {
