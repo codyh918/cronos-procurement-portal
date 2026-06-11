@@ -30,7 +30,7 @@ export async function exportCustomerQuotePdf(quote: CustomerQuote, project?: Pro
 
 export async function exportPurchaseOrderPdf(po: PurchaseOrder | ProjectPurchaseOrder, project?: Project) {
   const doc = await createDocument()
-  let y = await drawHeader(doc, 'Vendor Purchase Order')
+  let y = await drawHeader(doc, 'Purchase Order')
   y = drawKeyValue(doc, y, [
     ['PO #', po.poNumber],
     ['Vendor', po.vendor],
@@ -202,7 +202,6 @@ async function drawHeader(doc: JsPdf, title: string) {
   await drawLogo(doc, 40, 16, 120, 46)
   doc.setTextColor(255, 255, 255)
   doc.setFontSize(8)
-  doc.text('SALES & PROCUREMENT SOLUTIONS', 184, 62)
   doc.setFontSize(18)
   doc.text(title, 360, 44)
   doc.setTextColor(7, 27, 73)
@@ -222,7 +221,6 @@ async function drawLandscapeReportHeader(doc: JsPdf, title: string) {
   doc.text(title, 176, 46)
   doc.setFontSize(8)
   doc.setTextColor(82, 97, 121)
-  doc.text('SALES & PROCUREMENT SOLUTIONS', 176, 64)
   doc.setTextColor(6, 22, 61)
 }
 
