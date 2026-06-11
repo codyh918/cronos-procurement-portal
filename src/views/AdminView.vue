@@ -107,13 +107,14 @@
               <th>Title</th>
               <th>Phone</th>
               <th>Status</th>
+              <th>2FA</th>
               <th>Password</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="users.length === 0">
-              <td colspan="8">&nbsp;</td>
+              <td colspan="9">&nbsp;</td>
             </tr>
             <tr v-for="user in users" :key="user.id">
               <td>
@@ -140,6 +141,11 @@
                 </select>
               </td>
               <td>
+                <button class="secondary-action admin-save-button" type="button" @click="resetTwoFactor(user.id)">
+                  {{ user.twoFactorEnabled ? 'Reset 2FA' : 'Setup Pending' }}
+                </button>
+              </td>
+              <td>
                 <input class="cell-input w-44" type="password" placeholder="New password" @blur="savePassword(user.id, inputValue($event), $event)" />
               </td>
               <td>
@@ -162,10 +168,10 @@ import { Copy, KeyRound, Plus, Save } from '@lucide/vue'
 import {
   addUser,
   appRoles,
-  ensureDefaultAdminSession,
   fetchSession,
   getRolePreview,
   loadUsers,
+  resetUserTwoFactor,
   setRolePreview,
   updateUser,
 } from '../services/auth'
@@ -211,7 +217,7 @@ onUnmounted(() => {
 })
 
 function refreshAdminState() {
-  session.value = import.meta.env.VITE_REQUIRE_AUTH === '1' ? fetchSession() : ensureDefaultAdminSession()
+  session.value = fetchSession()
   previewRole.value = getRolePreview()
   users.value = loadUsers()
 }
@@ -257,6 +263,12 @@ function savePassword(userId: string, value: string, event: Event) {
   saveUser(userId, { password: value })
   const target = event.target
   if (target instanceof HTMLInputElement) target.value = ''
+}
+
+function resetTwoFactor(userId: string) {
+  if (!window.confirm('Reset two-factor authentication for this user? They will set up a new authenticator code at their next sign-in.')) return
+  users.value = resetUserTwoFactor(userId)
+  message.value = 'Two-factor authentication reset.'
 }
 
 function generatePassword() {

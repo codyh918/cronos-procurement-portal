@@ -58,15 +58,7 @@ export function fetchSession(): UserSession | null {
 }
 
 export function ensureDefaultAdminSession() {
-  const session = fetchSession()
-  if (session) return session
-
-  const admin = readStoredUsers().find(user => user.email.toLowerCase() === seededAdmin.email)
-  if (!admin) return null
-
-  const adminSession = toSession(admin)
-  setSession(adminSession)
-  return adminSession
+  return fetchSession()
 }
 
 export function loginUser(email: string, password: string) {
