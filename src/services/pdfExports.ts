@@ -3,10 +3,11 @@ import { calculateLineTotals, calculateQuoteSummary, currency } from './calculat
 import { getCheckbookSummary } from './checkbook'
 
 type JsPdf = import('jspdf').jsPDF
+let logoDataUrl: string | null | undefined
 
 export async function exportCustomerQuotePdf(quote: CustomerQuote, project?: Project) {
   const doc = await createDocument()
-  let y = drawHeader(doc, 'Customer Quote')
+  let y = await drawHeader(doc, 'Customer Quote')
   y = drawKeyValue(doc, y, [
     ['Quote #', quote.quoteNumber],
     ['Project', `${quote.projectNumber} - ${quote.projectName}`],
@@ -29,7 +30,7 @@ export async function exportCustomerQuotePdf(quote: CustomerQuote, project?: Pro
 
 export async function exportPurchaseOrderPdf(po: PurchaseOrder | ProjectPurchaseOrder, project?: Project) {
   const doc = await createDocument()
-  let y = drawHeader(doc, 'Vendor Purchase Order')
+  let y = await drawHeader(doc, 'Vendor Purchase Order')
   y = drawKeyValue(doc, y, [
     ['PO #', po.poNumber],
     ['Vendor', po.vendor],
@@ -46,7 +47,7 @@ export async function exportPurchaseOrderPdf(po: PurchaseOrder | ProjectPurchase
 
 export async function exportCustomerTrackingUpdatePdf(po: PurchaseOrder | ProjectPurchaseOrder, project?: Project) {
   const doc = await createDocument()
-  let y = drawHeader(doc, 'Customer Tracking Update')
+  let y = await drawHeader(doc, 'Customer Tracking Update')
   y = drawKeyValue(doc, y, [
     ['PO #', po.poNumber],
     ['Project', project ? `${project.projectNumber} - ${project.projectName}` : 'projectNumber' in po ? `${po.projectNumber} - ${po.projectName}` : ''],
@@ -73,7 +74,7 @@ export async function exportCustomerTrackingUpdatePdf(po: PurchaseOrder | Projec
 export async function exportCheckbookReportPdf(project: Project) {
   const summary = getCheckbookSummary(project)
   const doc = await createDocument()
-  let y = drawHeader(doc, 'Checkbook Financial Report')
+  let y = await drawHeader(doc, 'Checkbook Financial Report')
   y = drawKeyValue(doc, y, [
     ['Project', `${project.projectNumber} - ${project.projectName}`],
     ['Customer', project.customer],
@@ -119,10 +120,7 @@ export async function exportCustomerConsolidatedTrackingReportPdf(project: Proje
     })),
   )
 
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(18)
-  doc.setTextColor(6, 22, 61)
-  doc.text('Consolidated Shipping Tracking Report', 42, 46)
+  await drawLandscapeReportHeader(doc, 'Consolidated Shipping Tracking Report')
   doc.setFontSize(10)
   doc.text(`Project: ${project.projectNumber}`, 42, 70)
   doc.text(`Customer: ${project.customer}`, 42, 86)
@@ -194,20 +192,60 @@ async function createDocument() {
   return new jsPDF({ unit: 'pt', format: 'letter' })
 }
 
-function drawHeader(doc: JsPdf, title: string) {
+async function drawHeader(doc: JsPdf, title: string) {
   doc.setFillColor(6, 22, 61)
   doc.rect(0, 0, 612, 78, 'F')
   doc.setTextColor(255, 255, 255)
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(18)
-  doc.text('CRONOS', 40, 34)
-  doc.setFontSize(9)
-  doc.text('SALES & PROCUREMENT SOLUTIONS', 40, 52)
+  await drawLogo(doc, 38, 16, 112, 42)
+  doc.setFontSize(8)
+  doc.text('SALES & PROCUREMENT SOLUTIONS', 42, 64)
   doc.setFontSize(18)
   doc.text(title, 360, 44)
   doc.setTextColor(7, 27, 73)
   doc.setFontSize(10)
   return 104
+}
+
+async function drawLandscapeReportHeader(doc: JsPdf, title: string) {
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(18)
+  doc.setTextColor(6, 22, 61)
+  await drawLogo(doc, 42, 20, 112, 42)
+  doc.text(title, 176, 46)
+  doc.setFontSize(8)
+  doc.setTextColor(82, 97, 121)
+  doc.text('SALES & PROCUREMENT SOLUTIONS', 44, 72)
+  doc.setTextColor(6, 22, 61)
+}
+
+async function drawLogo(doc: JsPdf, x: number, y: number, width: number, height: number) {
+  const logo = await getLogoDataUrl()
+  if (logo) {
+    doc.addImage(logo, 'JPEG', x, y, width, height, undefined, 'FAST')
+  } else {
+    doc.setFont('helvetica', 'bold')
+    doc.text('CRONOS', x, y + 20)
+  }
+}
+
+async function getLogoDataUrl() {
+  if (logoDataUrl !== undefined) return logoDataUrl
+
+  try {
+    const response = await fetch('/cronos-logo.jpg')
+    const blob = await response.blob()
+    logoDataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onload = () => resolve(String(reader.result))
+      reader.onerror = () => reject(reader.error)
+      reader.readAsDataURL(blob)
+    })
+  } catch {
+    logoDataUrl = null
+  }
+
+  return logoDataUrl
 }
 
 function drawKeyValue(doc: JsPdf, startY: number, rows: string[][]) {
