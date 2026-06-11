@@ -199,7 +199,7 @@ async function drawHeader(doc: JsPdf, title: string) {
   doc.setFont('helvetica', 'bold')
   doc.setFillColor(255, 255, 255)
   doc.roundedRect(34, 12, 132, 54, 4, 4, 'F')
-  await drawLogo(doc, 40, 16, 120, 46)
+  doc.setFillColor(28, 116, 222) doc.circle(62, 38, 16, 'F') doc.setFillColor(255, 255, 255) doc.circle(67, 38, 9, 'F') doc.rect(67, 30, 14, 16, 'F') doc.setFont('helvetica', 'bold') doc.setFontSize(19) doc.setTextColor(6, 22, 61) doc.text('CRONOS', 86, 45)
   doc.setTextColor(255, 255, 255)
   doc.setFontSize(8)
   doc.setFontSize(18)
