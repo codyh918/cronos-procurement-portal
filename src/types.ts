@@ -131,6 +131,7 @@ export type QuoteLine = {
 export type CustomerQuote = {
   id: string
   quoteNumber: string
+  quoteName?: string
   projectId: string
   projectNumber: string
   projectName: string

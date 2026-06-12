@@ -118,6 +118,7 @@ export function createQuoteForProject(
     projectNumber: project.projectNumber,
     projectName: project.projectName,
     customer: project.customer,
+    quoteName: '',
     status: 'Quoted',
     createdAt: new Date().toISOString(),
     expirationDays: options.expirationDays ?? 30,
@@ -181,6 +182,35 @@ export function updateQuoteForProject(
 
   saveProjects(projects)
   return updatedQuote
+}
+
+export function updateQuoteName(projectId: string, quoteId: string, quoteName: string) {
+  const project = loadProject(projectId)
+  if (!project) {
+    throw new Error('Project not found.')
+  }
+
+  const quotes = (project.quotes ?? []).map(quote =>
+    quote.id === quoteId
+      ? {
+          ...quote,
+          quoteName: quoteName.trim(),
+        }
+      : quote,
+  )
+
+  if (!quotes.some(quote => quote.id === quoteId)) {
+    throw new Error('Quote not found.')
+  }
+
+  const updatedProject = normalizeProject({
+    ...project,
+    quotes,
+    quoteLines: quotes.flatMap(quote => quote.lines),
+  })
+
+  saveProjects(loadProjects().map(current => (current.id === project.id ? updatedProject : current)))
+  return updatedProject
 }
 
 export function setQuoteApprovalStatus(projectId: string, quoteId: string, approved: boolean) {
@@ -565,7 +595,10 @@ function normalizeProject(project: Project): Project {
     projectType: project.projectType ?? 'Design & Install',
     checkbookStartingBalance: Number(project.checkbookStartingBalance || 0),
     assignedUserIds: Array.isArray(project.assignedUserIds) ? project.assignedUserIds : [],
-    quotes: project.quotes ?? [],
+    quotes: (project.quotes ?? []).map(quote => ({
+      ...quote,
+      quoteName: quote.quoteName ?? '',
+    })),
     quoteLines: project.quoteLines ?? [],
     purchaseOrders: project.purchaseOrders ?? [],
     inventory: project.inventory ?? [],

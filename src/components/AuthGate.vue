@@ -3,6 +3,7 @@
 
   <div v-else class="auth-gate-page">
     <form class="auth-card" @submit.prevent="submit">
+      <img class="auth-logo" src="/cronos-logo.jpg" alt="Cronos" />
       <div class="auth-heading">
         <span>
           <LockKeyhole :size="22" />

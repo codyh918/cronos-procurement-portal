@@ -908,7 +908,38 @@ table {
 }
 
 .vendor-record {
-  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: start;
+  gap: 8px;
+}
+
+.vendor-alert-main {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.vendor-alert-chip,
+.vendor-alert-age {
+  align-self: start;
+  border-radius: 999px;
+  padding: 3px 7px;
+  font-size: 10px;
+  font-weight: 900;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.vendor-alert-chip {
+  border: 1px solid #fecdd3;
+  background: #fff1f2;
+  color: #be123c;
+}
+
+.vendor-alert-age {
+  border: 1px solid #dbeafe;
+  background: #eff6ff;
+  color: #155fdb;
 }
 
 .compact-record p,
@@ -927,6 +958,11 @@ table {
   font-size: 12px;
   font-style: normal;
   font-weight: 500;
+}
+
+.vendor-record p span {
+  color: var(--app-heading);
+  font-weight: 900;
 }
 
 .risk-table {
@@ -2670,6 +2706,46 @@ table {
 
 .mini-action.link {
   color: var(--app-link);
+}
+
+.quote-name-display,
+.quote-name-editor {
+  display: flex;
+  min-width: 240px;
+  align-items: center;
+  gap: 8px;
+}
+
+.quote-name-display {
+  justify-content: space-between;
+}
+
+.quote-name-display span {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--app-heading);
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quote-name-editor {
+  flex-wrap: wrap;
+}
+
+.quote-name-editor .cell-input {
+  min-width: 180px;
+}
+
+.project-po-panel {
+  margin-top: 18px;
+  border-color: #bfdbfe;
+  background: #f8fbff;
+}
+
+.compact-po-info {
+  margin-top: 18px;
+  margin-bottom: 18px;
 }
 
 .save-message {
@@ -4591,6 +4667,42 @@ table {
   overflow-x: auto;
 }
 
+.top-scroll-frame {
+  display: grid;
+  gap: 0;
+}
+
+.table-scroll-top {
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-bottom: 1px solid var(--app-border-soft);
+  background: #f9fbfd;
+}
+
+.quote-scroll-spacer {
+  width: 1480px;
+  height: 12px;
+}
+
+.quote-items-table {
+  min-width: 1480px;
+}
+
+.inline-link-button {
+  display: inline;
+  background: transparent;
+  color: var(--app-link);
+  padding: 0;
+  font-weight: 800;
+  text-align: left;
+}
+
+.inline-link-button:hover {
+  text-decoration: underline;
+}
+
 .editable-equipment-table small {
   display: block;
   margin-top: 3px;
@@ -4660,6 +4772,13 @@ table {
   background: #ffffff;
   padding: 28px;
   box-shadow: 0 18px 45px rgba(15, 23, 42, 0.12);
+}
+
+.auth-logo {
+  display: block;
+  width: 108px;
+  height: auto;
+  margin: 0 auto 20px;
 }
 
 .auth-heading {

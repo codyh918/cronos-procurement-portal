@@ -26,6 +26,7 @@ export async function exportCustomerQuotePdf(quote: CustomerQuote, project?: Pro
 
   drawMetadataBlock(doc, 386, 42, 170, [
     ['Quote Number:', quote.quoteNumber],
+    ['Quote Name:', quote.quoteName || '-'],
     ['Date:', formatPdfDate(quote.createdAt || new Date().toISOString())],
     ['Expires:', getQuoteExpirationDate(quote)],
     ['Project:', quote.projectNumber],
@@ -322,8 +323,6 @@ export async function exportCustomerTrackingUpdatePdf(po: PurchaseOrder | Projec
     ['Project', project ? `${project.projectNumber} - ${project.projectName}` : 'projectNumber' in po ? `${po.projectNumber} - ${po.projectName}` : ''],
     ['Vendor', po.vendor],
     ['Status', po.status],
-    ['Carrier', po.carrier ?? ''],
-    ['Tracking', po.trackingNumber ?? ''],
     ['Estimated Ship', po.estimatedShipDate ?? ''],
     ['Estimated Delivery', po.expectedDeliveryDate ?? ''],
   ])
@@ -352,18 +351,16 @@ export async function exportCheckbookReportPdf(project: Project) {
     ['Cost to Customer', currency(summary.customerCost)],
     ['Remaining Balance', currency(summary.remainingBalance)],
     ['Cronos Cost', currency(summary.ourCost)],
-    ['Gross Profit', currency(summary.grossProfit)],
   ])
 
-  y = drawTableHeader(doc, y + 16, ['PO #', 'Vendor', 'Description', 'Cost', 'Customer', 'Profit'])
+  y = drawTableHeader(doc, y + 16, ['PO #', 'Vendor', 'Description', 'Cost', 'Customer'])
   summary.lines.forEach(line => {
     y = ensurePage(doc, y)
     doc.text(line.poNumber, 40, y)
     doc.text(line.vendor || '-', 106, y)
-    doc.text(doc.splitTextToSize(line.description || '-', 170), 174, y)
-    doc.text(currency(line.ourCost), 362, y)
-    doc.text(currency(line.customerCost), 434, y)
-    doc.text(currency(line.grossProfit), 520, y)
+    doc.text(doc.splitTextToSize(line.description || '-', 220), 174, y)
+    doc.text(currency(line.ourCost), 420, y)
+    doc.text(currency(line.customerCost), 500, y)
     y += 32
   })
 
@@ -386,6 +383,7 @@ export async function exportCustomerConsolidatedTrackingReportPdf(project: Proje
       carrier: line.carrier || po.carrier || '',
       trackingNumber: line.trackingNumber || po.trackingNumber || '',
       estimatedShipDate: line.estimatedShipDate || po.estimatedShipDate || '',
+      deliveryDate: line.receivedDate || po.expectedDeliveryDate || '',
       status: line.status,
     })),
   )
@@ -424,8 +422,8 @@ export async function exportCustomerConsolidatedTrackingReportPdf(project: Proje
     const descriptionLines = doc.splitTextToSize(row.description || '-', 134).slice(0, 3)
     const partLines = doc.splitTextToSize(row.partNumber || '-', 82).slice(0, 2)
     const trackingLines = doc.splitTextToSize(row.trackingNumber || 'Pending', 78).slice(0, 2)
-    const statusLines = doc.splitTextToSize(getTrackingLineStatus(row), 46).slice(0, 2)
-    const rowHeight = Math.max(42, 18 + Math.max(descriptionLines.length, partLines.length, trackingLines.length, statusLines.length) * 10)
+    const deliveryLines = doc.splitTextToSize(formatMaybeDate(row.deliveryDate), 56).slice(0, 2)
+    const rowHeight = Math.max(42, 18 + Math.max(descriptionLines.length, partLines.length, trackingLines.length, deliveryLines.length) * 10)
 
     if (y + rowHeight > 548) {
       drawTrackingReportFooter(doc)
@@ -449,8 +447,8 @@ export async function exportCustomerConsolidatedTrackingReportPdf(project: Proje
     doc.text(String(row.quantity), 532, y + 17, { align: 'center' })
     doc.text(doc.splitTextToSize(row.carrier || 'Pending', 52), 552, y + 17)
     doc.text(trackingLines, 612, y + 17)
-    doc.text(formatMaybeDate(row.estimatedShipDate), 704, y + 17, { align: 'right' })
-    doc.text(statusLines, 718, y + 17)
+    doc.text(formatMaybeDate(row.estimatedShipDate), 686, y + 17, { align: 'right' })
+    doc.text(deliveryLines, 698, y + 17)
     y += rowHeight
   })
 
@@ -703,8 +701,8 @@ function drawTrackingReportHeader(doc: JsPdf, y: number) {
   doc.text('Qty', 532, y + 17, { align: 'center' })
   doc.text('Carrier', 552, y + 17)
   doc.text('Tracking', 612, y + 17)
-  doc.text('ESD', 704, y + 17, { align: 'right' })
-  doc.text('Status', 718, y + 17)
+  doc.text('ESD', 686, y + 17, { align: 'right' })
+  doc.text('Delivery', 698, y + 17)
   return y + 30
 }
 
@@ -714,18 +712,11 @@ function drawTrackingReportFooter(doc: JsPdf) {
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(7)
   doc.setTextColor(82, 97, 121)
-  doc.text('Customer-facing logistics report. Pricing and Cronos internal cost information intentionally omitted.', 42, 574)
   doc.text('CRONOS LLC', 762, 574, { align: 'right' })
 }
 
 function formatMaybeDate(value: string | undefined) {
   return value ? new Intl.DateTimeFormat('en-US').format(new Date(value)) : 'Pending'
-}
-
-function getTrackingLineStatus(row: { trackingNumber: string; estimatedShipDate: string }) {
-  if (row.trackingNumber) return 'Shipped'
-  if (row.estimatedShipDate) return 'Pending ship'
-  return 'Pending'
 }
 
 function sanitizeFileName(value: string) {

@@ -50,14 +50,6 @@
           :icon="PackageCheck"
           tone="success"
         />
-        <DetailStat
-          href="#project-tasks"
-          label="Open Tasks"
-          :value="projectTasks.length"
-          detail="Items needing attention"
-          :icon="ListChecks"
-          :tone="projectTasks.length ? 'danger' : 'success'"
-        />
       </div>
 
       <div class="summary-tile-grid">
@@ -70,7 +62,6 @@
         <DashboardAction href="#project-quotes" :icon="FileText" label="Quotes" description="View, edit, approve, export" />
         <DashboardAction href="#project-pos" :icon="ReceiptText" label="Purchase Orders" description="Vendor POs and PDF exports" />
         <DashboardAction href="#project-documents" :icon="FileSpreadsheet" label="Financial Docs" description="Reports and customer files" />
-        <DashboardAction href="#project-tasks" :icon="ClipboardList" label="Tasks" description="Open work by priority" />
         <DashboardAction href="#project-equipment" :icon="PackageCheck" label="Equipment" description="Parts, costs, and vendor status" />
         <DashboardAction href="/purchase-orders" :icon="Truck" label="Tracking" description="Shipping dates and carriers" />
       </div>
@@ -112,7 +103,7 @@
             <tbody>
               <tr v-for="line in missingTrackingLines" :key="`${line.poId}-${line.id}`">
                 <td class="nowrap">
-                  <RouterLink class="table-link" :to="`/purchase-orders/${line.poId}`">{{ line.poNumber }}</RouterLink>
+                  <button class="table-link inline-link-button" type="button" @click="openProjectPo(line.poId)">{{ line.poNumber }}</button>
                 </td>
                 <td>{{ line.vendor }}</td>
                 <td>
@@ -146,20 +137,6 @@
       <div v-else class="success-empty">
         <CheckCircle2 :size="28" />
         <p>All open project lines have tracking entered.</p>
-      </div>
-    </section>
-
-    <section class="detail-panel" id="project-tasks">
-      <PanelHeading
-        title="Project Tasks"
-        description="Open items that need action before this project can move forward."
-        :pill="projectTasks.length ? `${projectTasks.length} open` : 'All clear'"
-        :tone="projectTasks.length ? 'danger' : 'success'"
-      />
-      <DataTable v-if="projectTasks.length" :columns="['Priority', 'Task', 'Area', 'Action']" :rows="projectTaskRows" />
-      <div v-else class="success-empty">
-        <CheckCircle2 :size="28" />
-        <p>No open project tasks detected.</p>
       </div>
     </section>
 
@@ -250,11 +227,10 @@
         <InfoTile label="Cost to Customer" :value="currency(checkbookSummary.customerCost)" />
         <InfoTile label="Remaining Balance" :value="currency(checkbookSummary.remainingBalance)" />
         <InfoTile label="Cronos Cost" :value="currency(checkbookSummary.ourCost)" />
-        <InfoTile label="Gross Profit" :value="currency(checkbookSummary.grossProfit)" />
       </div>
       <DataTable
         v-if="checkbookSummary.lines.length"
-        :columns="['PO #', 'Quote #', 'Vendor', 'Description', 'Requestor', 'Date Issued', 'Our Cost', 'Customer Cost', 'Profit']"
+        :columns="['PO #', 'Quote #', 'Vendor', 'Description', 'Requestor', 'Date Issued', 'Our Cost', 'Customer Cost']"
         :rows="checkbookRows"
       />
       <section v-else class="large-empty-card compact-empty">
@@ -267,12 +243,16 @@
         <h2>Project Quotes</h2>
         <RouterLink :to="`/projects/${project.id}/quotes/new`">Add Quote</RouterLink>
       </div>
-      <div v-if="project.quotes.length" class="data-table-frame">
-        <div class="table-scroll">
-          <table class="data-table">
+      <div v-if="project.quotes.length" class="data-table-frame top-scroll-frame">
+        <div class="table-scroll-top" aria-hidden="true" @scroll="syncQuoteScroll('top', $event)">
+          <div class="quote-scroll-spacer" />
+        </div>
+        <div class="table-scroll" @scroll="syncQuoteScroll('bottom', $event)">
+          <table ref="quoteTable" class="data-table quote-items-table">
             <thead>
               <tr>
                 <th>Quote #</th>
+                <th>Quote Name</th>
                 <th>Status</th>
                 <th>Lines</th>
                 <th>Expires</th>
@@ -291,6 +271,20 @@
                   <RouterLink class="table-link" :to="`/projects/${project.id}/quotes/${quote.id}/edit`">
                     {{ quote.quoteNumber }}
                   </RouterLink>
+                </td>
+                <td>
+                  <div v-if="editingQuoteId === quote.id" class="quote-name-editor">
+                    <input v-model="quoteNameDraft" class="cell-input w-52" placeholder="Quote name" />
+                    <button class="mini-action success" type="button" @click="saveQuoteName(quote.id)">Save</button>
+                    <button class="mini-action" type="button" @click="cancelQuoteNameEdit">Cancel</button>
+                  </div>
+                  <div v-else class="quote-name-display">
+                    <span>{{ quote.quoteName || 'Untitled quote' }}</span>
+                    <button class="mini-action" type="button" @click="startQuoteNameEdit(quote)">
+                      <Pencil :size="14" />
+                      <span>Edit</span>
+                    </button>
+                  </div>
                 </td>
                 <td><StatusBadge :status="quote.status" /></td>
                 <td>{{ quote.lines.length }}</td>
@@ -380,7 +374,7 @@
             <tbody>
               <tr v-for="po in project.purchaseOrders" :key="po.id">
                 <td class="nowrap">
-                  <RouterLink class="table-link" :to="`/purchase-orders/${po.id}`">{{ po.poNumber }}</RouterLink>
+                  <button class="table-link inline-link-button" type="button" @click="openProjectPo(po.id)">{{ po.poNumber }}</button>
                 </td>
                 <td>{{ po.vendor }}</td>
                 <td><StatusBadge :status="po.status" /></td>
@@ -401,6 +395,61 @@
       <section v-else class="large-empty-card compact-empty">
         <p>Approve a customer quote to generate vendor purchase orders.</p>
       </section>
+    </section>
+
+    <section v-if="selectedProjectPo" class="detail-panel project-po-panel">
+      <PanelHeading
+        :title="selectedProjectPo.poNumber"
+        :description="`${selectedProjectPo.vendor} purchase order for ${project.projectNumber}`"
+        :pill="selectedProjectPo.status"
+        tone="warning"
+      >
+        <div class="page-actions">
+          <button class="secondary-action icon-action" type="button" @click="exportPoPdf(selectedProjectPo)">
+            <Download :size="17" />
+            <span>Download PO PDF</span>
+          </button>
+          <button class="secondary-action" type="button" @click="closeProjectPo">Close</button>
+        </div>
+      </PanelHeading>
+      <div class="info-tile-grid compact-po-info">
+        <InfoTile label="Vendor" :value="selectedProjectPo.vendor" />
+        <InfoTile label="Date Issued" :value="selectedProjectPo.dateIssued || 'Pending'" />
+        <InfoTile label="Total Cost" :value="currency(selectedProjectPo.totalCost)" />
+        <InfoTile label="Lines" :value="String(selectedProjectPo.lines.length)" />
+      </div>
+      <div class="data-table-frame">
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>CLIN</th>
+                <th>Part</th>
+                <th>Description</th>
+                <th>Qty</th>
+                <th>Status</th>
+                <th>Vendor Order</th>
+                <th>Carrier</th>
+                <th>Tracking</th>
+                <th>ESD</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="line in selectedProjectPo.lines" :key="line.id">
+                <td>{{ line.clin }}</td>
+                <td>{{ line.partNumber }}</td>
+                <td>{{ line.description }}</td>
+                <td>{{ line.quantityOrdered }}</td>
+                <td>{{ line.status }}</td>
+                <td>{{ line.vendorOrderNumber || 'Pending' }}</td>
+                <td>{{ line.carrier || selectedProjectPo.carrier || 'Pending' }}</td>
+                <td>{{ line.trackingNumber || selectedProjectPo.trackingNumber || 'Pending' }}</td>
+                <td>{{ formatDateOrPending(line.estimatedShipDate || selectedProjectPo.estimatedShipDate) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </section>
 
     <section id="project-equipment" class="linked-section">
@@ -430,7 +479,7 @@
             <tbody>
               <tr v-for="line in purchasedEquipmentLines" :key="`${line.poId}-${line.id}`">
                 <td class="nowrap">
-                  <RouterLink class="table-link" :to="`/purchase-orders/${line.poId}`">{{ line.poNumber }}</RouterLink>
+                  <button class="table-link inline-link-button" type="button" @click="openProjectPo(line.poId)">{{ line.poNumber }}</button>
                 </td>
                 <td>{{ line.vendor }}</td>
                 <td>{{ line.clin }}</td>
@@ -507,11 +556,9 @@ import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   CheckCircle2,
-  ClipboardList,
   Download,
   FileSpreadsheet,
   FileText,
-  ListChecks,
   PackageCheck,
   PackagePlus,
   Pencil,
@@ -537,6 +584,7 @@ import {
   loadProject,
   setQuoteApprovalStatus,
   updatePurchaseOrderLineTracking,
+  updateQuoteName,
 } from '../services/localProjects'
 import { exportCheckbookReportPdf, exportCustomerConsolidatedTrackingReportPdf, exportCustomerQuotePdf as downloadCustomerQuotePdf, exportPurchaseOrderPdf as downloadPurchaseOrderPdf } from '../services/pdfExports'
 import { parseTrackingImportFile } from '../services/trackingImport'
@@ -557,6 +605,11 @@ const users = ref(loadUsers())
 const importMessage = ref('')
 const checkbookFileInput = ref<HTMLInputElement | null>(null)
 const trackingFileInput = ref<HTMLInputElement | null>(null)
+const quoteTable = ref<HTMLTableElement | null>(null)
+const editingQuoteId = ref('')
+const quoteNameDraft = ref('')
+const selectedProjectPoId = ref('')
+let syncingQuoteScroll = false
 const trackingStatusOptions: Status[] = ['Ordered', 'Backordered', 'Shipped', 'Delivered', 'Cancelled']
 
 onMounted(() => {
@@ -632,26 +685,13 @@ const trackingUpdatedCount = computed(
   () => purchasedEquipmentLines.value.filter(line => line.trackingNumber).length,
 )
 
-const projectTasks = computed(() =>
-  buildProjectTasks(),
-)
-
-const projectTaskRows = computed(() =>
-  projectTasks.value.map(task => [
-    task.priority,
-    `${task.title} ${task.description}`,
-    task.area,
-    { type: 'link' as const, label: task.action, to: task.href, className: 'table-link' },
-  ]),
-)
-
 const checkbookSummary = computed(() =>
   project.value?.projectType === 'Checkbook' ? getCheckbookSummary(project.value) : undefined,
 )
 
 const checkbookRows = computed(() =>
   (checkbookSummary.value?.lines ?? []).map(line => [
-    { type: 'link' as const, label: line.poNumber, to: `/purchase-orders/${line.poId}`, className: 'table-link' },
+    line.poNumber,
     line.quoteNumber,
     line.vendor,
     line.description || '-',
@@ -659,135 +699,12 @@ const checkbookRows = computed(() =>
     line.dateIssued,
     currency(line.ourCost),
     currency(line.customerCost),
-    currency(line.grossProfit),
   ]),
 )
 
-function buildProjectTasks() {
-  const currentProject = project.value
-  if (!currentProject) return []
-
-  const tasks: Array<{
-    id: string
-    priority: string
-    title: string
-    description: string
-    area: string
-    action: string
-    href: string
-  }> = []
-
-  if (!currentProject.quotes.length) {
-    tasks.push(createTask(
-      'quote-needed',
-      'High',
-      'Create the first project quote',
-      'No customer quote has been created for this project.',
-      'Quotes',
-      'Add Quote',
-      `/projects/${currentProject.id}/quotes/new`,
-    ))
-  }
-
-  currentProject.quotes.forEach(quote => {
-    if (quote.status !== 'Customer Approved') {
-      tasks.push(createTask(
-        `quote-approval-${quote.id}`,
-        'High',
-        `Approve or revise ${quote.quoteNumber}`,
-        'Quote has not been marked customer approved.',
-        'Quotes',
-        'Review Quote',
-        '#project-quotes',
-      ))
-    }
-
-    if (quote.status === 'Customer Approved' && !currentProject.purchaseOrders.some(po => po.quoteId === quote.id)) {
-      tasks.push(createTask(
-        `po-generate-${quote.id}`,
-        'High',
-        `Generate POs for ${quote.quoteNumber}`,
-        'Approved quote does not have vendor purchase orders yet.',
-        'Purchase Orders',
-        'Generate POs',
-        '#project-quotes',
-      ))
-    }
-  })
-
-  currentProject.purchaseOrders.forEach(po => {
-    if (po.status === 'PO Generated') {
-      tasks.push(createTask(
-        `po-send-${po.id}`,
-        'High',
-        `Send ${po.poNumber} to ${po.vendor}`,
-        'PO has been generated but has not been marked issued/sent.',
-        'Purchase Orders',
-        'Open PO',
-        `/purchase-orders/${po.id}`,
-      ))
-    }
-
-    if (!po.estimatedShipDate && !po.expectedDeliveryDate) {
-      tasks.push(createTask(
-        `ship-date-${po.id}`,
-        'Medium',
-        `Add shipping dates for ${po.poNumber}`,
-        'Estimated ship date or ETA is missing.',
-        'Tracking',
-        'Update Grid',
-        '#project-equipment',
-      ))
-    }
-
-    if (!po.trackingNumber) {
-      tasks.push(createTask(
-        `tracking-${po.id}`,
-        'Medium',
-        `Add tracking for ${po.poNumber}`,
-        'Carrier tracking has not been entered.',
-        'Tracking',
-        'Update Grid',
-        '#project-equipment',
-      ))
-    }
-
-  })
-
-  if (checkbookSummary.value && checkbookSummary.value.remainingBalance < 0) {
-    tasks.push(createTask(
-      'checkbook-overrun',
-      'High',
-      'Checkbook balance is overdrawn',
-      'Customer-facing PO cost exceeds the starting balance.',
-      'Financial Docs',
-      'Review Financials',
-      '#project-documents',
-    ))
-  }
-
-  return tasks
-}
-
-function createTask(
-  id: string,
-  priority: string,
-  title: string,
-  description: string,
-  area: string,
-  action: string,
-  href: string,
-) {
-  return {
-    id,
-    priority,
-    title,
-    description,
-    area,
-    action,
-    href,
-  }
-}
+const selectedProjectPo = computed(() =>
+  project.value?.purchaseOrders.find(po => po.id === selectedProjectPoId.value),
+)
 
 function quoteTotals(quote: CustomerQuote) {
   return calculateQuoteSummary(quote.lines, quote.contractFeeEnabled, quote.shippingCost ?? 0)
@@ -805,6 +722,46 @@ function generatePurchaseOrders(quoteId: string) {
 
 function updateLineTracking(poId: string, lineId: string, updates: Parameters<typeof updatePurchaseOrderLineTracking>[3]) {
   project.value = updatePurchaseOrderLineTracking(String(route.params.id), poId, lineId, updates)
+}
+
+function openProjectPo(poId: string) {
+  selectedProjectPoId.value = poId
+  window.history.replaceState(null, '', `#project-po-${poId}`)
+}
+
+function closeProjectPo() {
+  selectedProjectPoId.value = ''
+  window.history.replaceState(null, '', '#project-pos')
+}
+
+function startQuoteNameEdit(quote: CustomerQuote) {
+  editingQuoteId.value = quote.id
+  quoteNameDraft.value = quote.quoteName || ''
+}
+
+function cancelQuoteNameEdit() {
+  editingQuoteId.value = ''
+  quoteNameDraft.value = ''
+}
+
+function saveQuoteName(quoteId: string) {
+  project.value = updateQuoteName(String(route.params.id), quoteId, quoteNameDraft.value)
+  cancelQuoteNameEdit()
+}
+
+function syncQuoteScroll(source: 'top' | 'bottom', event: Event) {
+  if (syncingQuoteScroll) return
+  const top = event.currentTarget as HTMLDivElement
+  const bottom = top.parentElement?.querySelector<HTMLDivElement>('.table-scroll')
+  const topScroller = top.parentElement?.querySelector<HTMLDivElement>('.table-scroll-top')
+  const target = source === 'top' ? bottom : topScroller
+  if (!target) return
+
+  syncingQuoteScroll = true
+  target.scrollLeft = top.scrollLeft
+  window.requestAnimationFrame(() => {
+    syncingQuoteScroll = false
+  })
 }
 
 async function exportQuotePdf(quote: CustomerQuote) {

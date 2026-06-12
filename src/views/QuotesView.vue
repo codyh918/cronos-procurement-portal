@@ -49,8 +49,9 @@
               <tr v-for="quote in filteredQuotes" :key="quote.id">
                 <td class="nowrap">
                   <RouterLink class="table-link" :to="`/projects/${quote.projectId}/quotes/${quote.id}/edit`">
-                    {{ quote.quoteNumber }}
+                    {{ quote.quoteName || quote.quoteNumber }}
                   </RouterLink>
+                  <small>{{ quote.quoteNumber }}</small>
                 </td>
                 <td class="nowrap">
                   <RouterLink class="table-link project-cell-link" :to="`/projects/${quote.projectId}`">

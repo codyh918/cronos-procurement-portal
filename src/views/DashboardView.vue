@@ -2,7 +2,6 @@
   <div class="procurement-dashboard">
     <header class="dashboard-header procurement-command-header">
       <div>
-        <p class="dashboard-kicker">Atlas Procurement</p>
         <h1>Procurement Dashboard</h1>
         <p>Action queue for tasks, due-outs, vendor follow-ups, material risks, shipments, and alerts.</p>
       </div>
@@ -146,14 +145,16 @@
           <DashboardPanel title="Vendor Updates Needed" :meta="`${visibleVendorUpdates.length} flags`">
             <div v-if="visibleVendorUpdates.length" class="compact-record-list">
               <RouterLink v-for="update in visibleVendorUpdates" :key="update.id" :to="update.relatedHref" class="compact-record vendor-record">
-                <div>
+                <div class="vendor-alert-main">
                   <strong>{{ update.vendor }}</strong>
-                  <small>{{ update.poNumber }} - {{ update.projectNumber }}</small>
+                  <small>PO {{ update.poNumber }} - {{ update.projectNumber }}</small>
                 </div>
-                <Badge :label="update.issueType" tone="danger" />
-                <span>{{ formatShortDate(update.lastUpdateDate) }}</span>
-                <em>{{ update.daysSinceUpdate }} days</em>
-                <p>{{ update.nextAction }}</p>
+                <span class="vendor-alert-chip">{{ update.issueType }}</span>
+                <span class="vendor-alert-age">{{ update.daysSinceUpdate }}d</span>
+                <p>
+                  <span>Action:</span>
+                  {{ update.nextAction }}
+                </p>
               </RouterLink>
             </div>
             <EmptyState v-else title="Vendors are current" detail="No missing ETA, tracking, response, or recovery-date flags." />
