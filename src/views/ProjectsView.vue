@@ -39,16 +39,6 @@
                     <Pencil :size="14" />
                     <span>Edit</span>
                   </RouterLink>
-                  <button
-                    v-if="isAdmin"
-                    class="table-mini-button danger"
-                    type="button"
-                    :title="`Delete ${project.projectNumber}`"
-                    @click="deleteSelectedProject(project)"
-                  >
-                    <Trash2 :size="14" />
-                    <span>Delete</span>
-                  </button>
                 </div>
               </td>
             </tr>
@@ -160,14 +150,14 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { Boxes, Pencil, Plus, ShoppingCart, Trash2, Truck } from '@lucide/vue'
+import { Boxes, Pencil, Plus, ShoppingCart, Truck } from '@lucide/vue'
 import DashboardMetric from '../components/DashboardMetric.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import { calculateQuoteSummary, currency } from '../services/calculations'
 import { getCheckbookSummary } from '../services/checkbook'
 import { formatDisplayDate } from '../services/dateFormat'
-import { fetchSession, loadUsers } from '../services/auth'
-import { deleteProject, loadProjects } from '../services/localProjects'
+import { loadUsers } from '../services/auth'
+import { loadProjects } from '../services/localProjects'
 import type { Metric, Project, PurchaseOrderLine, Status } from '../types'
 
 type PurchasedEquipmentLine = PurchaseOrderLine & {
@@ -184,17 +174,13 @@ type PurchasedEquipmentLine = PurchaseOrderLine & {
 
 const equipmentSearch = ref('')
 const projects = ref<Project[]>(loadProjects())
-const isAdmin = ref(false)
 const users = ref(loadUsers())
 
 onMounted(() => {
-  refreshSession()
   window.addEventListener('cronos:projects-changed', refreshProjects)
-  window.addEventListener('cronos:session-changed', refreshSession)
 })
 onUnmounted(() => {
   window.removeEventListener('cronos:projects-changed', refreshProjects)
-  window.removeEventListener('cronos:session-changed', refreshSession)
 })
 
 const projectColumns = [
@@ -277,25 +263,9 @@ function refreshProjects() {
   users.value = loadUsers()
 }
 
-function refreshSession() {
-  isAdmin.value = fetchSession()?.role === 'Admin'
-  users.value = loadUsers()
-}
-
 function assignedUserNames(project: Project) {
   const ids = new Set(project.assignedUserIds ?? [])
   return users.value.filter(user => ids.has(user.id)).map(user => user.name)
-}
-
-function deleteSelectedProject(project: Project) {
-  const confirmed = window.confirm(
-    `Delete project ${project.projectNumber}?\n\nThis removes the project, quotes, purchase orders, and project history for every user.`,
-  )
-
-  if (!confirmed) return
-
-  deleteProject(project.id)
-  refreshProjects()
 }
 
 function projectQuoteTotals(project: Project) {

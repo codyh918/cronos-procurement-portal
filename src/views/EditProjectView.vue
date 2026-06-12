@@ -109,6 +109,17 @@
         </button>
       </div>
     </form>
+
+    <section v-if="isAdmin" class="danger-zone project-delete-zone">
+      <div>
+        <h2>Delete Project</h2>
+        <p>Remove this project, including its quotes, purchase orders, and project history for every user.</p>
+      </div>
+      <button class="danger-action" type="button" @click="deleteCurrentProject">
+        <Trash2 :size="17" />
+        <span>Delete Project</span>
+      </button>
+    </section>
   </div>
 
   <div v-else-if="loaded" class="not-found-page">
@@ -118,18 +129,19 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { Save } from '@lucide/vue'
+import { Save, Trash2 } from '@lucide/vue'
 import FormField from '../components/FormField.vue'
-import { loadUsers } from '../services/auth'
-import { loadProject, updateProjectFromInput } from '../services/localProjects'
+import { fetchSession, loadUsers } from '../services/auth'
+import { deleteProject, loadProject, updateProjectFromInput } from '../services/localProjects'
 import type { Project, ProjectFormInput, Status } from '../types'
 
 const route = useRoute()
 const router = useRouter()
 const project = ref<Project>()
 const loaded = ref(false)
+const isAdmin = ref(false)
 
 const statuses: Status[] = [
   'Quoted',
@@ -170,10 +182,16 @@ const form = reactive<ProjectFormInput>({
 const assignableUsers = computed(() => loadUsers().filter(user => user.active))
 
 onMounted(() => {
+  refreshSession()
+  window.addEventListener('cronos:session-changed', refreshSession)
   const loadedProject = loadProject(String(route.params.id))
   project.value = loadedProject
   if (loadedProject) populateForm(loadedProject)
   loaded.value = true
+})
+
+onUnmounted(() => {
+  window.removeEventListener('cronos:session-changed', refreshSession)
 })
 
 function populateForm(loadedProject: Project) {
@@ -218,6 +236,23 @@ function handleSubmit() {
 
   updateProjectFromInput(project.value.id, input)
   router.push(`/projects/${project.value.id}`)
+}
+
+function refreshSession() {
+  isAdmin.value = fetchSession()?.role === 'Admin'
+}
+
+function deleteCurrentProject() {
+  if (!project.value || !isAdmin.value) return
+
+  const confirmed = window.confirm(
+    `Delete project ${project.value.projectNumber}?\n\nThis removes the project, quotes, purchase orders, and project history for every user.`,
+  )
+
+  if (!confirmed) return
+
+  deleteProject(project.value.id)
+  router.push('/projects')
 }
 
 function normalizeForm(): ProjectFormInput {

@@ -2758,6 +2758,50 @@ table {
   font-weight: 800;
 }
 
+.danger-zone {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  margin-top: 24px;
+  border: 1px solid #fecdd3;
+  border-radius: 8px;
+  background: #fff7f7;
+  padding: 18px;
+}
+
+.danger-zone h2 {
+  margin: 0;
+  color: #991b1b;
+  font-size: 16px;
+  font-weight: 800;
+}
+
+.danger-zone p {
+  margin: 4px 0 0;
+  color: #7f1d1d;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.danger-action {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #fca5a5;
+  border-radius: 6px;
+  background: #dc2626;
+  color: #ffffff;
+  padding: 10px 14px;
+  font-size: 13px;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.danger-action:hover {
+  background: #b91c1c;
+}
+
 .customer-order-card {
   min-width: 0;
   border: 1px solid var(--app-border);

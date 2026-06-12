@@ -226,11 +226,10 @@
         <InfoTile label="Starting Balance" :value="currency(checkbookSummary.startingBalance)" />
         <InfoTile label="Cost to Customer" :value="currency(checkbookSummary.customerCost)" />
         <InfoTile label="Remaining Balance" :value="currency(checkbookSummary.remainingBalance)" />
-        <InfoTile label="Cronos Cost" :value="currency(checkbookSummary.ourCost)" />
       </div>
       <DataTable
         v-if="checkbookSummary.lines.length"
-        :columns="['PO #', 'Quote #', 'Vendor', 'Description', 'Requestor', 'Date Issued', 'Our Cost', 'Customer Cost']"
+        :columns="['PO #', 'Quote #', 'Vendor', 'Description', 'Requestor', 'Date Issued', 'Customer Cost']"
         :rows="checkbookRows"
       />
       <section v-else class="large-empty-card compact-empty">
@@ -697,7 +696,6 @@ const checkbookRows = computed(() =>
     line.description || '-',
     line.requestor || '-',
     line.dateIssued,
-    currency(line.ourCost),
     currency(line.customerCost),
   ]),
 )

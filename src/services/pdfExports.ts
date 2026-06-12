@@ -350,16 +350,14 @@ export async function exportCheckbookReportPdf(project: Project) {
     ['Starting Balance', currency(summary.startingBalance)],
     ['Cost to Customer', currency(summary.customerCost)],
     ['Remaining Balance', currency(summary.remainingBalance)],
-    ['Cronos Cost', currency(summary.ourCost)],
   ])
 
-  y = drawTableHeader(doc, y + 16, ['PO #', 'Vendor', 'Description', 'Cost', 'Customer'])
+  y = drawTableHeader(doc, y + 16, ['PO #', 'Vendor', 'Description', 'Customer Cost'])
   summary.lines.forEach(line => {
     y = ensurePage(doc, y)
     doc.text(line.poNumber, 40, y)
     doc.text(line.vendor || '-', 106, y)
-    doc.text(doc.splitTextToSize(line.description || '-', 220), 174, y)
-    doc.text(currency(line.ourCost), 420, y)
+    doc.text(doc.splitTextToSize(line.description || '-', 280), 174, y)
     doc.text(currency(line.customerCost), 500, y)
     y += 32
   })

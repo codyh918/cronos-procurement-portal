@@ -89,13 +89,12 @@ export async function exportCheckbookFinancialWorkbook(project: Project) {
           ['Starting Balance', summary.startingBalance],
           ['Cost to Customer', summary.customerCost],
           ['Remaining Balance', summary.remainingBalance],
-          ['Cronos Cost', summary.ourCost],
         ],
       },
       {
         name: 'PO Detail',
         rows: [
-          ['PO #', 'Quote #', 'Vendor', 'Description', 'Requestor', 'Date Issued', 'Cronos Cost', 'Cost to Customer'],
+          ['PO #', 'Quote #', 'Vendor', 'Description', 'Requestor', 'Date Issued', 'Cost to Customer'],
           ...summary.lines.map(line => [
             line.poNumber,
             line.quoteNumber,
@@ -103,7 +102,6 @@ export async function exportCheckbookFinancialWorkbook(project: Project) {
             line.description,
             line.requestor,
             line.dateIssued,
-            line.ourCost,
             line.customerCost,
           ]),
         ],
