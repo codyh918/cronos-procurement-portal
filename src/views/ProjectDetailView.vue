@@ -1,6 +1,6 @@
 <template>
   <div v-if="project" class="project-detail-page">
-    <section class="project-hero">
+    <section class="project-dashboard-hero">
       <div class="project-hero-head">
         <div>
           <div class="project-title-row">
@@ -26,218 +26,99 @@
         </div>
       </div>
 
-      <div class="detail-stat-grid">
-        <DetailStat
-          href="#project-quotes"
-          label="Quotes"
-          :value="project.quotes.length"
-          :detail="currency(quoteSummary.customerTotal)"
-          :icon="FileText"
-        />
-        <DetailStat
-          href="#project-pos"
-          label="Purchase Orders"
-          :value="project.purchaseOrders.length"
-          :detail="currency(poSummary.totalCost)"
-          :icon="ShoppingCart"
-          tone="warning"
-        />
-        <DetailStat
-          href="#project-equipment"
-          label="Purchased Items"
-          :value="purchasedEquipmentCount"
-          :detail="`${poSummary.quantityOrdered} ordered`"
-          :icon="PackageCheck"
-          tone="success"
-        />
+      <div class="project-summary-card-grid">
+        <InfoTile label="Project Number" :value="project.projectNumber" />
+        <InfoTile label="Project Name" :value="project.projectName || '-'" />
+        <InfoTile label="Customer" :value="project.customer || '-'" />
+        <InfoTile label="Assigned User" :value="assignedUserNames || '-'" />
+        <InfoTile label="Project Type" :value="project.projectType" />
+        <InfoTile label="Status" :value="project.status" />
+        <InfoTile label="Contract / Quote Value" :value="currency(quoteSummary.customerTotal)" />
+        <InfoTile label="Material Budget" :value="currency(materialBudget)" />
+        <InfoTile label="Material Purchased" :value="currency(materialOrderedValue)" />
+        <InfoTile label="Material Remaining" :value="currency(materialRemainingValue)" />
       </div>
 
-      <div class="summary-tile-grid">
-        <SummaryTile label="POs Not Sent" :value="poNotSentCount" tone="success" />
-        <SummaryTile label="Tracking Missing" :value="trackingMissingCount" :tone="trackingMissingCount ? 'danger' : 'success'" />
-        <SummaryTile label="Tracking Updated" :value="trackingUpdatedCount" tone="success" />
-      </div>
-
-      <div class="dashboard-action-grid">
-        <DashboardAction href="#project-quotes" :icon="FileText" label="Quotes" description="View, edit, approve, export" />
-        <DashboardAction href="#project-pos" :icon="ReceiptText" label="Purchase Orders" description="Vendor POs and PDF exports" />
-        <DashboardAction href="#project-documents" :icon="FileSpreadsheet" label="Financial Docs" description="Reports and customer files" />
-        <DashboardAction href="#project-equipment" :icon="PackageCheck" label="Equipment" description="Parts, costs, and vendor status" />
-        <DashboardAction href="/purchase-orders" :icon="Truck" label="Tracking" description="Shipping dates and carriers" />
+      <div class="project-health-grid">
+        <HealthCard label="Material Ordered" :value="currency(materialOrderedValue)" :percent="materialOrderedPercent" tone="default" />
+        <HealthCard label="Material Received" :value="currency(materialReceivedValue)" :percent="materialReceivedPercent" tone="success" />
+        <HealthCard label="Material Shipped" :value="currency(materialShippedValue)" :percent="materialShippedPercent" tone="warning" />
+        <HealthCard label="Open Vendor Issues" :value="openVendorIssuesCount" :percent="0" tone="danger" compact />
+        <HealthCard label="Open Purchase Orders" :value="openPurchaseOrderCount" :percent="0" tone="default" compact />
+        <HealthCard label="Pending Deliveries" :value="pendingDeliveryCount" :percent="0" tone="warning" compact />
       </div>
     </section>
 
-    <section class="info-tile-grid">
-      <InfoTile label="Type" :value="project.projectType" />
-      <InfoTile label="Assigned" :value="assignedUserNames || '-'" />
-      <InfoTile label="PM" :value="project.projectManager || '-'" />
-      <InfoTile label="Engineer" :value="project.engineer || '-'" />
-      <InfoTile label="POP" :value="`${project.startDate || 'TBD'} to ${project.endDate || 'TBD'}`" />
-      <InfoTile label="Delivery" :value="project.deliveryAddress || '-'" />
-    </section>
-
-    <section class="detail-panel" id="missing-tracking">
-      <PanelHeading
-        title="Tracking Missing"
-        description="Update tracking, carrier, estimated ship date, and line status for open project items."
-        :pill="trackingMissingCount ? `${trackingMissingCount} line${trackingMissingCount === 1 ? '' : 's'} missing` : 'All tracking entered'"
-        :tone="trackingMissingCount ? 'danger' : 'success'"
-      />
-      <div v-if="missingTrackingLines.length" class="data-table-frame">
-        <div class="table-scroll">
-          <table class="data-table missing-tracking-table">
-            <thead>
-              <tr>
-                <th>PO #</th>
-                <th>Vendor</th>
-                <th>Part</th>
-                <th>Description</th>
-                <th>Qty</th>
-                <th>Status</th>
-                <th>Tracking</th>
-                <th>Carrier</th>
-                <th>ESD</th>
-                <th>Notes</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="line in missingTrackingLines" :key="`${line.poId}-${line.id}`">
-                <td class="nowrap">
-                  <button class="table-link inline-link-button" type="button" @click="openProjectPo(line.poId)">{{ line.poNumber }}</button>
-                </td>
-                <td>{{ line.vendor }}</td>
-                <td>
-                  <strong>{{ line.partNumber }}</strong>
-                  <small>{{ line.manufacturer || '-' }}</small>
-                </td>
-                <td>{{ line.description }}</td>
-                <td>{{ line.quantityOrdered }}</td>
-                <td>
-                  <select class="cell-input w-40" :value="line.status" @change="updateLineTracking(line.poId, line.id, { status: inputValue($event) as Status })">
-                    <option v-for="status in trackingStatusOptions" :key="status" :value="status">{{ status }}</option>
-                  </select>
-                </td>
-                <td>
-                  <input class="cell-input w-44" :value="line.trackingNumber ?? ''" @input="updateLineTracking(line.poId, line.id, { trackingNumber: inputValue($event) })" />
-                </td>
-                <td>
-                  <input class="cell-input w-32" :value="line.carrier ?? ''" @input="updateLineTracking(line.poId, line.id, { carrier: inputValue($event) })" />
-                </td>
-                <td>
-                  <input class="cell-input w-36" type="date" :value="line.estimatedShipDate ?? ''" @input="updateLineTracking(line.poId, line.id, { estimatedShipDate: inputValue($event) })" />
-                </td>
-                <td>
-                  <input class="cell-input w-52" :value="line.notes ?? ''" @input="updateLineTracking(line.poId, line.id, { notes: inputValue($event) })" />
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-      <div v-else class="success-empty">
-        <CheckCircle2 :size="28" />
-        <p>All open project lines have tracking entered.</p>
-      </div>
+    <section class="project-tab-bar" aria-label="Project sections">
+      <button
+        v-for="tab in projectTabs"
+        :key="tab.id"
+        type="button"
+        :class="{ active: activeTab === tab.id }"
+        @click="activeTab = tab.id"
+      >
+        {{ tab.label }}
+      </button>
     </section>
 
     <div v-if="importMessage" class="import-success-note">
       {{ importMessage }}
     </div>
 
-    <section class="detail-panel" id="project-documents">
-      <PanelHeading
-        title="Financial Docs & Exports"
-        description="Customer-facing quote PDFs, vendor PO PDFs, and checkbook reporting when applicable."
-      >
-        <div class="page-actions">
-          <button class="secondary-action icon-action" type="button" @click="trackingFileInput?.click()">
-            <Upload :size="17" />
-            <span>Import Tracking</span>
-          </button>
-          <button class="secondary-action icon-action" type="button" @click="checkbookFileInput?.click()">
-            <Upload :size="17" />
-            <span>Import Checkbook POs</span>
-          </button>
-          <input
-            ref="trackingFileInput"
-            class="hidden-file-input"
-            type="file"
-            accept=".csv,.txt,.xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            @change="importTrackingWorkbook"
-          />
-          <input
-            ref="checkbookFileInput"
-            class="hidden-file-input"
-            type="file"
-            accept=".csv,.txt,.xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            @change="importCheckbookWorkbook"
-          />
+    <section v-if="activeTab === 'overview'" class="project-tab-panel">
+      <div class="detail-panel">
+        <PanelHeading
+          title="Project Summary"
+          description="Material procurement status across quotes, purchase orders, receiving, and shipments."
+        />
+        <div class="material-progress-grid">
+          <ProgressRow label="Ordered" :value="materialOrderedValue" :total="materialBudget" :percent="materialOrderedPercent" />
+          <ProgressRow label="Received" :value="materialReceivedValue" :total="materialBudget" :percent="materialReceivedPercent" />
+          <ProgressRow label="Shipped" :value="materialShippedValue" :total="materialBudget" :percent="materialShippedPercent" />
         </div>
-      </PanelHeading>
-      <div class="document-grid">
-        <DocumentTile :icon="FileText" title="Customer Quote PDFs" :description="`${project.quotes.length} quotes available in the quote table`" href="#project-quotes" action="Go to Quotes" />
-        <DocumentTile :icon="ReceiptText" title="Vendor PO PDFs" :description="`${project.purchaseOrders.length} purchase orders available in the PO table`" href="#project-pos" action="Go to POs" />
-        <div class="document-tile">
-          <Truck :size="22" />
-          <h3>PO Tracking Rollup</h3>
-          <p>Excel tracking report with line items, vendor orders, carrier, ESD, and status.</p>
-          <button class="doc-action" type="button" @click="exportTrackingWorkbook">Export XLSX</button>
-        </div>
-        <div v-if="purchasedEquipmentLines.length" class="document-tile">
-          <Download :size="22" />
-          <h3>Customer Tracking Report</h3>
-          <p>Item-level shipping report for this project. Pricing is omitted.</p>
-          <button class="doc-action" type="button" @click="exportConsolidatedTrackingPdf">Customer Tracking PDF</button>
-        </div>
-        <div v-if="checkbookSummary" class="document-tile">
-          <FileSpreadsheet :size="22" />
-          <h3>Checkbook Reports</h3>
-          <p>Financial report and tracking workbook for customer balance reporting.</p>
-          <div class="doc-action-row">
-            <button class="doc-action" type="button" @click="exportCheckbookPdf">PDF</button>
-            <button class="doc-action secondary-doc-action" type="button" @click="exportCheckbookWorkbook">XLSX</button>
+      </div>
+
+      <div class="detail-panel">
+        <PanelHeading
+          title="Attention Required"
+          description="Vendor, tracking, and delivery items that need procurement follow-up."
+          :pill="attentionItems.length ? `${attentionItems.length} open` : 'Clear'"
+          :tone="attentionItems.length ? 'danger' : 'success'"
+        />
+        <div v-if="attentionItems.length" class="data-table-frame">
+          <div class="table-scroll">
+            <table class="data-table attention-table">
+              <thead>
+                <tr>
+                  <th>Vendor</th>
+                  <th>PO</th>
+                  <th>Issue</th>
+                  <th>Age</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="item in attentionItems" :key="item.id">
+                  <td>{{ item.vendor }}</td>
+                  <td>
+                    <button class="table-link inline-link-button" type="button" @click="openProjectPo(item.poId)">
+                      {{ item.poNumber }}
+                    </button>
+                  </td>
+                  <td><span class="compact-alert-badge">{{ item.issue }}</span></td>
+                  <td>{{ item.age }}</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
-        <div v-else class="document-tile muted">
-          <FileSpreadsheet :size="22" />
-          <h3>Checkbook Reports</h3>
-          <p>Available when the project type is Checkbook.</p>
+        <div v-else class="success-empty">
+          <CheckCircle2 :size="28" />
+          <p>No material procurement issues need attention.</p>
         </div>
       </div>
     </section>
 
-    <section v-if="checkbookSummary" class="detail-panel">
-      <PanelHeading
-        title="Checkbook Financials"
-        description="Customer balance is reduced by issued PO customer cost."
-      >
-        <div class="page-actions">
-          <button class="secondary-action icon-action" type="button" @click="exportCheckbookWorkbook">
-            <FileSpreadsheet :size="17" />
-            <span>Tracking XLSX</span>
-          </button>
-          <button class="secondary-action icon-action" type="button" @click="exportCheckbookPdf">
-            <Download :size="17" />
-            <span>Financial Report PDF</span>
-          </button>
-        </div>
-      </PanelHeading>
-      <div class="checkbook-summary-grid">
-        <InfoTile label="Starting Balance" :value="currency(checkbookSummary.startingBalance)" />
-        <InfoTile label="Cost to Customer" :value="currency(checkbookSummary.customerCost)" />
-        <InfoTile label="Remaining Balance" :value="currency(checkbookSummary.remainingBalance)" />
-      </div>
-      <DataTable
-        v-if="checkbookSummary.lines.length"
-        :columns="['PO #', 'Quote #', 'Vendor', 'Description', 'Requestor', 'Date Issued', 'Customer Cost']"
-        :rows="checkbookRows"
-      />
-      <section v-else class="large-empty-card compact-empty">
-        <p>No purchase orders have been issued against this checkbook yet.</p>
-      </section>
-    </section>
-
-    <section id="project-quotes" class="linked-section">
+    <section v-if="activeTab === 'quotes'" id="project-quotes" class="project-tab-panel">
       <div class="section-title-row">
         <h2>Project Quotes</h2>
         <RouterLink :to="`/projects/${project.id}/quotes/new`">Add Quote</RouterLink>
@@ -331,10 +212,9 @@
       </section>
     </section>
 
-    <section id="project-pos" class="linked-section">
+    <section v-if="activeTab === 'purchase-orders'" id="project-pos" class="project-tab-panel">
       <div class="section-title-row">
-        <h2>Purchase Orders</h2>
-        <RouterLink to="/purchase-orders">View all POs</RouterLink>
+        <h2>Open POs</h2>
       </div>
       <div v-if="project.purchaseOrders.length" class="data-table-frame">
         <div class="table-scroll">
@@ -343,10 +223,11 @@
               <tr>
                 <th>PO #</th>
                 <th>Vendor</th>
+                <th>PO Amount</th>
+                <th>Ordered Date</th>
+                <th>Expected Ship Date</th>
                 <th>Status</th>
-                <th>Date Issued</th>
                 <th>Lines</th>
-                <th>Total Cost</th>
                 <th>Actions</th>
               </tr>
             </thead>
@@ -356,10 +237,11 @@
                   <button class="table-link inline-link-button" type="button" @click="openProjectPo(po.id)">{{ po.poNumber }}</button>
                 </td>
                 <td>{{ po.vendor }}</td>
-                <td><StatusBadge :status="po.status" /></td>
-                <td class="nowrap">{{ po.dateIssued }}</td>
-                <td>{{ po.lines.length }}</td>
                 <td>{{ currency(po.totalCost) }}</td>
+                <td class="nowrap">{{ formatDateOrPending(po.dateIssued) }}</td>
+                <td>{{ formatDateOrPending(po.estimatedShipDate) }}</td>
+                <td><StatusBadge :status="po.status" /></td>
+                <td>{{ po.lines.length }}</td>
                 <td>
                   <button class="mini-action" type="button" @click="exportPoPdf(po)">
                     <Download :size="14" />
@@ -374,98 +256,107 @@
       <section v-else class="large-empty-card compact-empty">
         <p>Approve a customer quote to generate vendor purchase orders.</p>
       </section>
+
+      <section v-if="selectedProjectPo" class="detail-panel project-po-panel">
+        <PanelHeading
+          :title="selectedProjectPo.poNumber"
+          :description="`${selectedProjectPo.vendor} purchase order for ${project.projectNumber}`"
+          :pill="selectedProjectPo.status"
+          tone="warning"
+        >
+          <div class="page-actions">
+            <button class="secondary-action icon-action" type="button" @click="exportPoPdf(selectedProjectPo)">
+              <Download :size="17" />
+              <span>Download PO PDF</span>
+            </button>
+            <button class="secondary-action" type="button" @click="closeProjectPo">Close</button>
+          </div>
+        </PanelHeading>
+        <div class="info-tile-grid compact-po-info">
+          <InfoTile label="Vendor" :value="selectedProjectPo.vendor" />
+          <InfoTile label="Date Issued" :value="selectedProjectPo.dateIssued || 'Pending'" />
+          <InfoTile label="Total Cost" :value="currency(selectedProjectPo.totalCost)" />
+          <InfoTile label="Lines" :value="String(selectedProjectPo.lines.length)" />
+        </div>
+        <div class="data-table-frame">
+          <div class="table-scroll">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>CLIN</th>
+                  <th>Part</th>
+                  <th>Description</th>
+                  <th>Qty</th>
+                  <th>Status</th>
+                  <th>Vendor Order</th>
+                  <th>Carrier</th>
+                  <th>Tracking</th>
+                  <th>ESD</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="line in selectedProjectPo.lines" :key="line.id">
+                  <td>{{ line.clin }}</td>
+                  <td>{{ line.partNumber }}</td>
+                  <td>{{ line.description }}</td>
+                  <td>{{ line.quantityOrdered }}</td>
+                  <td>{{ line.status }}</td>
+                  <td>{{ line.vendorOrderNumber || 'Pending' }}</td>
+                  <td>{{ line.carrier || selectedProjectPo.carrier || 'Pending' }}</td>
+                  <td>{{ line.trackingNumber || selectedProjectPo.trackingNumber || 'Pending' }}</td>
+                  <td>{{ formatDateOrPending(line.estimatedShipDate || selectedProjectPo.estimatedShipDate) }}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
     </section>
 
-    <section v-if="selectedProjectPo" class="detail-panel project-po-panel">
+    <section v-if="activeTab === 'material-tracking'" id="project-equipment" class="project-tab-panel">
       <PanelHeading
-        :title="selectedProjectPo.poNumber"
-        :description="`${selectedProjectPo.vendor} purchase order for ${project.projectNumber}`"
-        :pill="selectedProjectPo.status"
-        tone="warning"
+        title="Material Tracking"
+        description="Line-item procurement status, expected ship dates, carriers, and tracking."
       >
         <div class="page-actions">
-          <button class="secondary-action icon-action" type="button" @click="exportPoPdf(selectedProjectPo)">
-            <Download :size="17" />
-            <span>Download PO PDF</span>
+          <button class="secondary-action icon-action" type="button" @click="trackingFileInput?.click()">
+            <Upload :size="17" />
+            <span>Import Tracking</span>
           </button>
-          <button class="secondary-action" type="button" @click="closeProjectPo">Close</button>
+          <input
+            ref="trackingFileInput"
+            class="hidden-file-input"
+            type="file"
+            accept=".csv,.txt,.xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            @change="importTrackingWorkbook"
+          />
         </div>
       </PanelHeading>
-      <div class="info-tile-grid compact-po-info">
-        <InfoTile label="Vendor" :value="selectedProjectPo.vendor" />
-        <InfoTile label="Date Issued" :value="selectedProjectPo.dateIssued || 'Pending'" />
-        <InfoTile label="Total Cost" :value="currency(selectedProjectPo.totalCost)" />
-        <InfoTile label="Lines" :value="String(selectedProjectPo.lines.length)" />
-      </div>
-      <div class="data-table-frame">
-        <div class="table-scroll">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>CLIN</th>
-                <th>Part</th>
-                <th>Description</th>
-                <th>Qty</th>
-                <th>Status</th>
-                <th>Vendor Order</th>
-                <th>Carrier</th>
-                <th>Tracking</th>
-                <th>ESD</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="line in selectedProjectPo.lines" :key="line.id">
-                <td>{{ line.clin }}</td>
-                <td>{{ line.partNumber }}</td>
-                <td>{{ line.description }}</td>
-                <td>{{ line.quantityOrdered }}</td>
-                <td>{{ line.status }}</td>
-                <td>{{ line.vendorOrderNumber || 'Pending' }}</td>
-                <td>{{ line.carrier || selectedProjectPo.carrier || 'Pending' }}</td>
-                <td>{{ line.trackingNumber || selectedProjectPo.trackingNumber || 'Pending' }}</td>
-                <td>{{ formatDateOrPending(line.estimatedShipDate || selectedProjectPo.estimatedShipDate) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-    </section>
-
-    <section id="project-equipment" class="linked-section">
-      <h2>Purchased Equipment Rollup</h2>
-      <p class="section-description">
-        All line items purchased for this project, including PO send status and vendor tracking status.
-      </p>
       <div v-if="purchasedEquipmentLines.length" class="data-table-frame">
         <div class="table-scroll">
           <table class="data-table editable-equipment-table">
             <thead>
               <tr>
+                <th>Project</th>
                 <th>PO #</th>
                 <th>Vendor</th>
-                <th>CLIN</th>
-                <th>Part</th>
+                <th>Part Number</th>
                 <th>Description</th>
-                <th>Qty</th>
-                <th>Item Status</th>
-                <th>PO Sent</th>
-                <th>Vendor Order</th>
-                <th>Tracking</th>
+                <th>Quantity</th>
+                <th>Status</th>
+                <th>Expected Ship Date</th>
                 <th>Carrier</th>
-                <th>ESD</th>
+                <th>Tracking</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="line in purchasedEquipmentLines" :key="`${line.poId}-${line.id}`">
+                <td class="nowrap">{{ project.projectNumber }}</td>
                 <td class="nowrap">
                   <button class="table-link inline-link-button" type="button" @click="openProjectPo(line.poId)">{{ line.poNumber }}</button>
                 </td>
                 <td>{{ line.vendor }}</td>
-                <td>{{ line.clin }}</td>
-                <td>
-                  <strong>{{ line.partNumber }}</strong>
-                  <small v-if="line.manufacturer">{{ line.manufacturer }}</small>
-                </td>
+                <td>{{ line.partNumber }}</td>
                 <td>{{ line.description }}</td>
                 <td>{{ line.quantityOrdered }}</td>
                 <td>
@@ -473,21 +364,12 @@
                     <option v-for="status in trackingStatusOptions" :key="status" :value="status">{{ status }}</option>
                   </select>
                 </td>
-                <td>{{ line.poStatus === 'PO Generated' ? 'Pending Send' : 'Sent' }}</td>
                 <td>
                   <input
                     class="cell-input w-36"
-                    :value="line.vendorOrderNumber ?? ''"
-                    placeholder="Vendor order #"
-                    @change="updateLineTracking(line.poId, line.id, { vendorOrderNumber: inputValue($event) })"
-                  />
-                </td>
-                <td>
-                  <input
-                    class="cell-input w-44"
-                    :value="line.trackingNumber ?? ''"
-                    placeholder="Tracking #"
-                    @change="updateLineTracking(line.poId, line.id, { trackingNumber: inputValue($event) })"
+                    type="date"
+                    :value="line.estimatedShipDate ?? ''"
+                    @change="updateLineTracking(line.poId, line.id, { estimatedShipDate: inputValue($event) })"
                   />
                 </td>
                 <td>
@@ -500,10 +382,10 @@
                 </td>
                 <td>
                   <input
-                    class="cell-input w-36"
-                    type="date"
-                    :value="line.estimatedShipDate ?? ''"
-                    @change="updateLineTracking(line.poId, line.id, { estimatedShipDate: inputValue($event) })"
+                    class="cell-input w-44"
+                    :value="line.trackingNumber ?? ''"
+                    placeholder="Tracking #"
+                    @change="updateLineTracking(line.poId, line.id, { trackingNumber: inputValue($event) })"
                   />
                 </td>
               </tr>
@@ -516,10 +398,108 @@
       </section>
     </section>
 
-    <section class="bottom-status-grid">
-      <div class="detail-panel">
-        <h2>Notes</h2>
-        <p class="notes-copy">{{ project.notes || 'No notes yet.' }}</p>
+    <section v-if="activeTab === 'shipments'" class="project-tab-panel">
+      <PanelHeading
+        title="Shipments"
+        description="Line-level shipment, carrier, tracking, and delivery visibility."
+        :pill="shipmentLines.length ? `${shipmentLines.length} shipment lines` : 'No shipments'"
+        tone="warning"
+      />
+      <div v-if="shipmentLines.length" class="data-table-frame">
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th>PO</th>
+                <th>Vendor</th>
+                <th>Part Number</th>
+                <th>Description</th>
+                <th>Qty</th>
+                <th>Status</th>
+                <th>Carrier</th>
+                <th>Tracking</th>
+                <th>Ship Date</th>
+                <th>Delivery Date</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="line in shipmentLines" :key="`${line.poId}-${line.id}`">
+                <td>
+                  <button class="table-link inline-link-button" type="button" @click="openProjectPo(line.poId)">{{ line.poNumber }}</button>
+                </td>
+                <td>{{ line.vendor }}</td>
+                <td>{{ line.partNumber }}</td>
+                <td>{{ line.description }}</td>
+                <td>{{ line.quantityOrdered }}</td>
+                <td>{{ line.status }}</td>
+                <td>{{ line.carrier || 'Pending' }}</td>
+                <td>{{ line.trackingNumber || 'Pending' }}</td>
+                <td>{{ formatDateOrPending(line.estimatedShipDate) }}</td>
+                <td>{{ formatDateOrPending(line.receivedDate) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+      <section v-else class="large-empty-card compact-empty">
+        <p>No shipped material has been recorded yet.</p>
+      </section>
+    </section>
+
+    <section v-if="activeTab === 'documents'" class="project-tab-panel">
+      <PanelHeading
+        title="Documents"
+        description="Quotes, purchase orders, acknowledgements, tracking documents, and customer files."
+      >
+        <div class="page-actions">
+          <button class="secondary-action icon-action" type="button" @click="trackingFileInput?.click()">
+            <Upload :size="17" />
+            <span>Import Tracking</span>
+          </button>
+          <button class="secondary-action icon-action" type="button" @click="checkbookFileInput?.click()">
+            <Upload :size="17" />
+            <span>Import Checkbook POs</span>
+          </button>
+          <input
+            ref="checkbookFileInput"
+            class="hidden-file-input"
+            type="file"
+            accept=".csv,.txt,.xls,.xlsx,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            @change="importCheckbookWorkbook"
+          />
+        </div>
+      </PanelHeading>
+
+      <div class="document-drop-zone">
+        <Upload :size="26" />
+        <strong>Drop project documents here</strong>
+        <p>Store vendor acknowledgements, tracking documents, customer files, or procurement backup.</p>
+      </div>
+
+      <div class="document-grid">
+        <DocumentTile :icon="FileText" title="Quotes" :description="`${project.quotes.length} quotes available`" href="#project-quotes" action="Open Quotes Tab" />
+        <DocumentTile :icon="ReceiptText" title="Purchase Orders" :description="`${project.purchaseOrders.length} purchase orders available`" href="#project-pos" action="Open PO Tab" />
+        <div class="document-tile">
+          <Truck :size="22" />
+          <h3>Tracking Documents</h3>
+          <p>Export the current line-item tracking workbook.</p>
+          <button class="doc-action" type="button" @click="exportTrackingWorkbook">Export XLSX</button>
+        </div>
+        <div v-if="purchasedEquipmentLines.length" class="document-tile">
+          <Download :size="22" />
+          <h3>Customer Tracking Report</h3>
+          <p>Customer-facing line-item shipping report.</p>
+          <button class="doc-action" type="button" @click="exportConsolidatedTrackingPdf">Customer Tracking PDF</button>
+        </div>
+        <div v-if="checkbookSummary" class="document-tile">
+          <FileSpreadsheet :size="22" />
+          <h3>Checkbook Reports</h3>
+          <p>Financial report and tracking workbook for checkbook balance reporting.</p>
+          <div class="doc-action-row">
+            <button class="doc-action" type="button" @click="exportCheckbookPdf">PDF</button>
+            <button class="doc-action secondary-doc-action" type="button" @click="exportCheckbookWorkbook">XLSX</button>
+          </div>
+        </div>
       </div>
     </section>
   </div>
@@ -538,17 +518,14 @@ import {
   Download,
   FileSpreadsheet,
   FileText,
-  PackageCheck,
   PackagePlus,
   Pencil,
   Plus,
   ReceiptText,
-  ShoppingCart,
   Truck,
   Upload,
 } from '@lucide/vue'
 import type { Component } from 'vue'
-import DataTable from '../components/DataTable.vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import { calculateQuoteSummary, currency } from '../services/calculations'
 import { loadUsers } from '../services/auth'
@@ -575,6 +552,7 @@ type PurchasedEquipmentLine = PurchaseOrderLine & {
   poStatus: Status
   vendor: string
 }
+type ProjectTabId = 'overview' | 'quotes' | 'purchase-orders' | 'material-tracking' | 'shipments' | 'documents'
 
 const route = useRoute()
 const project = ref<Project>()
@@ -584,8 +562,17 @@ const checkbookFileInput = ref<HTMLInputElement | null>(null)
 const trackingFileInput = ref<HTMLInputElement | null>(null)
 const quoteTable = ref<HTMLTableElement | null>(null)
 const selectedProjectPoId = ref('')
+const activeTab = ref<ProjectTabId>('overview')
 let syncingQuoteScroll = false
 const trackingStatusOptions: Status[] = ['Ordered', 'Backordered', 'Shipped', 'Delivered', 'Cancelled']
+const projectTabs: Array<{ id: ProjectTabId; label: string }> = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'quotes', label: 'Quotes' },
+  { id: 'purchase-orders', label: 'Purchase Orders' },
+  { id: 'material-tracking', label: 'Material Tracking' },
+  { id: 'shipments', label: 'Shipments' },
+  { id: 'documents', label: 'Documents' },
+]
 
 onMounted(() => {
   reloadProject()
@@ -627,10 +614,6 @@ const poSummary = computed(() =>
   ),
 )
 
-const purchasedEquipmentCount = computed(() =>
-  (project.value?.purchaseOrders ?? []).reduce((total, po) => total + po.lines.length, 0),
-)
-
 const purchasedEquipmentLines = computed<PurchasedEquipmentLine[]>(() =>
   (project.value?.purchaseOrders ?? []).flatMap(po =>
     po.lines.map(line => ({
@@ -646,38 +629,66 @@ const purchasedEquipmentLines = computed<PurchasedEquipmentLine[]>(() =>
   ),
 )
 
-const poNotSentCount = computed(
-  () => project.value?.purchaseOrders.filter(po => po.status === 'PO Generated').length ?? 0,
-)
-
 const missingTrackingLines = computed(() =>
   purchasedEquipmentLines.value.filter(line => line.poStatus !== 'PO Generated' && !line.trackingNumber),
 )
 
 const trackingMissingCount = computed(() => missingTrackingLines.value.length)
 
-const trackingUpdatedCount = computed(
-  () => purchasedEquipmentLines.value.filter(line => line.trackingNumber).length,
-)
-
 const checkbookSummary = computed(() =>
   project.value?.projectType === 'Checkbook' ? getCheckbookSummary(project.value) : undefined,
 )
 
-const checkbookRows = computed(() =>
-  (checkbookSummary.value?.lines ?? []).map(line => [
-    line.poNumber,
-    line.quoteNumber,
-    line.vendor,
-    line.description || '-',
-    line.requestor || '-',
-    line.dateIssued,
-    currency(line.customerCost),
-  ]),
-)
-
 const selectedProjectPo = computed(() =>
   project.value?.purchaseOrders.find(po => po.id === selectedProjectPoId.value),
+)
+
+const materialBudget = computed(() => project.value?.checkbookStartingBalance || quoteSummary.value.totalCost || quoteSummary.value.customerTotal || poSummary.value.totalCost)
+const materialOrderedValue = computed(() => poSummary.value.totalCost)
+const materialReceivedValue = computed(() =>
+  purchasedEquipmentLines.value.reduce((total, line) => total + line.quantityReceived * line.unitCost, 0),
+)
+const materialShippedValue = computed(() =>
+  purchasedEquipmentLines.value
+    .filter(line => isShippedStatus(line.status))
+    .reduce((total, line) => total + line.quantityOrdered * line.unitCost, 0),
+)
+const materialRemainingValue = computed(() => Math.max(materialBudget.value - materialOrderedValue.value, 0))
+const materialOrderedPercent = computed(() => percentOf(materialOrderedValue.value, materialBudget.value))
+const materialReceivedPercent = computed(() => percentOf(materialReceivedValue.value, materialBudget.value))
+const materialShippedPercent = computed(() => percentOf(materialShippedValue.value, materialBudget.value))
+const openPurchaseOrderCount = computed(
+  () => project.value?.purchaseOrders.filter(po => !['Received', 'Delivered', 'Cancelled'].includes(po.status)).length ?? 0,
+)
+const pendingDeliveryCount = computed(() =>
+  purchasedEquipmentLines.value.filter(line => !['Received', 'Delivered', 'Cancelled'].includes(line.status)).length,
+)
+const openVendorIssuesCount = computed(() =>
+  purchasedEquipmentLines.value.filter(line => line.status === 'Backordered' || line.status === 'RMA / Issue' || line.status === 'RMA' || (!line.trackingNumber && line.poStatus !== 'PO Generated')).length,
+)
+const shipmentLines = computed(() =>
+  purchasedEquipmentLines.value.filter(line => isShippedStatus(line.status) || line.trackingNumber || line.carrier),
+)
+const attentionItems = computed(() =>
+  purchasedEquipmentLines.value
+    .flatMap(line => {
+      const issues: Array<{ issue: string; date?: string }> = []
+      if (line.status === 'Backordered') issues.push({ issue: 'Vendor backorder', date: line.estimatedShipDate })
+      if (line.status === 'RMA' || line.status === 'RMA / Issue') issues.push({ issue: 'Vendor issue', date: line.receivedDate })
+      if (line.poStatus !== 'PO Generated' && !line.estimatedShipDate) issues.push({ issue: 'PO acknowledged but no ship date' })
+      if (line.estimatedShipDate && !line.trackingNumber && new Date(line.estimatedShipDate) < startOfToday()) issues.push({ issue: 'Past due delivery', date: line.estimatedShipDate })
+      if (!line.trackingNumber && line.poStatus !== 'PO Generated') issues.push({ issue: 'Tracking missing' })
+      if (line.quantityReceived > 0 && line.quantityReceived < line.quantityOrdered) issues.push({ issue: 'Partial shipment', date: line.receivedDate })
+      return issues.map((issue, index) => ({
+        id: `${line.poId}-${line.id}-${index}`,
+        poId: line.poId,
+        poNumber: line.poNumber,
+        vendor: line.vendor,
+        issue: issue.issue,
+        age: issue.date ? ageInDays(issue.date) : 'Open',
+      }))
+    })
+    .slice(0, 8),
 )
 
 function quoteTotals(quote: CustomerQuote) {
@@ -699,6 +710,7 @@ function updateLineTracking(poId: string, lineId: string, updates: Parameters<ty
 }
 
 function openProjectPo(poId: string) {
+  activeTab.value = 'purchase-orders'
   selectedProjectPoId.value = poId
   window.history.replaceState(null, '', `#project-po-${poId}`)
 }
@@ -800,6 +812,28 @@ function inputValue(event: Event) {
   return target instanceof HTMLInputElement || target instanceof HTMLSelectElement ? target.value : ''
 }
 
+function percentOf(value: number, total: number) {
+  if (!total) return 0
+  return Math.min(100, Math.max(0, Math.round((value / total) * 100)))
+}
+
+function isShippedStatus(status: Status) {
+  return ['Shipped', 'Shipped to Customer', 'Partially Shipped', 'Delivered'].includes(status)
+}
+
+function startOfToday() {
+  const date = new Date()
+  date.setHours(0, 0, 0, 0)
+  return date
+}
+
+function ageInDays(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return 'Open'
+  const diff = Math.max(0, Math.floor((Date.now() - date.getTime()) / 86400000))
+  return `${diff} day${diff === 1 ? '' : 's'}`
+}
+
 const propsForComponents = {}
 void propsForComponents
 </script>
@@ -839,6 +873,49 @@ export const SummaryTile = defineComponent({
       h('div', { class: `summary-tile summary-${props.tone}` }, [
         h('p', props.label),
         h('strong', String(props.value)),
+      ])
+  },
+})
+
+export const HealthCard = defineComponent({
+  props: {
+    label: { type: String, required: true },
+    value: { type: [String, Number], required: true },
+    percent: { type: Number, required: true },
+    tone: { type: String, default: 'default' },
+    compact: { type: Boolean, default: false },
+  },
+  setup(props) {
+    return () =>
+      h('div', { class: `project-health-card health-${props.tone}` }, [
+        h('p', props.label),
+        h('strong', String(props.value)),
+        props.compact
+          ? null
+          : h('div', { class: 'project-health-progress', 'aria-hidden': 'true' }, [
+              h('span', { style: { width: `${props.percent}%` } }),
+            ]),
+        props.compact ? null : h('small', `${props.percent}% complete`),
+      ])
+  },
+})
+
+export const ProgressRow = defineComponent({
+  props: {
+    label: { type: String, required: true },
+    value: { type: Number, required: true },
+    total: { type: Number, required: true },
+    percent: { type: Number, required: true },
+  },
+  setup(props) {
+    return () =>
+      h('div', { class: 'material-progress-row' }, [
+        h('div', { class: 'material-progress-copy' }, [
+          h('strong', props.label),
+          h('span', `${currency(props.value)} of ${currency(props.total)}`),
+        ]),
+        h('div', { class: 'material-progress-meter' }, [h('span', { style: { width: `${props.percent}%` } })]),
+        h('em', `${props.percent}%`),
       ])
   },
 })
