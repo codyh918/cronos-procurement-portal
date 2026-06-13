@@ -417,11 +417,11 @@ export async function exportCustomerConsolidatedTrackingReportPdf(project: Proje
 
   let y = drawTrackingReportHeader(doc, 250)
   rows.forEach((row, index) => {
-    const descriptionLines = doc.splitTextToSize(row.description || '-', 134).slice(0, 3)
+    const descriptionLines = doc.splitTextToSize(row.description || '-', 118).slice(0, 3)
     const partLines = doc.splitTextToSize(row.partNumber || '-', 82).slice(0, 2)
-    const trackingLines = doc.splitTextToSize(row.trackingNumber || 'Pending', 78).slice(0, 2)
-    const deliveryLines = doc.splitTextToSize(formatMaybeDate(row.deliveryDate), 56).slice(0, 2)
-    const rowHeight = Math.max(42, 18 + Math.max(descriptionLines.length, partLines.length, trackingLines.length, deliveryLines.length) * 10)
+    const trackingLines = splitTrackingReportValue(doc, row.trackingNumber || 'Pending', 104).slice(0, 4)
+    const dateLines = [`ESD: ${formatMaybeDate(row.estimatedShipDate)}`, `Del: ${formatMaybeDate(row.deliveryDate)}`]
+    const rowHeight = Math.max(42, 18 + Math.max(descriptionLines.length, partLines.length, trackingLines.length, dateLines.length) * 10)
 
     if (y + rowHeight > 548) {
       drawTrackingReportFooter(doc)
@@ -442,11 +442,10 @@ export async function exportCustomerConsolidatedTrackingReportPdf(project: Proje
     doc.text(doc.splitTextToSize(row.vendorOrderNumber || 'Pending', 66), 222, y + 17)
     doc.text(partLines, 296, y + 17)
     doc.text(descriptionLines, 384, y + 17)
-    doc.text(String(row.quantity), 532, y + 17, { align: 'center' })
-    doc.text(doc.splitTextToSize(row.carrier || 'Pending', 52), 552, y + 17)
-    doc.text(trackingLines, 612, y + 17)
-    doc.text(formatMaybeDate(row.estimatedShipDate), 686, y + 17, { align: 'right' })
-    doc.text(deliveryLines, 698, y + 17)
+    doc.text(String(row.quantity), 516, y + 17, { align: 'center' })
+    doc.text(doc.splitTextToSize(row.carrier || 'Pending', 50), 534, y + 17)
+    doc.text(trackingLines, 590, y + 17)
+    doc.text(dateLines, 708, y + 17)
     y += rowHeight
   })
 
@@ -696,11 +695,10 @@ function drawTrackingReportHeader(doc: JsPdf, y: number) {
   doc.text('Vendor Order', 222, y + 17)
   doc.text('Part Number', 296, y + 17)
   doc.text('Description', 384, y + 17)
-  doc.text('Qty', 532, y + 17, { align: 'center' })
-  doc.text('Carrier', 552, y + 17)
-  doc.text('Tracking', 612, y + 17)
-  doc.text('ESD', 686, y + 17, { align: 'right' })
-  doc.text('Delivery', 698, y + 17)
+  doc.text('Qty', 516, y + 17, { align: 'center' })
+  doc.text('Carrier', 534, y + 17)
+  doc.text('Tracking', 590, y + 17)
+  doc.text('Ship / Delivery', 708, y + 17)
   return y + 30
 }
 
@@ -715,6 +713,17 @@ function drawTrackingReportFooter(doc: JsPdf) {
 
 function formatMaybeDate(value: string | undefined) {
   return value ? new Intl.DateTimeFormat('en-US').format(new Date(value)) : 'Pending'
+}
+
+function splitTrackingReportValue(doc: JsPdf, value: string, width: number) {
+  const cleaned = value.trim() || 'Pending'
+  if (cleaned === 'Pending') return ['Pending']
+
+  return cleaned
+    .split(/[;,]\s*|\s{2,}/)
+    .map(part => part.trim())
+    .filter(Boolean)
+    .flatMap(part => doc.splitTextToSize(part, width))
 }
 
 function sanitizeFileName(value: string) {

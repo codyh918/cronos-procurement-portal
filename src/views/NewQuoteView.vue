@@ -41,6 +41,30 @@
 
     <section class="settings-strip">
       <div>
+        <h2>Quote Details</h2>
+        <p>Update the customer-facing quote name and approval status from this edit screen.</p>
+      </div>
+      <div class="quote-detail-controls">
+        <label class="mini-field quote-name-field">
+          <span>Quote Name</span>
+          <input v-model="quoteName" placeholder="Example: General Purchase" />
+        </label>
+        <button
+          v-if="quote"
+          class="secondary-action"
+          :class="{ 'danger-outline-action': quote.status === 'Customer Approved' }"
+          type="button"
+          @click="toggleApproval"
+        >
+          <XCircle v-if="quote.status === 'Customer Approved'" :size="17" />
+          <CheckCircle2 v-else :size="17" />
+          <span>{{ quote.status === 'Customer Approved' ? 'Mark Not Approved' : 'Mark Approved' }}</span>
+        </button>
+      </div>
+    </section>
+
+    <section class="settings-strip">
+      <div>
         <h2>Contract Fee</h2>
         <p>
           {{
@@ -284,13 +308,13 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { BadgeDollarSign, Download, FileSpreadsheet, FileUp, Plus, Save, Send, Upload } from '@lucide/vue'
+import { BadgeDollarSign, CheckCircle2, Download, FileSpreadsheet, FileUp, Plus, Save, Send, Upload, XCircle } from '@lucide/vue'
 import FormField from '../components/FormField.vue'
 import QuoteLinesEditor from '../components/QuoteLinesEditor.vue'
 import QuoteSummaryTile from '../components/QuoteSummaryTile.vue'
 import RfqStep from '../components/RfqStep.vue'
 import { calculateLineTotals, calculateQuoteSummaryWithContractFee, currency, type PricingMode } from '../services/calculations'
-import { createQuoteForProject, loadProject, updateQuoteForProject } from '../services/localProjects'
+import { createQuoteForProject, loadProject, setQuoteApprovalStatus, updateQuoteForProject } from '../services/localProjects'
 import { findLatestPartPrice, findPartPriceSuggestions } from '../services/partCatalog'
 import { exportCustomerQuotePdf } from '../services/pdfExports'
 import { parseQuoteImportFile } from '../services/quoteImport'
@@ -313,6 +337,7 @@ const unitCost = ref(0)
 const markupPercent = ref(15)
 const marginPercent = ref(20)
 const draftLines = ref<QuoteLine[]>([])
+const quoteName = ref('')
 const expirationDays = ref<ExpirationDays>(30)
 const contractFeeEnabled = ref(false)
 const shippingCost = ref(0)
@@ -374,6 +399,7 @@ onMounted(() => {
   quote.value = loadedQuote
 
   if (loadedQuote) {
+    quoteName.value = loadedQuote.quoteName ?? ''
     draftLines.value = normalizePricingForProject(applySequentialClins(loadedQuote.lines ?? []), loadedProject?.projectType !== 'Design & Install')
     expirationDays.value = loadedQuote.expirationDays ?? 30
     contractFeeEnabled.value = loadedQuote.contractFeeEnabled ?? false
@@ -416,6 +442,7 @@ function saveQuote() {
     const updatedQuote = updateQuoteForProject(project.value.id, quote.value.id, normalizedLines, {
       contractFeeEnabled: contractFeeEnabled.value,
       expirationDays: expirationDays.value,
+      quoteName: quoteName.value,
       shippingCost: shippingCost.value,
     })
     router.push(`/projects/${project.value.id}?quote=${encodeURIComponent(updatedQuote.quoteNumber)}`)
@@ -426,10 +453,20 @@ function saveQuote() {
   const createdQuote = createQuoteForProject(project.value.id, newQuoteLines, {
     contractFeeEnabled: contractFeeEnabled.value,
     expirationDays: expirationDays.value,
+    quoteName: quoteName.value,
     shippingCost: shippingCost.value,
   })
 
   router.push(`/projects/${project.value.id}?quote=${encodeURIComponent(createdQuote.quoteNumber)}`)
+}
+
+function toggleApproval() {
+  if (!project.value || !quote.value) return
+
+  const approved = quote.value.status !== 'Customer Approved'
+  const result = setQuoteApprovalStatus(project.value.id, quote.value.id, approved)
+  project.value = result.project
+  quote.value = result.quote
 }
 
 async function exportPdf() {

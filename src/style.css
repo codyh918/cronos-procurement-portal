@@ -2226,6 +2226,30 @@ table {
   outline: none;
 }
 
+.quote-detail-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+}
+
+.quote-name-field input {
+  width: min(320px, 70vw);
+}
+
+.quote-name-readonly {
+  display: inline-block;
+  min-width: 160px;
+  color: var(--app-heading);
+  font-weight: 800;
+}
+
+.danger-outline-action {
+  border-color: #fecdd3;
+  background: #fff1f2;
+  color: #be123c;
+}
+
 .import-panel {
   display: flex;
   flex-wrap: wrap;

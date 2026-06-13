@@ -99,7 +99,7 @@ export function deleteProject(projectId: string) {
 export function createQuoteForProject(
   projectId: string,
   lines: Array<Omit<QuoteLine, 'id' | 'approved'>>,
-  options: { contractFeeEnabled?: boolean; expirationDays?: 30 | 60 | 90; shippingCost?: number } = {},
+  options: { contractFeeEnabled?: boolean; expirationDays?: 30 | 60 | 90; quoteName?: string; shippingCost?: number } = {},
 ): CustomerQuote {
   const project = loadProject(projectId)
   if (!project) {
@@ -118,7 +118,7 @@ export function createQuoteForProject(
     projectNumber: project.projectNumber,
     projectName: project.projectName,
     customer: project.customer,
-    quoteName: '',
+    quoteName: options.quoteName?.trim() ?? '',
     status: 'Quoted',
     createdAt: new Date().toISOString(),
     expirationDays: options.expirationDays ?? 30,
@@ -145,7 +145,7 @@ export function updateQuoteForProject(
   projectId: string,
   quoteId: string,
   lines: Array<Omit<QuoteLine, 'id' | 'approved'> & Partial<Pick<QuoteLine, 'id' | 'approved'>>>,
-  options: { contractFeeEnabled?: boolean; expirationDays?: 30 | 60 | 90; shippingCost?: number } = {},
+  options: { contractFeeEnabled?: boolean; expirationDays?: 30 | 60 | 90; quoteName?: string; shippingCost?: number } = {},
 ): CustomerQuote {
   const project = loadProject(projectId)
   if (!project) {
@@ -164,6 +164,7 @@ export function updateQuoteForProject(
   }))
   const updatedQuote: CustomerQuote = {
     ...existingQuote,
+    quoteName: options.quoteName?.trim() ?? existingQuote.quoteName ?? '',
     expirationDays: options.expirationDays ?? existingQuote.expirationDays ?? 30,
     contractFeeEnabled: options.contractFeeEnabled ?? existingQuote.contractFeeEnabled ?? false,
     shippingCost: normalizeMoney(options.shippingCost ?? existingQuote.shippingCost),

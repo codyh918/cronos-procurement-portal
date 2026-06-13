@@ -272,18 +272,7 @@
                   </RouterLink>
                 </td>
                 <td>
-                  <div v-if="editingQuoteId === quote.id" class="quote-name-editor">
-                    <input v-model="quoteNameDraft" class="cell-input w-52" placeholder="Quote name" />
-                    <button class="mini-action success" type="button" @click="saveQuoteName(quote.id)">Save</button>
-                    <button class="mini-action" type="button" @click="cancelQuoteNameEdit">Cancel</button>
-                  </div>
-                  <div v-else class="quote-name-display">
-                    <span>{{ quote.quoteName || 'Untitled quote' }}</span>
-                    <button class="mini-action" type="button" @click="startQuoteNameEdit(quote)">
-                      <Pencil :size="14" />
-                      <span>Edit</span>
-                    </button>
-                  </div>
+                  <span class="quote-name-readonly">{{ quote.quoteName || 'Untitled quote' }}</span>
                 </td>
                 <td><StatusBadge :status="quote.status" /></td>
                 <td>{{ quote.lines.length }}</td>
@@ -297,16 +286,7 @@
                 <td>
                   <div class="row-actions">
                     <button
-                      v-if="quote.status === 'Customer Approved'"
-                      class="mini-action danger"
-                      type="button"
-                      @click="toggleQuoteApproval(quote.id, false)"
-                    >
-                      <XCircle :size="14" />
-                      <span>Not Approved</span>
-                    </button>
-                    <button
-                      v-else
+                      v-if="quote.status !== 'Customer Approved'"
                       class="mini-action success"
                       type="button"
                       @click="toggleQuoteApproval(quote.id, true)"
@@ -566,7 +546,6 @@ import {
   ShoppingCart,
   Truck,
   Upload,
-  XCircle,
 } from '@lucide/vue'
 import type { Component } from 'vue'
 import DataTable from '../components/DataTable.vue'
@@ -583,7 +562,6 @@ import {
   loadProject,
   setQuoteApprovalStatus,
   updatePurchaseOrderLineTracking,
-  updateQuoteName,
 } from '../services/localProjects'
 import { exportCheckbookReportPdf, exportCustomerConsolidatedTrackingReportPdf, exportCustomerQuotePdf as downloadCustomerQuotePdf, exportPurchaseOrderPdf as downloadPurchaseOrderPdf } from '../services/pdfExports'
 import { parseTrackingImportFile } from '../services/trackingImport'
@@ -605,8 +583,6 @@ const importMessage = ref('')
 const checkbookFileInput = ref<HTMLInputElement | null>(null)
 const trackingFileInput = ref<HTMLInputElement | null>(null)
 const quoteTable = ref<HTMLTableElement | null>(null)
-const editingQuoteId = ref('')
-const quoteNameDraft = ref('')
 const selectedProjectPoId = ref('')
 let syncingQuoteScroll = false
 const trackingStatusOptions: Status[] = ['Ordered', 'Backordered', 'Shipped', 'Delivered', 'Cancelled']
@@ -730,21 +706,6 @@ function openProjectPo(poId: string) {
 function closeProjectPo() {
   selectedProjectPoId.value = ''
   window.history.replaceState(null, '', '#project-pos')
-}
-
-function startQuoteNameEdit(quote: CustomerQuote) {
-  editingQuoteId.value = quote.id
-  quoteNameDraft.value = quote.quoteName || ''
-}
-
-function cancelQuoteNameEdit() {
-  editingQuoteId.value = ''
-  quoteNameDraft.value = ''
-}
-
-function saveQuoteName(quoteId: string) {
-  project.value = updateQuoteName(String(route.params.id), quoteId, quoteNameDraft.value)
-  cancelQuoteNameEdit()
 }
 
 function syncQuoteScroll(source: 'top' | 'bottom', event: Event) {
