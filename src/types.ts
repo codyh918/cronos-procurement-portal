@@ -89,6 +89,7 @@ export type Status =
 export type ProjectFormInput = {
   projectType: ProjectType
   checkbookStartingBalance: number
+  materialBudget: number
   assignedUserIds: string[]
   projectNumber: string
   projectName: string

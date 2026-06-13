@@ -643,7 +643,11 @@ const selectedProjectPo = computed(() =>
   project.value?.purchaseOrders.find(po => po.id === selectedProjectPoId.value),
 )
 
-const materialBudget = computed(() => project.value?.checkbookStartingBalance || quoteSummary.value.totalCost || quoteSummary.value.customerTotal || poSummary.value.totalCost)
+const materialBudget = computed(() => {
+  if (!project.value) return 0
+  if (project.value.projectType === 'Checkbook') return project.value.checkbookStartingBalance || quoteSummary.value.customerTotal || poSummary.value.totalCost
+  return project.value.materialBudget || quoteSummary.value.totalCost || quoteSummary.value.customerTotal || poSummary.value.totalCost
+})
 const materialOrderedValue = computed(() => poSummary.value.totalCost)
 const materialReceivedValue = computed(() =>
   purchasedEquipmentLines.value.reduce((total, line) => total + line.quantityReceived * line.unitCost, 0),

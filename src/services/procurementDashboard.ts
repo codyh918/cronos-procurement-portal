@@ -539,6 +539,7 @@ function fallbackSeedProject(): Project {
     id: 'seed-project',
     projectType: 'Resale',
     checkbookStartingBalance: 0,
+    materialBudget: 0,
     assignedUserIds: [],
     projectNumber: 'CRONOS-SEED',
     projectName: 'Seed Procurement Project',

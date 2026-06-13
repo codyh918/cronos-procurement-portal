@@ -31,6 +31,7 @@ export function saveProject(input: ProjectFormInput): Project {
     ...input,
     id: crypto.randomUUID(),
     checkbookStartingBalance: Number(input.checkbookStartingBalance || 0),
+    materialBudget: Number(input.materialBudget || 0),
     quotes: [],
     quoteLines: [],
     purchaseOrders: [],
@@ -63,6 +64,7 @@ export function updateProjectFromInput(id: string, input: ProjectFormInput): Pro
       projectName,
       customer,
       checkbookStartingBalance: Number(input.checkbookStartingBalance || 0),
+      materialBudget: Number(input.materialBudget || 0),
       quotes: (project.quotes ?? []).map(quote => ({
         ...quote,
         projectNumber,
@@ -595,6 +597,7 @@ function normalizeProject(project: Project): Project {
     ...project,
     projectType: project.projectType ?? 'Design & Install',
     checkbookStartingBalance: Number(project.checkbookStartingBalance || 0),
+    materialBudget: Number(project.materialBudget || 0),
     assignedUserIds: Array.isArray(project.assignedUserIds) ? project.assignedUserIds : [],
     quotes: (project.quotes ?? []).map(quote => ({
       ...quote,

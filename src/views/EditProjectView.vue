@@ -51,6 +51,16 @@
         required
       />
 
+      <FormField
+        v-if="form.projectType === 'Design & Install'"
+        v-model.number="form.materialBudget"
+        label="Material Budget"
+        placeholder="0.00"
+        type="number"
+        step="0.01"
+        min="0"
+      />
+
       <template v-if="form.projectType !== 'Resale'">
         <FormField v-model="form.projectManager" label="Project Manager" placeholder="Cody Hibbard" />
         <FormField v-model="form.engineer" label="Engineer" placeholder="Engineer name" />
@@ -157,6 +167,7 @@ const statuses: Status[] = [
 const form = reactive<ProjectFormInput>({
   projectType: 'Design & Install',
   checkbookStartingBalance: 0,
+  materialBudget: 0,
   assignedUserIds: [],
   projectNumber: '',
   projectName: '',
@@ -197,6 +208,7 @@ onUnmounted(() => {
 function populateForm(loadedProject: Project) {
   form.projectType = loadedProject.projectType
   form.checkbookStartingBalance = Number(loadedProject.checkbookStartingBalance || 0)
+  form.materialBudget = Number(loadedProject.materialBudget || 0)
   form.assignedUserIds = [...(loadedProject.assignedUserIds ?? [])]
   form.projectNumber = loadedProject.projectNumber
   form.projectName = loadedProject.projectName
@@ -259,6 +271,7 @@ function normalizeForm(): ProjectFormInput {
   return {
     ...form,
     checkbookStartingBalance: Number(form.checkbookStartingBalance || 0),
+    materialBudget: Number(form.materialBudget || 0),
     assignedUserIds: [...new Set(form.assignedUserIds)],
     projectNumber: form.projectNumber.trim(),
     projectName: form.projectName.trim(),
