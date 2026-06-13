@@ -59,120 +59,19 @@
       </RouterLink>
     </section>
 
-    <section class="rollup-card">
-      <div class="rollup-header">
-        <div>
-          <h2>Purchased Equipment Rollup</h2>
-          <p>All project equipment lines converted into purchase orders.</p>
-        </div>
-        <input v-model="equipmentSearch" type="search" placeholder="Search project, PO, part, tracking..." />
-      </div>
-
-      <div class="equipment-metrics">
-        <DashboardMetric
-          v-for="metric in equipmentMetrics"
-          :key="metric.label"
-          href="/projects"
-          :label="metric.label"
-          :value="metric.value"
-          :action="metric.action"
-          :icon="metric.icon"
-          :tone="metric.tone"
-        />
-      </div>
-
-      <div v-if="filteredPurchasedEquipment.length" class="data-table-frame">
-        <div class="table-scroll">
-          <table class="data-table">
-            <thead>
-              <tr>
-                <th>Project</th>
-                <th>PO #</th>
-                <th>Vendor</th>
-                <th>CLIN</th>
-                <th>Part #</th>
-                <th>Description</th>
-                <th>Qty</th>
-                <th>Vendor Order</th>
-                <th>Est. Ship</th>
-                <th>Carrier</th>
-                <th>Tracking</th>
-                <th>Status</th>
-                <th>Cost</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="line in filteredPurchasedEquipment" :key="`${line.poId}-${line.id}`">
-                <td class="nowrap">
-                  <RouterLink class="table-link" :to="`/projects/${line.projectId}`">{{ line.projectNumber }}</RouterLink>
-                </td>
-                <td class="nowrap">
-                  <RouterLink class="table-link dark" :to="`/purchase-orders/${line.poId}`">{{ line.poNumber }}</RouterLink>
-                </td>
-                <td>{{ line.vendor }}</td>
-                <td>{{ line.clin }}</td>
-                <td><strong>{{ line.partNumber }}</strong></td>
-                <td>{{ line.description }}</td>
-                <td>{{ line.quantityOrdered }}</td>
-                <td>{{ line.vendorOrderNumber || 'Pending' }}</td>
-                <td>{{ formatDateOrPending(line.estimatedShipDate) }}</td>
-                <td>{{ line.carrier || 'Pending' }}</td>
-                <td>
-                  <a
-                    v-if="line.trackingUrl && line.trackingNumber"
-                    class="table-link"
-                    :href="line.trackingUrl"
-                    target="_blank"
-                    rel="noreferrer"
-                  >
-                    {{ line.trackingNumber }}
-                  </a>
-                  <span v-else>{{ line.trackingNumber || 'Pending' }}</span>
-                </td>
-                <td><StatusBadge :status="line.status" /></td>
-                <td>{{ currency(line.unitCost * line.quantityOrdered) }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <section v-else class="large-empty-card equipment-empty">
-        <h2>No purchased equipment yet</h2>
-        <p>
-          Once a quote is approved and purchase orders are generated, the full equipment list will
-          roll up here.
-        </p>
-      </section>
-    </section>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { Boxes, Pencil, Plus, ShoppingCart, Truck } from '@lucide/vue'
-import DashboardMetric from '../components/DashboardMetric.vue'
+import { Pencil, Plus } from '@lucide/vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import { calculateQuoteSummary, currency } from '../services/calculations'
 import { getCheckbookSummary } from '../services/checkbook'
-import { formatDisplayDate } from '../services/dateFormat'
 import { loadUsers } from '../services/auth'
 import { loadProjects } from '../services/localProjects'
-import type { Metric, Project, PurchaseOrderLine, Status } from '../types'
+import type { Project } from '../types'
 
-type PurchasedEquipmentLine = PurchaseOrderLine & {
-  projectId: string
-  projectNumber: string
-  projectName: string
-  customer: string
-  poId: string
-  poNumber: string
-  vendor: string
-  poStatus: Status
-  expectedDeliveryDate?: string
-}
-
-const equipmentSearch = ref('')
 const projects = ref<Project[]>(loadProjects())
 const users = ref(loadUsers())
 
@@ -195,68 +94,6 @@ const projectColumns = [
   'Checkbook Balance',
   'Actions',
 ]
-
-const purchasedEquipment = computed<PurchasedEquipmentLine[]>(() =>
-  projects.value.flatMap(project =>
-    project.purchaseOrders.flatMap(po =>
-      po.lines.map(line => ({
-        ...line,
-        projectId: project.id,
-        projectNumber: project.projectNumber,
-        projectName: project.projectName,
-        customer: project.customer,
-        poId: po.id,
-        poNumber: po.poNumber,
-        vendor: po.vendor,
-        poStatus: po.status,
-        vendorOrderNumber: line.vendorOrderNumber,
-        estimatedShipDate: line.estimatedShipDate || po.estimatedShipDate,
-        expectedDeliveryDate: po.expectedDeliveryDate,
-        receivedDate: line.receivedDate,
-        carrier: line.carrier || po.carrier,
-        trackingNumber: line.trackingNumber || po.trackingNumber,
-        trackingUrl: line.trackingUrl || po.trackingUrl,
-        notes: line.notes,
-      })),
-    ),
-  ),
-)
-
-const filteredPurchasedEquipment = computed(() => {
-  const term = equipmentSearch.value.trim().toLowerCase()
-  if (!term) return purchasedEquipment.value
-
-  return purchasedEquipment.value.filter(line =>
-    [
-      line.projectNumber,
-      line.projectName,
-      line.customer,
-      line.poNumber,
-      line.vendor,
-      line.clin,
-      line.partNumber,
-      line.manufacturer,
-      line.description,
-      line.carrier,
-      line.trackingNumber,
-      line.status,
-    ]
-      .join(' ')
-      .toLowerCase()
-      .includes(term),
-  )
-})
-
-const totalOrdered = computed(() => purchasedEquipment.value.reduce((total, line) => total + line.quantityOrdered, 0))
-const totalPurchasedCost = computed(() => purchasedEquipment.value.reduce((total, line) => total + line.unitCost * line.quantityOrdered, 0))
-const trackingEnteredCount = computed(() => purchasedEquipment.value.filter(line => line.trackingNumber).length)
-
-const equipmentMetrics = computed<Metric[]>(() => [
-  { label: 'Purchased Lines', value: purchasedEquipment.value.length, action: 'PO equipment', icon: Boxes },
-  { label: 'Purchased Cost', value: compactCurrency(totalPurchasedCost.value), action: 'Total PO cost', icon: ShoppingCart },
-  { label: 'Qty Ordered', value: totalOrdered.value, action: 'Purchased quantity', icon: ShoppingCart, tone: 'success' },
-  { label: 'Tracking Entered', value: trackingEnteredCount.value, action: 'Shipment updates', icon: Truck, tone: 'warning' },
-])
 
 function refreshProjects() {
   projects.value = loadProjects()
@@ -285,14 +122,4 @@ function checkbookBalance(project: Project) {
   return project.projectType === 'Checkbook' ? currency(getCheckbookSummary(project).remainingBalance) : '-'
 }
 
-function compactCurrency(value: number) {
-  if (value >= 1000000) return `$${(value / 1000000).toFixed(2)}M`
-  if (value >= 1000) return `$${Math.round(value / 1000)}K`
-  return currency(value)
-}
-
-function formatDateOrPending(value: string | undefined) {
-  if (!value) return 'Pending'
-  return formatDisplayDate(value)
-}
 </script>
