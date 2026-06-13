@@ -49,9 +49,8 @@
               <tr v-for="quote in filteredQuotes" :key="quote.id">
                 <td class="nowrap">
                   <RouterLink class="table-link" :to="`/projects/${quote.projectId}/quotes/${quote.id}/edit`">
-                    {{ quote.quoteName || quote.quoteNumber }}
+                    {{ quote.quoteNumber }}
                   </RouterLink>
-                  <small>{{ quote.quoteNumber }}</small>
                 </td>
                 <td class="nowrap">
                   <RouterLink class="table-link project-cell-link" :to="`/projects/${quote.projectId}`">
@@ -71,48 +70,10 @@
                 <td class="nowrap">{{ formatDate(quote.createdAt) }}</td>
                 <td>
                   <div class="row-actions">
-                    <button
-                      v-if="quote.status === 'Customer Approved'"
-                      class="mini-action danger"
-                      type="button"
-                      title="Mark not approved"
-                      @click="toggleQuoteApproval(quote, false)"
-                    >
-                      <XCircle :size="14" />
-                      <span>Unapprove</span>
-                    </button>
-                    <button
-                      v-else
-                      class="mini-action success"
-                      type="button"
-                      title="Approve quote"
-                      @click="toggleQuoteApproval(quote, true)"
-                    >
-                      <CheckCircle2 :size="14" />
-                      <span>Approve</span>
-                    </button>
-                    <button
-                      v-if="quote.status === 'Customer Approved'"
-                      class="mini-action"
-                      type="button"
-                      title="Generate vendor POs"
-                      @click="generatePurchaseOrders(quote)"
-                    >
-                      <PackagePlus :size="14" />
-                      <span>POs</span>
-                    </button>
                     <RouterLink class="mini-action link" :to="`/projects/${quote.projectId}/quotes/${quote.id}/edit`" title="Edit quote">
                       <Pencil :size="14" />
                       <span>Edit</span>
                     </RouterLink>
-                    <button class="mini-action" type="button" title="Export PDF" @click="exportQuotePdf(quote)">
-                      <Download :size="14" />
-                      <span>PDF</span>
-                    </button>
-                    <button class="mini-action" type="button" title="Export Excel" @click="exportQuoteExcel(quote)">
-                      <FileSpreadsheet :size="14" />
-                      <span>Excel</span>
-                    </button>
                   </div>
                 </td>
               </tr>
@@ -132,13 +93,11 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { CheckCircle2, Download, FileSpreadsheet, FileText, PackagePlus, Pencil, Plus, XCircle } from '@lucide/vue'
+import { FileText, Pencil, Plus } from '@lucide/vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import { calculateQuoteSummary, currency } from '../services/calculations'
 import { formatDisplayDate } from '../services/dateFormat'
-import { generatePurchaseOrdersForQuote, loadProject, loadQuotes, setQuoteApprovalStatus } from '../services/localProjects'
-import { exportCustomerQuotePdf } from '../services/pdfExports'
-import { exportCustomerQuoteWorkbook } from '../services/workbookExports'
+import { loadQuotes } from '../services/localProjects'
 import type { CustomerQuote } from '../types'
 
 const quotes = ref<CustomerQuote[]>(loadQuotes())
@@ -203,24 +162,6 @@ function quoteTotals(quote: CustomerQuote) {
     quote.contractFeeEnabled,
     quote.shippingCost ?? 0,
   )
-}
-
-function toggleQuoteApproval(quote: CustomerQuote, approved: boolean) {
-  setQuoteApprovalStatus(quote.projectId, quote.id, approved)
-  refreshQuotes()
-}
-
-function generatePurchaseOrders(quote: CustomerQuote) {
-  generatePurchaseOrdersForQuote(quote.projectId, quote.id)
-  refreshQuotes()
-}
-
-async function exportQuotePdf(quote: CustomerQuote) {
-  await exportCustomerQuotePdf(quote, loadProject(quote.projectId))
-}
-
-async function exportQuoteExcel(quote: CustomerQuote) {
-  await exportCustomerQuoteWorkbook(quote, loadProject(quote.projectId))
 }
 
 function formatDate(value: string) {
