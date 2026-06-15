@@ -5011,108 +5011,12 @@ table {
 }
 
 .auth-hero-panel {
-  position: relative;
-  display: grid;
+  display: block;
   min-height: 100vh;
-  place-items: center;
-  overflow: hidden;
-  background:
-    radial-gradient(circle at 82% 38%, rgba(29, 123, 255, 0.36), transparent 0 9%, transparent 18%),
-    radial-gradient(circle at 19% 58%, rgba(38, 126, 255, 0.3), transparent 0 8%, transparent 17%),
-    linear-gradient(160deg, #03101f 0%, #061a32 48%, #0b2343 100%);
-  color: #ffffff;
-}
-
-.auth-hero-panel::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background:
-    linear-gradient(35deg, transparent 0 44%, rgba(30, 120, 255, 0.26) 44.2% 44.5%, transparent 44.7%),
-    linear-gradient(155deg, transparent 0 57%, rgba(30, 120, 255, 0.2) 57.2% 57.5%, transparent 57.7%),
-    radial-gradient(ellipse at 50% 88%, rgba(102, 144, 185, 0.28), transparent 54%);
-  opacity: 0.9;
-}
-
-.auth-hero-panel::after {
-  content: '';
-  position: absolute;
-  right: -15%;
-  bottom: -14%;
-  width: 62%;
-  max-width: 580px;
-  aspect-ratio: 1.6;
-  border-radius: 52% 48% 10% 10%;
-  background:
-    linear-gradient(180deg, rgba(255, 255, 255, 0.1), rgba(10, 18, 30, 0.7)),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.12) 0 8%, transparent 8% 18%, rgba(255, 255, 255, 0.1) 18% 26%, transparent 26%),
-    #1d334c;
-  box-shadow:
-    -160px 86px 0 -48px rgba(15, 28, 43, 0.82),
-    -48px 78px 0 -32px rgba(3, 11, 21, 0.8);
-  opacity: 0.72;
-  transform: skewX(-12deg);
-}
-
-.auth-hero-grid {
-  position: absolute;
-  inset: 0;
-  background-image:
-    linear-gradient(rgba(25, 111, 232, 0.12) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(25, 111, 232, 0.12) 1px, transparent 1px);
-  background-size: 52px 52px;
-  mask-image: linear-gradient(to top, rgba(0, 0, 0, 0.9), transparent 72%);
-}
-
-.auth-hero-content {
-  position: relative;
-  z-index: 1;
-  display: grid;
-  place-items: center;
-  padding: 48px;
-  text-align: center;
-}
-
-.auth-hero-mark {
-  display: grid;
-  width: 120px;
-  height: 76px;
-  place-items: center;
-  border-radius: 50% 48% 50% 18%;
-  background: linear-gradient(135deg, #2c82ff, #0859e8);
-  color: #ffffff;
-  font-size: 66px;
-  font-weight: 900;
-  line-height: 1;
-  transform: skewX(-10deg);
-}
-
-.auth-hero-content strong {
-  display: block;
-  margin-top: 32px;
-  color: #ffffff;
-  font-size: clamp(48px, 7vw, 76px);
-  font-weight: 900;
-  letter-spacing: 0.05em;
-  line-height: 1;
-  text-shadow: 0 2px 16px rgba(0, 0, 0, 0.25);
-}
-
-.auth-hero-content p {
-  margin: 20px 0 0;
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 17px;
-  font-weight: 700;
-  letter-spacing: 0.22em;
-  text-transform: uppercase;
-}
-
-.auth-hero-content span {
-  display: block;
-  width: 58px;
-  height: 2px;
-  margin-top: 26px;
-  background: #2578ff;
+  background-image: url('/assets/cronos-login-hero-v2.png');
+  background-repeat: no-repeat;
+  background-position: center top;
+  background-size: cover;
 }
 
 .auth-form-panel {
@@ -5413,31 +5317,7 @@ table {
   .auth-hero-panel {
     width: 100%;
     min-height: 260px;
-  }
-
-  .auth-hero-panel::after {
-    width: 58%;
-    opacity: 0.45;
-  }
-
-  .auth-hero-content {
-    padding: 34px 24px;
-  }
-
-  .auth-hero-mark {
-    width: 84px;
-    height: 54px;
-    font-size: 46px;
-  }
-
-  .auth-hero-content strong {
-    margin-top: 18px;
-    font-size: 42px;
-  }
-
-  .auth-hero-content p {
-    font-size: 12px;
-    letter-spacing: 0.16em;
+    background-position: center top;
   }
 
   .auth-form-panel {

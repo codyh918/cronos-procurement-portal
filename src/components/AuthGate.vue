@@ -1,15 +1,8 @@
-<template>
+﻿<template>
   <slot v-if="session" />
 
   <div v-else class="auth-gate-page">
     <section class="auth-hero-panel" aria-label="Cronos">
-      <div class="auth-hero-grid"></div>
-      <div class="auth-hero-content">
-        <div class="auth-hero-mark">C</div>
-        <strong>CRONOS</strong>
-        <p>Building what's next.</p>
-        <span></span>
-      </div>
     </section>
 
     <section class="auth-form-panel">
@@ -80,7 +73,7 @@
       </form>
 
       <footer class="auth-footer">
-        <p>© 2026 Cronos. All rights reserved.</p>
+        <p>&copy; 2026 Cronos. All rights reserved.</p>
         <nav aria-label="Login footer">
           <a href="mailto:support@cronosllc.com?subject=Cronos%20privacy%20policy%20request">Privacy Policy</a>
           <span>|</span>
@@ -169,3 +162,4 @@ function contactAdmins(reason: 'help' | 'password' | 'sso') {
   window.location.href = `mailto:${recipients}?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`
 }
 </script>
+
