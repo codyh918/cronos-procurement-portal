@@ -73,49 +73,50 @@
       <main class="procurement-dashboard-main">
         <section class="procurement-top-grid">
           <DashboardPanel title="My Tasks" :meta="`${visibleTasks.length} open`">
-            <div v-if="visibleTasks.length" class="action-table-scroll">
-              <table class="action-table">
-                <thead>
-                  <tr>
-                    <th>Task</th>
-                    <th>Project</th>
-                    <th>Customer</th>
-                    <th>Priority</th>
-                    <th>Due</th>
-                    <th>Status</th>
-                    <th>Assigned</th>
-                    <th>Related</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="task in visibleTasks" :key="task.id">
-                    <td>
-                      <strong>{{ task.title }}</strong>
-                      <small>{{ task.description }}</small>
-                    </td>
-                    <td>{{ task.projectNumber }}</td>
-                    <td>{{ task.customer }}</td>
-                    <td><Badge :label="task.priority" :tone="priorityTone(task.priority)" /></td>
-                    <td>{{ formatShortDate(task.dueDate) }}</td>
-                    <td><Badge :label="task.status" :tone="statusTone(task.status)" /></td>
-                    <td>
-                      <select :value="task.assignedToUserId" :disabled="!canReassign" @change="reassignTask(task.id, inputValue($event))">
-                        <option v-for="user in activeUsers" :key="user.id" :value="user.id">{{ user.name }}</option>
-                      </select>
-                    </td>
-                    <td>
-                      <RouterLink class="table-link" :to="task.relatedHref">{{ task.relatedRecordType }} {{ task.relatedRecordId }}</RouterLink>
-                    </td>
-                    <td>
-                      <div class="dashboard-row-actions">
-                        <button type="button" @click="completeTask(task.id)">Complete</button>
-                        <input :value="task.dueDate" type="date" @change="changeTaskDueDate(task.id, inputValue($event))" />
-                      </div>
-                    </td>
-                  </tr>
-                </tbody>
-              </table>
+            <div v-if="visibleTasks.length" class="dashboard-card-list task-card-list">
+              <article v-for="task in visibleTasks" :key="task.id" class="dashboard-record-card task-record-card">
+                <div class="dashboard-record-heading">
+                  <div class="dashboard-record-title">
+                    <strong>{{ task.title }}</strong>
+                    <small>{{ task.description }}</small>
+                  </div>
+                  <div class="dashboard-record-badges">
+                    <Badge :label="task.priority" :tone="priorityTone(task.priority)" />
+                    <Badge :label="task.status" :tone="statusTone(task.status)" />
+                  </div>
+                </div>
+                <dl class="dashboard-record-meta">
+                  <div>
+                    <dt>Project</dt>
+                    <dd>{{ task.projectNumber }}</dd>
+                  </div>
+                  <div>
+                    <dt>Customer</dt>
+                    <dd>{{ task.customer }}</dd>
+                  </div>
+                  <div>
+                    <dt>Due</dt>
+                    <dd>{{ formatShortDate(task.dueDate) }}</dd>
+                  </div>
+                  <div>
+                    <dt>Related</dt>
+                    <dd><RouterLink class="table-link" :to="task.relatedHref">{{ task.relatedRecordType }} {{ task.relatedRecordId }}</RouterLink></dd>
+                  </div>
+                </dl>
+                <div class="task-card-controls">
+                  <label>
+                    <span>Assigned</span>
+                    <select :value="task.assignedToUserId" :disabled="!canReassign" @change="reassignTask(task.id, inputValue($event))">
+                      <option v-for="user in activeUsers" :key="user.id" :value="user.id">{{ user.name }}</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Due Date</span>
+                    <input :value="task.dueDate" type="date" @change="changeTaskDueDate(task.id, inputValue($event))" />
+                  </label>
+                  <button type="button" @click="completeTask(task.id)">Complete</button>
+                </div>
+              </article>
             </div>
             <EmptyState v-else title="No tasks need action" detail="Your filtered task queue is clear." />
           </DashboardPanel>
@@ -127,16 +128,37 @@
               </button>
             </div>
             <div v-if="visibleDueOuts.length" class="compact-record-list">
-              <RouterLink v-for="dueOut in visibleDueOuts" :key="dueOut.id" :to="`/projects/${dueOut.projectId}`" class="compact-record">
-                <div>
-                  <strong>{{ dueOut.title }}</strong>
-                  <small>{{ dueOut.projectNumber }} - {{ dueOut.customer }}</small>
+              <RouterLink v-for="dueOut in visibleDueOuts" :key="dueOut.id" :to="`/projects/${dueOut.projectId}`" class="dashboard-record-card due-out-record">
+                <div class="dashboard-record-heading">
+                  <div class="dashboard-record-title">
+                    <strong>{{ dueOut.title }}</strong>
+                    <small>{{ dueOut.projectNumber }} - {{ dueOut.customer }}</small>
+                  </div>
+                  <Badge :label="dueOut.waitingOn" tone="warning" />
                 </div>
-                <Badge :label="dueOut.waitingOn" tone="warning" />
-                <span>{{ dueOut.owner }}</span>
-                <span>{{ formatShortDate(dueOut.dueDate) }}</span>
-                <em>{{ agingDays(dueOut.dueDate) }}d aging</em>
-                <p>{{ dueOut.nextAction }}</p>
+                <dl class="dashboard-record-meta">
+                  <div>
+                    <dt>Project</dt>
+                    <dd>{{ dueOut.projectNumber }}</dd>
+                  </div>
+                  <div>
+                    <dt>Customer</dt>
+                    <dd>{{ dueOut.customer }}</dd>
+                  </div>
+                  <div>
+                    <dt>Owner</dt>
+                    <dd>{{ dueOut.owner }}</dd>
+                  </div>
+                  <div>
+                    <dt>Due / Age</dt>
+                    <dd>{{ formatShortDate(dueOut.dueDate) }} · {{ agingDays(dueOut.dueDate) }}d aging</dd>
+                  </div>
+                  <div>
+                    <dt>Status</dt>
+                    <dd>{{ dueOut.status }}</dd>
+                  </div>
+                </dl>
+                <p><span>Action needed:</span> {{ dueOut.nextAction }}</p>
               </RouterLink>
             </div>
             <EmptyState v-else title="No due-outs found" detail="No due-outs match the selected category." />
@@ -144,13 +166,35 @@
 
           <DashboardPanel title="Vendor Updates Needed" :meta="`${visibleVendorUpdates.length} flags`">
             <div v-if="visibleVendorUpdates.length" class="compact-record-list">
-              <RouterLink v-for="update in visibleVendorUpdates" :key="update.id" :to="update.relatedHref" class="compact-record vendor-record">
-                <div class="vendor-alert-main">
-                  <strong>{{ update.vendor }}</strong>
-                  <small>PO {{ update.poNumber }} - {{ update.projectNumber }}</small>
+              <RouterLink v-for="update in visibleVendorUpdates" :key="update.id" :to="update.relatedHref" class="dashboard-record-card vendor-record">
+                <div class="dashboard-record-heading">
+                  <div class="dashboard-record-title">
+                    <strong>{{ update.vendor }}</strong>
+                    <small>PO {{ update.poNumber }} - {{ update.projectNumber }}</small>
+                  </div>
+                  <div class="dashboard-record-badges">
+                    <span class="vendor-alert-chip" :title="update.issueType">{{ update.issueType }}</span>
+                    <span class="vendor-alert-age">{{ update.daysSinceUpdate }}d</span>
+                  </div>
                 </div>
-                <span class="vendor-alert-chip">{{ update.issueType }}</span>
-                <span class="vendor-alert-age">{{ update.daysSinceUpdate }}d</span>
+                <dl class="dashboard-record-meta">
+                  <div>
+                    <dt>PO</dt>
+                    <dd>{{ update.poNumber }}</dd>
+                  </div>
+                  <div>
+                    <dt>Project</dt>
+                    <dd>{{ update.projectNumber }}</dd>
+                  </div>
+                  <div>
+                    <dt>Vendor</dt>
+                    <dd>{{ update.vendor }}</dd>
+                  </div>
+                  <div>
+                    <dt>Status</dt>
+                    <dd>{{ update.status }}</dd>
+                  </div>
+                </dl>
                 <p>
                   <span>Action:</span>
                   {{ update.nextAction }}
@@ -273,10 +317,12 @@
         <DashboardPanel title="Alerts" :meta="`${visibleAlerts.length} urgent`">
           <div v-if="visibleAlerts.length" class="alert-stack">
             <RouterLink v-for="alert in visibleAlerts" :key="alert.id" :to="alert.relatedHref" class="alert-card" :class="`alert-${alert.severity.toLowerCase()}`">
-              <Badge :label="alert.severity" :tone="priorityTone(alert.severity)" />
+              <div class="alert-card-top">
+                <Badge :label="alert.severity" :tone="priorityTone(alert.severity)" />
+              </div>
               <strong>{{ alert.title }}</strong>
               <p>{{ alert.description }}</p>
-              <small>{{ alert.projectNumber }} - {{ alert.relatedRecordType }} {{ alert.relatedRecordId }}</small>
+              <small>{{ alert.projectNumber }} - {{ alert.relatedRecordType }} {{ alert.relatedRecordId }} - {{ alert.assignedUser }}</small>
             </RouterLink>
           </div>
           <EmptyState v-else title="No urgent alerts" detail="Nothing is currently blocking procurement flow." />

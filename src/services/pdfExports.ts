@@ -3,11 +3,23 @@ import { calculateLineTotals, calculateQuoteSummary, currency } from './calculat
 import { getCheckbookSummary } from './checkbook'
 
 type JsPdf = import('jspdf').jsPDF
+type PdfTableColumn = {
+  label: string
+  x: number
+  width: number
+  align: 'left' | 'center' | 'right'
+}
+type PdfTableCell = {
+  column: PdfTableColumn
+  text: string | string[]
+  fontSize?: number
+}
 let logoDataUrl: string | null | undefined
 const NAVY: [number, number, number] = [6, 22, 61]
 const LINE: [number, number, number] = [200, 210, 224]
 const TEXT: [number, number, number] = [7, 27, 73]
 const MUTED: [number, number, number] = [82, 97, 121]
+const PAGE_BOTTOM = 722
 const CRONOS_ADDRESS = ['4301 Evans to Locks Road', 'Evans, GA 30809']
 const CRONOS_BILL_TO = ['3925 CAREY CT', 'ELLICOTT CITY, MD 21042']
 const CRONOS_POC_EMAIL = 'cody.hibbard@cronosllc.com'
@@ -152,8 +164,9 @@ function drawInfoBox(doc: JsPdf, x: number, y: number, width: number, height: nu
   const visible = cleanLines.length ? cleanLines : ['-']
   let textY = y + 38
   visible.forEach(line => {
-    doc.text(doc.splitTextToSize(line, width - 20), x + 10, textY)
-    textY += 12
+    const wrapped = wrapPdfText(doc, line, width - 20)
+    doc.text(wrapped, x + 10, textY)
+    textY += Math.max(12, wrapped.length * 10)
   })
 }
 
@@ -170,28 +183,21 @@ function drawPurchaseOrderTemplateTable(doc: JsPdf, startY: number, po: Purchase
   let y = drawDarkTableHeader(doc, startY, columns)
 
   po.lines.forEach((line, index) => {
-    const descriptionLines = doc.splitTextToSize(line.description || '-', 168).slice(0, 4)
-    const partLines = doc.splitTextToSize(line.partNumber || '-', 68).slice(0, 2)
-    const manufacturerLines = doc.splitTextToSize(line.manufacturer || po.vendor || '-', 74).slice(0, 2)
-    const rowHeight = Math.max(28, 14 + Math.max(descriptionLines.length, partLines.length, manufacturerLines.length) * 10)
-    if (y + rowHeight > 704) {
+    const cells = [
+      { column: columns[0], text: line.itemNumber || String(index + 1) },
+      { column: columns[1], text: line.manufacturer || po.vendor || '-' },
+      { column: columns[2], text: line.description || '-' },
+      { column: columns[3], text: line.partNumber || '-' },
+      { column: columns[4], text: String(line.quantityOrdered || 0) },
+      { column: columns[5], text: currency(line.unitCost || 0) },
+      { column: columns[6], text: currency((line.unitCost || 0) * (line.quantityOrdered || 0)) },
+    ]
+    const rowHeight = calculatePdfTableRowHeight(doc, cells)
+    if (y + rowHeight > PAGE_BOTTOM) {
       doc.addPage()
       y = drawDarkTableHeader(doc, 54, columns)
     }
-
-    doc.setDrawColor(224, 229, 237)
-    doc.setLineWidth(0.5)
-    doc.rect(40, y, 532, rowHeight)
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(8)
-    doc.setTextColor(...TEXT)
-    doc.text(line.itemNumber || String(index + 1), 46, y + 17)
-    doc.text(manufacturerLines, 88, y + 17)
-    doc.text(descriptionLines, 170, y + 17)
-    doc.text(partLines, 348, y + 17)
-    doc.text(String(line.quantityOrdered || 0), 437, y + 17, { align: 'center' })
-    doc.text(currency(line.unitCost || 0), 510, y + 17, { align: 'right' })
-    doc.text(currency((line.unitCost || 0) * (line.quantityOrdered || 0)), 566, y + 17, { align: 'right' })
+    drawMeasuredTableRow(doc, y, rowHeight, cells)
     y += rowHeight
   })
 
@@ -214,30 +220,23 @@ function drawQuoteTemplateTable(doc: JsPdf, startY: number, quote: CustomerQuote
 
   quote.lines.forEach((line, index) => {
     const totals = calculateLineTotals(line)
-    const manufacturerLines = doc.splitTextToSize(line.manufacturer || '-', 62).slice(0, 3)
-    const partLines = doc.splitTextToSize(line.partNumber || '-', 62).slice(0, 3)
-    const descriptionLines = doc.splitTextToSize(line.description || '-', 112).slice(0, 4)
-    const leadTimeLines = doc.splitTextToSize(line.leadTime?.trim() || 'TBD', 52).slice(0, 3)
-    const rowHeight = Math.max(28, 14 + Math.max(manufacturerLines.length, partLines.length, descriptionLines.length, leadTimeLines.length) * 10)
-    if (y + rowHeight > 704) {
+    const cells = [
+      { column: columns[0], text: String(index + 1) },
+      { column: columns[1], text: line.manufacturer || '-' },
+      { column: columns[2], text: line.clin || '-' },
+      { column: columns[3], text: String(line.quantity || 0) },
+      { column: columns[4], text: line.partNumber || '-' },
+      { column: columns[5], text: line.description || '-' },
+      { column: columns[6], text: currency(totals.sellPrice) },
+      { column: columns[7], text: currency(totals.extendedSellPrice) },
+      { column: columns[8], text: line.leadTime?.trim() || 'TBD' },
+    ]
+    const rowHeight = calculatePdfTableRowHeight(doc, cells)
+    if (y + rowHeight > PAGE_BOTTOM) {
       doc.addPage()
       y = drawDarkTableHeader(doc, 54, columns)
     }
-
-    doc.setDrawColor(224, 229, 237)
-    doc.rect(40, y, 532, rowHeight)
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(8)
-    doc.setTextColor(...TEXT)
-    doc.text(String(index + 1), 46, y + 17)
-    doc.text(manufacturerLines, 74, y + 17)
-    doc.text(line.clin || '-', 144, y + 17)
-    doc.text(String(line.quantity || 0), 187, y + 17, { align: 'center' })
-    doc.text(partLines, 208, y + 17)
-    doc.text(descriptionLines, 278, y + 17)
-    doc.text(currency(totals.sellPrice), 442, y + 17, { align: 'right' })
-    doc.text(currency(totals.extendedSellPrice), 504, y + 17, { align: 'right' })
-    doc.text(leadTimeLines, 516, y + 17)
+    drawMeasuredTableRow(doc, y, rowHeight, cells)
     y += rowHeight
   })
 
@@ -247,7 +246,7 @@ function drawQuoteTemplateTable(doc: JsPdf, startY: number, quote: CustomerQuote
 function drawDarkTableHeader(
   doc: JsPdf,
   y: number,
-  columns: Array<{ label: string; x: number; width: number; align: 'left' | 'center' | 'right' }>,
+  columns: PdfTableColumn[],
 ) {
   doc.setFillColor(...NAVY)
   doc.rect(40, y, 532, 24, 'F')
@@ -261,8 +260,44 @@ function drawDarkTableHeader(
   return y + 24
 }
 
+function wrapPdfText(doc: JsPdf, value: string | string[], width: number) {
+  const raw = Array.isArray(value) ? value.join('\n') : String(value || '-')
+  return raw
+    .split(/\r?\n/)
+    .flatMap(line => doc.splitTextToSize(line.trim() || '-', Math.max(12, width)))
+}
+
+function calculatePdfTableRowHeight(doc: JsPdf, cells: PdfTableCell[], lineHeight = 10) {
+  const maxLines = Math.max(1, ...cells.map(cell => wrapPdfText(doc, cell.text, cell.column.width - 12).length))
+  return Math.max(30, 14 + maxLines * lineHeight)
+}
+
+function drawMeasuredTableRow(doc: JsPdf, y: number, height: number, cells: PdfTableCell[]) {
+  doc.setDrawColor(224, 229, 237)
+  doc.setLineWidth(0.5)
+  doc.rect(40, y, 532, height)
+  doc.setFont('helvetica', 'normal')
+  doc.setTextColor(...TEXT)
+  cells.forEach(cell => {
+    const fontSize = cell.fontSize ?? 8
+    const lines = wrapPdfText(doc, cell.text, cell.column.width - 12)
+    const textX =
+      cell.column.align === 'right'
+        ? cell.column.x + cell.column.width - 6
+        : cell.column.align === 'center'
+          ? cell.column.x + cell.column.width / 2
+          : cell.column.x + 6
+    doc.setFontSize(fontSize)
+    doc.text(lines, textX, y + 17, { align: cell.column.align })
+  })
+}
+
 function drawPurchaseOrderTotal(doc: JsPdf, y: number, total: number) {
-  const boxY = Math.min(y, 704)
+  let boxY = y
+  if (boxY + 30 > PAGE_BOTTOM) {
+    doc.addPage()
+    boxY = 54
+  }
   doc.setDrawColor(...LINE)
   doc.setLineWidth(0.8)
   doc.rect(408, boxY, 164, 30)
@@ -328,11 +363,13 @@ export async function exportCustomerTrackingUpdatePdf(po: PurchaseOrder | Projec
   ])
 
   if (po.customerUpdateNotes) {
+    const noteLines = wrapPdfText(doc, po.customerUpdateNotes, 520)
+    y = ensurePage(doc, y + 8, 28 + noteLines.length * 10)
     doc.setFont('helvetica', 'bold')
-    doc.text('Customer Update Notes', 40, y + 8)
+    doc.text('Customer Update Notes', 40, y)
     doc.setFont('helvetica', 'normal')
-    doc.text(doc.splitTextToSize(po.customerUpdateNotes, 520), 40, y + 26)
-    y += 58
+    doc.text(noteLines, 40, y + 18)
+    y += 28 + noteLines.length * 10
   }
 
   drawPoLines(doc, y + 8, po, true)
@@ -352,14 +389,27 @@ export async function exportCheckbookReportPdf(project: Project) {
     ['Remaining Balance', currency(summary.remainingBalance)],
   ])
 
-  y = drawTableHeader(doc, y + 16, ['PO #', 'Vendor', 'Description', 'Customer Cost'])
+  const columns: PdfTableColumn[] = [
+    { label: 'PO #', x: 40, width: 66, align: 'left' },
+    { label: 'Vendor', x: 106, width: 92, align: 'left' },
+    { label: 'Description', x: 198, width: 280, align: 'left' },
+    { label: 'Customer Cost', x: 478, width: 82, align: 'right' },
+  ]
+  y = drawDarkTableHeader(doc, y + 16, columns)
   summary.lines.forEach(line => {
-    y = ensurePage(doc, y)
-    doc.text(line.poNumber, 40, y)
-    doc.text(line.vendor || '-', 106, y)
-    doc.text(doc.splitTextToSize(line.description || '-', 280), 174, y)
-    doc.text(currency(line.customerCost), 500, y)
-    y += 32
+    const cells = [
+      { column: columns[0], text: line.poNumber },
+      { column: columns[1], text: line.vendor || '-' },
+      { column: columns[2], text: line.description || '-' },
+      { column: columns[3], text: currency(line.customerCost) },
+    ]
+    const rowHeight = calculatePdfTableRowHeight(doc, cells)
+    if (y + rowHeight > PAGE_BOTTOM) {
+      doc.addPage()
+      y = drawDarkTableHeader(doc, 54, columns)
+    }
+    drawMeasuredTableRow(doc, y, rowHeight, cells)
+    y += rowHeight
   })
 
   drawDocumentFooter(doc)
@@ -417,9 +467,9 @@ export async function exportCustomerConsolidatedTrackingReportPdf(project: Proje
 
   let y = drawTrackingReportHeader(doc, 250)
   rows.forEach((row, index) => {
-    const descriptionLines = doc.splitTextToSize(row.description || '-', 118).slice(0, 3)
-    const partLines = doc.splitTextToSize(row.partNumber || '-', 82).slice(0, 2)
-    const trackingLines = splitTrackingReportValue(doc, row.trackingNumber || 'Pending', 104).slice(0, 4)
+    const descriptionLines = wrapPdfText(doc, row.description || '-', 118)
+    const partLines = wrapPdfText(doc, row.partNumber || '-', 82)
+    const trackingLines = splitTrackingReportValue(doc, row.trackingNumber || 'Pending', 104)
     const dateLines = [`ESD: ${formatMaybeDate(row.estimatedShipDate)}`, `Del: ${formatMaybeDate(row.deliveryDate)}`]
     const rowHeight = Math.max(42, 18 + Math.max(descriptionLines.length, partLines.length, trackingLines.length, dateLines.length) * 10)
 
@@ -437,13 +487,13 @@ export async function exportCustomerConsolidatedTrackingReportPdf(project: Proje
     doc.setFontSize(7.5)
     doc.setTextColor(7, 27, 73)
     doc.text(row.itemNumber, 48, y + 17)
-    doc.text(doc.splitTextToSize(row.poNumber, 82), 68, y + 17)
-    doc.text(doc.splitTextToSize(row.vendor, 58), 158, y + 17)
-    doc.text(doc.splitTextToSize(row.vendorOrderNumber || 'Pending', 66), 222, y + 17)
+    doc.text(wrapPdfText(doc, row.poNumber, 82), 68, y + 17)
+    doc.text(wrapPdfText(doc, row.vendor, 58), 158, y + 17)
+    doc.text(wrapPdfText(doc, row.vendorOrderNumber || 'Pending', 66), 222, y + 17)
     doc.text(partLines, 296, y + 17)
     doc.text(descriptionLines, 384, y + 17)
     doc.text(String(row.quantity), 516, y + 17, { align: 'center' })
-    doc.text(doc.splitTextToSize(row.carrier || 'Pending', 50), 534, y + 17)
+    doc.text(wrapPdfText(doc, row.carrier || 'Pending', 50), 534, y + 17)
     doc.text(trackingLines, 590, y + 17)
     doc.text(dateLines, 708, y + 17)
     y += rowHeight
@@ -558,8 +608,8 @@ function drawQuoteLines(doc: JsPdf, startY: number, quote: CustomerQuote) {
   let y = drawTableHeader(doc, startY, ['CLIN', 'Part', 'Description', 'Qty', 'Unit', 'Extended'])
   quote.lines.forEach(line => {
     const totals = calculateLineTotals(line)
-    const partLines = doc.splitTextToSize(line.partNumber || '-', 72)
-    const descriptionLines = doc.splitTextToSize(line.description || '-', 188)
+    const partLines = wrapPdfText(doc, line.partNumber || '-', 72)
+    const descriptionLines = wrapPdfText(doc, line.description || '-', 188)
     const rowHeight = getPdfRowHeight(partLines, descriptionLines)
     y = ensurePage(doc, y, rowHeight)
     drawTableRow(doc, y, rowHeight)
@@ -580,10 +630,10 @@ function drawPoLines(doc: JsPdf, startY: number, po: PurchaseOrder | ProjectPurc
     : ['CLIN', 'Part', 'Description', 'Qty', 'Unit', 'Extended']
   let y = drawTableHeader(doc, startY, headers)
   po.lines.forEach(line => {
-    const partLines = doc.splitTextToSize(line.partNumber || '-', 72)
-    const descriptionLines = doc.splitTextToSize(line.description || '-', 188)
-    const statusLines = trackingOnly ? doc.splitTextToSize(line.status || '-', 72) : []
-    const trackingLines = trackingOnly ? doc.splitTextToSize(line.trackingNumber || po.trackingNumber || '-', 80) : []
+    const partLines = wrapPdfText(doc, line.partNumber || '-', 72)
+    const descriptionLines = wrapPdfText(doc, line.description || '-', 188)
+    const statusLines = trackingOnly ? wrapPdfText(doc, line.status || '-', 72) : []
+    const trackingLines = trackingOnly ? wrapPdfText(doc, line.trackingNumber || po.trackingNumber || '-', 80) : []
     const rowHeight = getPdfRowHeight(partLines, descriptionLines, statusLines, trackingLines)
     y = ensurePage(doc, y, rowHeight)
     drawTableRow(doc, y, rowHeight)
@@ -678,7 +728,7 @@ function drawDocumentFooter(doc: JsPdf) {
 }
 
 function ensurePage(doc: JsPdf, y: number, rowHeight = 30) {
-  if (y + rowHeight < 740) return y
+  if (y + rowHeight < PAGE_BOTTOM) return y
   doc.addPage()
   return 54
 }
@@ -723,7 +773,7 @@ function splitTrackingReportValue(doc: JsPdf, value: string, width: number) {
     .split(/[;,]\s*|\s{2,}/)
     .map(part => part.trim())
     .filter(Boolean)
-    .flatMap(part => doc.splitTextToSize(part, width))
+    .flatMap(part => wrapPdfText(doc, part, width))
 }
 
 function sanitizeFileName(value: string) {
