@@ -55,7 +55,7 @@ function isBadgeCell(cell: TableCell): cell is BadgeCell {
 }
 
 function isIdentifierColumn(column: string) {
-  return /(^|\s)(#|id|po|project|quote|date|eta|cost|value|total)(\s|$)/i.test(column)
+  return /(^|\s)(#|id|po|project|quote|date|eta|esd|cost|value|total|qty|quantity|part|tracking|carrier|status)(\s|$)/i.test(column)
 }
 
 function statusClass(status: Status) {

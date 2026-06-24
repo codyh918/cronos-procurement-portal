@@ -8,11 +8,18 @@ type PdfTableColumn = {
   x: number
   width: number
   align: 'left' | 'center' | 'right'
+  wrap?: boolean
+  numeric?: boolean
 }
 type PdfTableCell = {
   column: PdfTableColumn
   text: string | string[]
   fontSize?: number
+}
+type AtlasMetadataRow = {
+  label: string
+  value: string | number
+  wrap?: boolean
 }
 let logoDataUrl: string | null | undefined
 const NAVY: [number, number, number] = [6, 22, 61]
@@ -36,12 +43,12 @@ export async function exportCustomerQuotePdf(quote: CustomerQuote, project?: Pro
   doc.setTextColor(...NAVY)
   doc.text('Quote', 471, 34, { align: 'center' })
 
-  const metadataBottom = drawMetadataBlock(doc, 372, 42, 184, [
-    ['Quote Number:', quote.quoteNumber],
-    ['Quote Name:', quote.quoteName || '-'],
-    ['Date:', formatPdfDate(quote.createdAt || new Date().toISOString())],
-    ['Expires:', getQuoteExpirationDate(quote)],
-    ['Project:', quote.projectNumber],
+  const metadataBottom = AtlasMetadataGrid(doc, 372, 42, 184, [
+    { label: 'Quote Number:', value: quote.quoteNumber, wrap: false },
+    { label: 'Quote Name:', value: quote.quoteName || '-', wrap: true },
+    { label: 'Date:', value: formatPdfDate(quote.createdAt || new Date().toISOString()), wrap: false },
+    { label: 'Expires:', value: getQuoteExpirationDate(quote), wrap: false },
+    { label: 'Project:', value: quote.projectNumber, wrap: false },
   ])
 
   const infoBoxY = Math.max(150, metadataBottom + 16)
@@ -74,9 +81,9 @@ export async function exportCustomerQuotePdf(quote: CustomerQuote, project?: Pro
   }
   totalRows.push(['Quote Total', currency(summary.customerTotal)])
 
-  y = ensurePage(doc, y + 24, 98)
+  y = AtlasPageBreakHandler(doc, y + 24, 98)
   drawTotals(doc, y, totalRows)
-  drawDocumentFooter(doc)
+  AtlasDocumentFooter(doc)
   doc.save(`${quote.quoteNumber}.pdf`)
 }
 
@@ -89,11 +96,11 @@ export async function exportPurchaseOrderPdf(po: PurchaseOrder | ProjectPurchase
   doc.setTextColor(...NAVY)
   doc.text('Purchase Order', 474, 34, { align: 'center' })
 
-  const metadataBottom = drawMetadataBlock(doc, 372, 46, 184, [
-    ['Date:', formatPdfDate(po.dateIssued)],
-    ['Terms:', 'NET30'],
-    ['PO #:', po.poNumber],
-    ['Project:', project ? project.projectNumber : 'projectNumber' in po ? po.projectNumber : ''],
+  const metadataBottom = AtlasMetadataGrid(doc, 372, 46, 184, [
+    { label: 'Date:', value: formatPdfDate(po.dateIssued), wrap: false },
+    { label: 'Terms:', value: 'NET30', wrap: false },
+    { label: 'PO #:', value: po.poNumber, wrap: false },
+    { label: 'Project:', value: project ? project.projectNumber : 'projectNumber' in po ? po.projectNumber : '', wrap: false },
   ])
 
   const firstInfoY = Math.max(150, metadataBottom + 16)
@@ -136,12 +143,13 @@ async function drawCronosLetterhead(doc: JsPdf, title: string) {
   }
 }
 
-function drawMetadataBlock(doc: JsPdf, x: number, y: number, width: number, rows: string[][]) {
+function AtlasMetadataGrid(doc: JsPdf, x: number, y: number, width: number, rows: AtlasMetadataRow[]) {
   const labelWidth = 62
   const valueWidth = width - labelWidth - 24
-  const preparedRows = rows.map(([label, value]) => ({
-    label,
-    value: wrapPdfText(doc, String(value || '-'), valueWidth),
+  const preparedRows = rows.map(row => ({
+    label: row.label,
+    wrap: row.wrap ?? true,
+    value: row.wrap === false ? [AtlasCurrencyCell(doc, String(row.value || '-'), valueWidth, 8.5)] : AtlasWrappedText(doc, String(row.value || '-'), valueWidth),
   }))
   const rowHeights = preparedRows.map(row => Math.max(18, 8 + row.value.length * 10))
   const blockHeight = 12 + rowHeights.reduce((total, height) => total + height, 0)
@@ -179,7 +187,7 @@ function drawInfoBox(doc: JsPdf, x: number, y: number, width: number, height: nu
   const visible = cleanLines.length ? cleanLines : ['-']
   let textY = y + 38
   visible.forEach(line => {
-    const wrapped = wrapPdfText(doc, line, width - 20)
+    const wrapped = AtlasWrappedText(doc, line, width - 20)
     doc.text(wrapped, x + 10, textY)
     textY += Math.max(12, wrapped.length * 10)
   })
@@ -187,13 +195,13 @@ function drawInfoBox(doc: JsPdf, x: number, y: number, width: number, height: nu
 
 function drawPurchaseOrderTemplateTable(doc: JsPdf, startY: number, po: PurchaseOrder | ProjectPurchaseOrder) {
   const columns = [
-    { label: 'Item #', x: 40, width: 42, align: 'left' as const },
-    { label: 'Manufacturer', x: 82, width: 82, align: 'left' as const },
-    { label: 'Description', x: 164, width: 178, align: 'left' as const },
-    { label: 'Part Number', x: 342, width: 76, align: 'left' as const },
-    { label: 'Qty', x: 418, width: 38, align: 'center' as const },
-    { label: 'Unit Cost', x: 456, width: 58, align: 'right' as const },
-    { label: 'Total Cost', x: 514, width: 58, align: 'right' as const },
+    { label: 'Item #', x: 40, width: 42, align: 'left' as const, wrap: false },
+    { label: 'Manufacturer', x: 82, width: 82, align: 'left' as const, wrap: true },
+    { label: 'Description', x: 164, width: 178, align: 'left' as const, wrap: true },
+    { label: 'Part Number', x: 342, width: 76, align: 'left' as const, wrap: false },
+    { label: 'Qty', x: 418, width: 38, align: 'center' as const, numeric: true },
+    { label: 'Unit Cost', x: 456, width: 58, align: 'right' as const, numeric: true },
+    { label: 'Total Cost', x: 514, width: 58, align: 'right' as const, numeric: true },
   ]
   let y = drawDarkTableHeader(doc, startY, columns)
 
@@ -212,7 +220,7 @@ function drawPurchaseOrderTemplateTable(doc: JsPdf, startY: number, po: Purchase
       doc.addPage()
       y = drawDarkTableHeader(doc, 54, columns)
     }
-    drawMeasuredTableRow(doc, y, rowHeight, cells)
+    AtlasTable(doc, y, rowHeight, cells)
     y += rowHeight
   })
 
@@ -221,15 +229,15 @@ function drawPurchaseOrderTemplateTable(doc: JsPdf, startY: number, po: Purchase
 
 function drawQuoteTemplateTable(doc: JsPdf, startY: number, quote: CustomerQuote) {
   const columns = [
-    { label: 'Line', x: 40, width: 28, align: 'left' as const },
-    { label: 'Manufacturer', x: 68, width: 70, align: 'left' as const },
-    { label: 'CLIN', x: 138, width: 34, align: 'left' as const },
-    { label: 'QTY', x: 172, width: 30, align: 'center' as const },
-    { label: 'Part #', x: 202, width: 70, align: 'left' as const },
-    { label: 'Description', x: 272, width: 122, align: 'left' as const },
-    { label: 'Unit Cost', x: 394, width: 54, align: 'right' as const },
-    { label: 'Extended Cost', x: 448, width: 62, align: 'right' as const },
-    { label: 'Lead Time', x: 510, width: 62, align: 'left' as const },
+    { label: 'Line', x: 40, width: 28, align: 'left' as const, wrap: false },
+    { label: 'Manufacturer', x: 68, width: 70, align: 'left' as const, wrap: true },
+    { label: 'CLIN', x: 138, width: 34, align: 'left' as const, wrap: false },
+    { label: 'QTY', x: 172, width: 30, align: 'center' as const, numeric: true },
+    { label: 'Part #', x: 202, width: 70, align: 'left' as const, wrap: false },
+    { label: 'Description', x: 272, width: 122, align: 'left' as const, wrap: true },
+    { label: 'Unit Cost', x: 394, width: 54, align: 'right' as const, numeric: true },
+    { label: 'Extended Cost', x: 448, width: 62, align: 'right' as const, numeric: true },
+    { label: 'Lead Time', x: 510, width: 62, align: 'left' as const, wrap: false },
   ]
   let y = drawDarkTableHeader(doc, startY, columns)
 
@@ -251,7 +259,7 @@ function drawQuoteTemplateTable(doc: JsPdf, startY: number, quote: CustomerQuote
       doc.addPage()
       y = drawDarkTableHeader(doc, 54, columns)
     }
-    drawMeasuredTableRow(doc, y, rowHeight, cells)
+    AtlasTable(doc, y, rowHeight, cells)
     y += rowHeight
   })
 
@@ -275,19 +283,34 @@ function drawDarkTableHeader(
   return y + 24
 }
 
-function wrapPdfText(doc: JsPdf, value: string | string[], width: number) {
+function AtlasWrappedText(doc: JsPdf, value: string | string[], width: number) {
   const raw = Array.isArray(value) ? value.join('\n') : String(value || '-')
   return raw
     .split(/\r?\n/)
     .flatMap(line => doc.splitTextToSize(line.trim() || '-', Math.max(12, width)))
 }
 
+function AtlasCurrencyCell(doc: JsPdf, value: string, width: number, fontSize = 8) {
+  const text = String(value || '-').replace(/\s+/g, ' ')
+  let candidate = text
+  doc.setFontSize(fontSize)
+  if (doc.getTextWidth(candidate) <= width) return candidate
+
+  while (candidate.length > 4 && doc.getTextWidth(`${candidate.slice(0, -1)}...`) > width) {
+    candidate = candidate.slice(0, -1)
+  }
+  return candidate.length > 4 ? `${candidate.slice(0, -1)}...` : text
+}
+
 function calculatePdfTableRowHeight(doc: JsPdf, cells: PdfTableCell[], lineHeight = 10) {
-  const maxLines = Math.max(1, ...cells.map(cell => wrapPdfText(doc, cell.text, cell.column.width - 12).length))
+  const maxLines = Math.max(
+    1,
+    ...cells.map(cell => (cell.column.wrap === false || cell.column.numeric ? 1 : AtlasWrappedText(doc, cell.text, cell.column.width - 12).length)),
+  )
   return Math.max(30, 14 + maxLines * lineHeight)
 }
 
-function drawMeasuredTableRow(doc: JsPdf, y: number, height: number, cells: PdfTableCell[]) {
+function AtlasTable(doc: JsPdf, y: number, height: number, cells: PdfTableCell[]) {
   doc.setDrawColor(224, 229, 237)
   doc.setLineWidth(0.5)
   doc.rect(40, y, 532, height)
@@ -295,7 +318,10 @@ function drawMeasuredTableRow(doc: JsPdf, y: number, height: number, cells: PdfT
   doc.setTextColor(...TEXT)
   cells.forEach(cell => {
     const fontSize = cell.fontSize ?? 8
-    const lines = wrapPdfText(doc, cell.text, cell.column.width - 12)
+    const text = Array.isArray(cell.text) ? cell.text.join(' ') : String(cell.text || '-')
+    const lines = cell.column.wrap === false || cell.column.numeric
+      ? [AtlasCurrencyCell(doc, text, cell.column.width - 12, fontSize)]
+      : AtlasWrappedText(doc, cell.text, cell.column.width - 12)
     const textX =
       cell.column.align === 'right'
         ? cell.column.x + cell.column.width - 6
@@ -367,7 +393,7 @@ function splitAddress(value: string) {
 
 export async function exportCustomerTrackingUpdatePdf(po: PurchaseOrder | ProjectPurchaseOrder, project?: Project) {
   const doc = await createDocument()
-  let y = await drawHeader(doc, 'Customer Tracking Update')
+  let y = await AtlasDocumentHeader(doc, 'Customer Tracking Update')
   y = drawKeyValue(doc, y, [
     ['PO #', po.poNumber],
     ['Project', project ? `${project.projectNumber} - ${project.projectName}` : 'projectNumber' in po ? `${po.projectNumber} - ${po.projectName}` : ''],
@@ -378,8 +404,8 @@ export async function exportCustomerTrackingUpdatePdf(po: PurchaseOrder | Projec
   ])
 
   if (po.customerUpdateNotes) {
-    const noteLines = wrapPdfText(doc, po.customerUpdateNotes, 520)
-    y = ensurePage(doc, y + 8, 28 + noteLines.length * 10)
+    const noteLines = AtlasWrappedText(doc, po.customerUpdateNotes, 520)
+    y = AtlasPageBreakHandler(doc, y + 8, 28 + noteLines.length * 10)
     doc.setFont('helvetica', 'bold')
     doc.text('Customer Update Notes', 40, y)
     doc.setFont('helvetica', 'normal')
@@ -388,14 +414,14 @@ export async function exportCustomerTrackingUpdatePdf(po: PurchaseOrder | Projec
   }
 
   drawPoLines(doc, y + 8, po, true)
-  drawDocumentFooter(doc)
+  AtlasDocumentFooter(doc)
   doc.save(`${po.poNumber}-customer-update.pdf`)
 }
 
 export async function exportCheckbookReportPdf(project: Project) {
   const summary = getCheckbookSummary(project)
   const doc = await createDocument()
-  let y = await drawHeader(doc, 'Checkbook Financial Report')
+  let y = await AtlasDocumentHeader(doc, 'Checkbook Financial Report')
   y = drawKeyValue(doc, y, [
     ['Project', `${project.projectNumber} - ${project.projectName}`],
     ['Customer', project.customer],
@@ -405,10 +431,10 @@ export async function exportCheckbookReportPdf(project: Project) {
   ])
 
   const columns: PdfTableColumn[] = [
-    { label: 'PO #', x: 40, width: 66, align: 'left' },
-    { label: 'Vendor', x: 106, width: 92, align: 'left' },
-    { label: 'Description', x: 198, width: 280, align: 'left' },
-    { label: 'Customer Cost', x: 478, width: 82, align: 'right' },
+    { label: 'PO #', x: 40, width: 66, align: 'left', wrap: false },
+    { label: 'Vendor', x: 106, width: 92, align: 'left', wrap: true },
+    { label: 'Description', x: 198, width: 280, align: 'left', wrap: true },
+    { label: 'Customer Cost', x: 478, width: 82, align: 'right', numeric: true },
   ]
   y = drawDarkTableHeader(doc, y + 16, columns)
   summary.lines.forEach(line => {
@@ -423,11 +449,11 @@ export async function exportCheckbookReportPdf(project: Project) {
       doc.addPage()
       y = drawDarkTableHeader(doc, 54, columns)
     }
-    drawMeasuredTableRow(doc, y, rowHeight, cells)
+    AtlasTable(doc, y, rowHeight, cells)
     y += rowHeight
   })
 
-  drawDocumentFooter(doc)
+  AtlasDocumentFooter(doc)
   doc.save(`${project.projectNumber}-checkbook-report.pdf`)
 }
 
@@ -482,9 +508,9 @@ export async function exportCustomerConsolidatedTrackingReportPdf(project: Proje
 
   let y = drawTrackingReportHeader(doc, 250)
   rows.forEach((row, index) => {
-    const descriptionLines = wrapPdfText(doc, row.description || '-', 118)
-    const partLines = wrapPdfText(doc, row.partNumber || '-', 82)
-    const trackingLines = splitTrackingReportValue(doc, row.trackingNumber || 'Pending', 104)
+    const descriptionLines = AtlasWrappedText(doc, row.description || '-', 118)
+    const partLines = [AtlasCurrencyCell(doc, row.partNumber || '-', 82, 7.5)]
+    const trackingLines = [AtlasCurrencyCell(doc, row.trackingNumber || 'Pending', 104, 7.5)]
     const dateLines = [`ESD: ${formatMaybeDate(row.estimatedShipDate)}`, `Del: ${formatMaybeDate(row.deliveryDate)}`]
     const rowHeight = Math.max(42, 18 + Math.max(descriptionLines.length, partLines.length, trackingLines.length, dateLines.length) * 10)
 
@@ -502,13 +528,13 @@ export async function exportCustomerConsolidatedTrackingReportPdf(project: Proje
     doc.setFontSize(7.5)
     doc.setTextColor(7, 27, 73)
     doc.text(row.itemNumber, 48, y + 17)
-    doc.text(wrapPdfText(doc, row.poNumber, 82), 68, y + 17)
-    doc.text(wrapPdfText(doc, row.vendor, 58), 158, y + 17)
-    doc.text(wrapPdfText(doc, row.vendorOrderNumber || 'Pending', 66), 222, y + 17)
+    doc.text(AtlasCurrencyCell(doc, row.poNumber, 82, 7.5), 68, y + 17)
+    doc.text(AtlasWrappedText(doc, row.vendor, 58), 158, y + 17)
+    doc.text(AtlasCurrencyCell(doc, row.vendorOrderNumber || 'Pending', 66, 7.5), 222, y + 17)
     doc.text(partLines, 296, y + 17)
     doc.text(descriptionLines, 384, y + 17)
     doc.text(String(row.quantity), 516, y + 17, { align: 'center' })
-    doc.text(wrapPdfText(doc, row.carrier || 'Pending', 50), 534, y + 17)
+    doc.text(AtlasCurrencyCell(doc, row.carrier || 'Pending', 50, 7.5), 534, y + 17)
     doc.text(trackingLines, 590, y + 17)
     doc.text(dateLines, 708, y + 17)
     y += rowHeight
@@ -523,7 +549,7 @@ async function createDocument() {
   return new jsPDF({ unit: 'pt', format: 'letter' })
 }
 
-async function drawHeader(doc: JsPdf, title: string) {
+async function AtlasDocumentHeader(doc: JsPdf, title: string) {
   doc.setFillColor(255, 255, 255)
   doc.rect(0, 0, 612, 128, 'F')
   doc.setFillColor(6, 22, 61)
@@ -623,10 +649,10 @@ function drawQuoteLines(doc: JsPdf, startY: number, quote: CustomerQuote) {
   let y = drawTableHeader(doc, startY, ['CLIN', 'Part', 'Description', 'Qty', 'Unit', 'Extended'])
   quote.lines.forEach(line => {
     const totals = calculateLineTotals(line)
-    const partLines = wrapPdfText(doc, line.partNumber || '-', 72)
-    const descriptionLines = wrapPdfText(doc, line.description || '-', 188)
+    const partLines = AtlasWrappedText(doc, line.partNumber || '-', 72)
+    const descriptionLines = AtlasWrappedText(doc, line.description || '-', 188)
     const rowHeight = getPdfRowHeight(partLines, descriptionLines)
-    y = ensurePage(doc, y, rowHeight)
+    y = AtlasPageBreakHandler(doc, y, rowHeight)
     drawTableRow(doc, y, rowHeight)
     doc.text(line.clin, 40, y + 16)
     doc.text(partLines, 76, y + 16)
@@ -645,12 +671,12 @@ function drawPoLines(doc: JsPdf, startY: number, po: PurchaseOrder | ProjectPurc
     : ['CLIN', 'Part', 'Description', 'Qty', 'Unit', 'Extended']
   let y = drawTableHeader(doc, startY, headers)
   po.lines.forEach(line => {
-    const partLines = wrapPdfText(doc, line.partNumber || '-', 72)
-    const descriptionLines = wrapPdfText(doc, line.description || '-', 188)
-    const statusLines = trackingOnly ? wrapPdfText(doc, line.status || '-', 72) : []
-    const trackingLines = trackingOnly ? wrapPdfText(doc, line.trackingNumber || po.trackingNumber || '-', 80) : []
+    const partLines = AtlasWrappedText(doc, line.partNumber || '-', 72)
+    const descriptionLines = AtlasWrappedText(doc, line.description || '-', 188)
+    const statusLines = trackingOnly ? AtlasWrappedText(doc, line.status || '-', 72) : []
+    const trackingLines = trackingOnly ? AtlasWrappedText(doc, line.trackingNumber || po.trackingNumber || '-', 80) : []
     const rowHeight = getPdfRowHeight(partLines, descriptionLines, statusLines, trackingLines)
-    y = ensurePage(doc, y, rowHeight)
+    y = AtlasPageBreakHandler(doc, y, rowHeight)
     drawTableRow(doc, y, rowHeight)
     doc.text(line.clin, 40, y + 16)
     doc.text(partLines, 76, y + 16)
@@ -726,7 +752,7 @@ function drawTableRow(doc: JsPdf, y: number, height: number) {
   doc.setTextColor(7, 27, 73)
 }
 
-function drawDocumentFooter(doc: JsPdf) {
+function AtlasDocumentFooter(doc: JsPdf) {
   const pages = doc.getNumberOfPages()
   for (let page = 1; page <= pages; page += 1) {
     doc.setPage(page)
@@ -742,7 +768,7 @@ function drawDocumentFooter(doc: JsPdf) {
   }
 }
 
-function ensurePage(doc: JsPdf, y: number, rowHeight = 30) {
+function AtlasPageBreakHandler(doc: JsPdf, y: number, rowHeight = 30) {
   if (y + rowHeight < PAGE_BOTTOM) return y
   doc.addPage()
   return 54
@@ -788,7 +814,7 @@ function splitTrackingReportValue(doc: JsPdf, value: string, width: number) {
     .split(/[;,]\s*|\s{2,}/)
     .map(part => part.trim())
     .filter(Boolean)
-    .flatMap(part => wrapPdfText(doc, part, width))
+    .flatMap(part => AtlasWrappedText(doc, part, width))
 }
 
 function sanitizeFileName(value: string) {

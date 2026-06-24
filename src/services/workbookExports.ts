@@ -197,13 +197,13 @@ function groupQuoteLinesByVendor(lines: QuoteLine[]) {
 
 function buildVendorRfqRows(project: Project, vendor: string, lines: QuoteLine[]) {
   return [
-    ['CRONOS LLC'],
-    ['Vendor Request for Quote'],
-    ['Please complete Vendor Quote #, Vendor Unit Cost, Lead Time, and Notes, then return this workbook to Cronos.'],
+    [{ value: 'CRONOS LLC', style: 14 }],
+    [{ value: 'Vendor Request for Quote', style: 15 }],
+    [{ value: 'Please complete Vendor Quote #, Vendor Unit Cost, Lead Time, and Notes, then return this workbook to Cronos.', style: 22 }],
     [],
-    [`Project: ${project.projectNumber} - ${project.projectName}`],
-    [`Vendor: ${vendor}`],
-    [`RFQ Date: ${new Date().toLocaleDateString('en-US')}`],
+    [{ value: `Project: ${project.projectNumber} - ${project.projectName}`, style: 22 }],
+    [{ value: `Vendor: ${vendor}`, style: 22 }],
+    [{ value: `RFQ Date: ${new Date().toLocaleDateString('en-US')}`, style: 19 }],
     [
       'CLIN',
       'Part Number',
@@ -215,18 +215,18 @@ function buildVendorRfqRows(project: Project, vendor: string, lines: QuoteLine[]
       'Vendor Unit Cost',
       'Lead Time',
       'Notes',
-    ],
+    ].map(value => ({ value, style: 18 })),
     ...lines.map(line => [
-      line.clin,
-      line.partNumber,
-      line.manufacturer,
-      line.description,
-      line.quantity,
-      vendor,
-      '',
-      '',
-      line.leadTime || '',
-      '',
+      { value: line.clin, style: 19 },
+      { value: line.partNumber, style: 19 },
+      { value: line.manufacturer, style: 19 },
+      { value: line.description, style: 22 },
+      { value: line.quantity, style: 19 },
+      { value: vendor, style: 22 },
+      { value: '', style: 19 },
+      { value: '', style: 20 },
+      { value: line.leadTime || '', style: 19 },
+      { value: '', style: 22 },
     ]),
   ]
 }
@@ -383,11 +383,23 @@ function worksheetXml(sheet: WorkbookSheet, sheetIndex: number, hasLogo: boolean
       const cells = row
         .map((cell, columnIndex) => cellXml(cell, `${columnName(columnIndex + 1)}${rowIndex + 1}`))
         .join('')
-      return `<row r="${rowIndex + 1}">${cells}</row>`
+      const height = worksheetRowHeight(row)
+      return `<row r="${rowIndex + 1}"${height ? ` ht="${height}" customHeight="1"` : ''}>${cells}</row>`
     })
     .join('')
 
   return xmlHeader(`<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${sheetViewsXml}${columnXml}<sheetData>${body}</sheetData>${mergeXml}${drawingXml}</worksheet>`)
+}
+
+function worksheetRowHeight(row: WorkbookCell[]) {
+  const wrappedLengths = row
+    .map(cell => (typeof cell === 'object' && cell !== null && (cell.style === 7 || cell.style === 22) ? String(cell.value ?? '').length : 0))
+    .filter(Boolean)
+  if (!wrappedLengths.length) return 0
+  const longest = Math.max(...wrappedLengths)
+  if (longest < 55) return 24
+  if (longest < 120) return 42
+  return 60
 }
 
 function sheetViewsXmlForFreezePane(topLeftCell: string) {

@@ -69,6 +69,28 @@ table {
   border-spacing: 0;
 }
 
+.atlas-id,
+.atlas-currency,
+.atlas-nowrap,
+.nowrap {
+  overflow-wrap: normal;
+  white-space: nowrap;
+  word-break: normal;
+}
+
+.atlas-currency {
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+
+.atlas-wrap,
+.description-cell,
+.line-description {
+  overflow-wrap: break-word;
+  white-space: normal;
+  word-break: break-word;
+}
+
 .app-shell {
   min-height: 100vh;
   background: var(--app-bg);
@@ -3937,6 +3959,19 @@ table {
   vertical-align: top;
 }
 
+.public-line-table th:not(:nth-child(4)),
+.public-line-table td:not(:nth-child(4)) {
+  white-space: nowrap;
+}
+
+.public-line-table th:nth-child(4),
+.public-line-table td:nth-child(4) {
+  min-width: 260px;
+  overflow-wrap: break-word;
+  white-space: normal;
+  word-break: break-word;
+}
+
 .strong-cell {
   color: var(--app-text);
   font-weight: 800;
@@ -5157,10 +5192,6 @@ table {
   vertical-align: top;
 }
 
-.nowrap {
-  white-space: nowrap;
-}
-
 .placeholder-page h1 {
   margin: 0;
   color: var(--app-heading);
@@ -5795,6 +5826,94 @@ table {
   .dashboard-record-badges {
     justify-content: flex-start;
     max-width: 100%;
+  }
+}
+
+@media print {
+  @page {
+    size: letter;
+    margin: 0.45in;
+  }
+
+  body,
+  .app-shell,
+  .app-main,
+  .public-order-status {
+    background: #ffffff !important;
+  }
+
+  .sidebar,
+  .atlas-fab,
+  .public-status-header button,
+  .page-actions,
+  .dashboard-actions,
+  .procurement-filter-bar {
+    display: none !important;
+  }
+
+  .public-status-header,
+  .public-status-main,
+  .public-card {
+    box-shadow: none !important;
+    border-color: #d8dee8 !important;
+  }
+
+  .table-scroll,
+  .public-table-scroll {
+    overflow: visible !important;
+  }
+
+  table {
+    page-break-inside: auto;
+  }
+
+  thead {
+    display: table-header-group;
+  }
+
+  tfoot {
+    display: table-footer-group;
+  }
+
+  tr,
+  .public-card,
+  .po-lines-panel,
+  .po-edit-card,
+  .po-tracking-card {
+    break-inside: avoid;
+    page-break-inside: avoid;
+  }
+
+  .public-line-table,
+  .data-table,
+  .po-lines-table,
+  .quote-lines-table {
+    min-width: 0 !important;
+    width: 100% !important;
+    table-layout: auto;
+    font-size: 9px;
+  }
+
+  .public-line-table th,
+  .public-line-table td,
+  .data-table th,
+  .data-table td,
+  .po-lines-table th,
+  .po-lines-table td,
+  .quote-lines-table th,
+  .quote-lines-table td {
+    padding: 5px 6px;
+  }
+
+  .description-cell,
+  .line-description,
+  .public-line-table th:nth-child(4),
+  .public-line-table td:nth-child(4) {
+    min-width: 1.7in;
+    max-width: 2.4in;
+    overflow-wrap: break-word;
+    white-space: normal;
+    word-break: break-word;
   }
 }
 
