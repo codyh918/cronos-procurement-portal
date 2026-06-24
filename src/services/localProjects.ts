@@ -472,6 +472,63 @@ export function updatePurchaseOrderTracking(
   return updatedProject
 }
 
+export function updatePurchaseOrderDetails(
+  projectId: string,
+  poId: string,
+  updates: Partial<
+    Pick<
+      PurchaseOrder,
+      | 'poNumber'
+      | 'vendor'
+      | 'description'
+      | 'dateIssued'
+      | 'status'
+      | 'estimatedShipDate'
+      | 'expectedDeliveryDate'
+      | 'carrier'
+      | 'trackingNumber'
+      | 'trackingUrl'
+      | 'customerUpdateNotes'
+      | 'requestor'
+      | 'customerTotalCost'
+    >
+  >,
+) {
+  const project = loadProject(projectId)
+  if (!project) {
+    throw new Error('Project not found.')
+  }
+
+  const updatedProject = normalizeProject({
+    ...project,
+    purchaseOrders: project.purchaseOrders.map(po => {
+      if (po.id !== poId) return po
+
+      const nextPo = {
+        ...po,
+        ...updates,
+        poNumber: updates.poNumber?.trim() || po.poNumber,
+        vendor: updates.vendor?.trim() || po.vendor,
+        dateIssued: normalizeOptionalDateString(updates.dateIssued) || updates.dateIssued || po.dateIssued,
+        estimatedShipDate: normalizeOptionalDateString(updates.estimatedShipDate) || updates.estimatedShipDate || po.estimatedShipDate,
+        expectedDeliveryDate: normalizeOptionalDateString(updates.expectedDeliveryDate) || updates.expectedDeliveryDate || po.expectedDeliveryDate,
+        customerTotalCost:
+          typeof updates.customerTotalCost === 'number'
+            ? normalizeMoney(updates.customerTotalCost)
+            : po.customerTotalCost,
+      }
+
+      return {
+        ...nextPo,
+        totalCost: getPurchaseOrderComputedTotal(nextPo.lines),
+      }
+    }),
+  })
+
+  saveProjects(loadProjects().map(current => (current.id === project.id ? updatedProject : current)))
+  return updatedProject
+}
+
 export function updatePurchaseOrderLineTracking(
   projectId: string,
   poId: string,
@@ -522,6 +579,79 @@ export function updatePurchaseOrderLineTracking(
         expectedDeliveryDate: receivedDate || po.expectedDeliveryDate || '',
         status: getTrackingAwarePoStatus(lines, po.status),
         lines,
+      }
+    }),
+  })
+
+  saveProjects(loadProjects().map(current => (current.id === project.id ? updatedProject : current)))
+  return updatedProject
+}
+
+export function updatePurchaseOrderLineDetails(
+  projectId: string,
+  poId: string,
+  lineId: string,
+  updates: Partial<
+    Pick<
+      PurchaseOrderLine,
+      | 'itemNumber'
+      | 'clin'
+      | 'partNumber'
+      | 'manufacturer'
+      | 'description'
+      | 'quantityOrdered'
+      | 'quantityReceived'
+      | 'unitCost'
+      | 'status'
+      | 'vendorOrderNumber'
+      | 'estimatedShipDate'
+      | 'receivedDate'
+      | 'carrier'
+      | 'trackingNumber'
+      | 'trackingUrl'
+      | 'notes'
+    >
+  >,
+) {
+  const project = loadProject(projectId)
+  if (!project) {
+    throw new Error('Project not found.')
+  }
+
+  const updatedProject = normalizeProject({
+    ...project,
+    purchaseOrders: project.purchaseOrders.map(po => {
+      if (po.id !== poId) return po
+
+      const lines = po.lines.map(line =>
+        line.id === lineId
+          ? {
+              ...line,
+              ...updates,
+              itemNumber: updates.itemNumber?.trim() || line.itemNumber,
+              clin: updates.clin?.trim() || line.clin,
+              partNumber: updates.partNumber?.trim() || line.partNumber,
+              manufacturer: updates.manufacturer?.trim() ?? line.manufacturer,
+              description: updates.description?.trim() || line.description,
+              quantityOrdered:
+                typeof updates.quantityOrdered === 'number'
+                  ? Math.max(0, updates.quantityOrdered)
+                  : line.quantityOrdered,
+              quantityReceived:
+                typeof updates.quantityReceived === 'number'
+                  ? Math.min(Math.max(0, updates.quantityReceived), updates.quantityOrdered ?? line.quantityOrdered)
+                  : line.quantityReceived,
+              unitCost: typeof updates.unitCost === 'number' ? normalizeMoney(updates.unitCost) : line.unitCost,
+              estimatedShipDate: normalizeOptionalDateString(updates.estimatedShipDate) || updates.estimatedShipDate,
+              receivedDate: normalizeOptionalDateString(updates.receivedDate) || updates.receivedDate,
+            }
+          : line,
+      )
+
+      return {
+        ...po,
+        lines,
+        totalCost: getPurchaseOrderComputedTotal(lines),
       }
     }),
   })
@@ -640,6 +770,10 @@ function replaceProjectPrefix(value: string, oldProjectNumber: string, newProjec
 
 function normalizeMoney(value: number | undefined) {
   return Number.isFinite(value) ? Math.max(0, Math.round(((value ?? 0) + Number.EPSILON) * 100) / 100) : 0
+}
+
+function getPurchaseOrderComputedTotal(lines: PurchaseOrderLine[]) {
+  return normalizeMoney(lines.reduce((total, line) => total + (line.unitCost || 0) * (line.quantityOrdered || 0), 0))
 }
 
 function todayLocalDateString() {

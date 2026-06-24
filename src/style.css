@@ -2888,6 +2888,7 @@ table {
   color: #d11f3f;
 }
 
+.po-edit-card,
 .po-tracking-card {
   display: grid;
   gap: 16px;
@@ -2897,6 +2898,13 @@ table {
   background: var(--app-panel);
   padding: 20px;
   box-shadow: var(--app-shadow);
+}
+
+.po-edit-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  min-width: 0;
 }
 
 .tracking-field {
@@ -2971,7 +2979,7 @@ table {
 
 .po-lines-table {
   width: 100%;
-  min-width: 1500px;
+  min-width: 1680px;
   border-collapse: collapse;
   color: var(--app-text);
   font-size: 14px;
@@ -3012,6 +3020,17 @@ table {
   max-width: 260px;
   color: var(--app-muted);
   font-weight: 650;
+}
+
+.line-sub-input {
+  margin-top: 6px;
+}
+
+.po-line-description-input {
+  width: 360px;
+  min-height: 72px;
+  resize: vertical;
+  white-space: normal;
 }
 
 .row-actions {
@@ -5577,6 +5596,7 @@ table {
     grid-column: span 3;
   }
 
+  .po-edit-grid,
   .po-tracking-card {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
@@ -5641,6 +5661,7 @@ table {
     grid-template-columns: minmax(0, 1fr) 340px;
   }
 
+  .po-edit-grid,
   .po-tracking-card {
     grid-template-columns: repeat(4, minmax(0, 1fr));
   }

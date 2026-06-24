@@ -36,7 +36,7 @@ export async function exportCustomerQuotePdf(quote: CustomerQuote, project?: Pro
   doc.setTextColor(...NAVY)
   doc.text('Quote', 471, 34, { align: 'center' })
 
-  drawMetadataBlock(doc, 386, 42, 170, [
+  const metadataBottom = drawMetadataBlock(doc, 372, 42, 184, [
     ['Quote Number:', quote.quoteNumber],
     ['Quote Name:', quote.quoteName || '-'],
     ['Date:', formatPdfDate(quote.createdAt || new Date().toISOString())],
@@ -44,20 +44,23 @@ export async function exportCustomerQuotePdf(quote: CustomerQuote, project?: Pro
     ['Project:', quote.projectNumber],
   ])
 
-  drawInfoBox(doc, 40, 150, 248, 92, 'Customer / Account', [
+  const infoBoxY = Math.max(150, metadataBottom + 16)
+  let y = infoBoxY + 120
+
+  drawInfoBox(doc, 40, infoBoxY, 248, 92, 'Customer / Account', [
     quote.customer || project?.customer || '',
     project?.customerContactName || '',
     project?.customerEmail || '',
     project?.customerPhone || '',
   ])
-  drawInfoBox(doc, 324, 150, 248, 92, 'Cronos POC', [
+  drawInfoBox(doc, 324, infoBoxY, 248, 92, 'Cronos POC', [
     project?.projectManager || 'Cody Hibbard',
     CRONOS_POC_EMAIL,
     CRONOS_POC_PHONE,
     `Cage Code: ${CRONOS_CAGE_CODE}`,
   ])
 
-  let y = drawQuoteTemplateTable(doc, 270, quote)
+  y = drawQuoteTemplateTable(doc, Math.max(270, y), quote)
   const summary = calculateQuoteSummary(quote.lines, quote.contractFeeEnabled, quote.shippingCost ?? 0)
 
   const totalRows = [
@@ -86,28 +89,30 @@ export async function exportPurchaseOrderPdf(po: PurchaseOrder | ProjectPurchase
   doc.setTextColor(...NAVY)
   doc.text('Purchase Order', 474, 34, { align: 'center' })
 
-  drawMetadataBlock(doc, 392, 46, 164, [
+  const metadataBottom = drawMetadataBlock(doc, 372, 46, 184, [
     ['Date:', formatPdfDate(po.dateIssued)],
     ['Terms:', 'NET30'],
     ['PO #:', po.poNumber],
     ['Project:', project ? project.projectNumber : 'projectNumber' in po ? po.projectNumber : ''],
   ])
 
-  drawInfoBox(doc, 40, 150, 248, 100, 'Vendor', [po.vendor])
-  drawInfoBox(doc, 324, 150, 248, 100, 'Ship To', [
+  const firstInfoY = Math.max(150, metadataBottom + 16)
+  drawInfoBox(doc, 40, firstInfoY, 248, 100, 'Vendor', [po.vendor])
+  drawInfoBox(doc, 324, firstInfoY, 248, 100, 'Ship To', [
     ...(project?.deliveryAddress ? splitAddress(project.deliveryAddress) : []),
     project?.shippingContactName || '',
     project?.shippingPhone || '',
   ])
-  drawInfoBox(doc, 40, 270, 248, 100, 'Bill To', CRONOS_BILL_TO)
-  drawInfoBox(doc, 324, 270, 248, 100, 'Cronos POC', [
+  const secondInfoY = firstInfoY + 120
+  drawInfoBox(doc, 40, secondInfoY, 248, 100, 'Bill To', CRONOS_BILL_TO)
+  drawInfoBox(doc, 324, secondInfoY, 248, 100, 'Cronos POC', [
     po.requestor || project?.projectManager || 'Cody Hibbard',
     CRONOS_POC_EMAIL,
     CRONOS_POC_PHONE,
     `Cage Code: ${CRONOS_CAGE_CODE}`,
   ])
 
-  const y = drawPurchaseOrderTemplateTable(doc, 410, po)
+  const y = drawPurchaseOrderTemplateTable(doc, Math.max(410, secondInfoY + 140), po)
   drawPurchaseOrderTotal(doc, y + 14, po.totalCost || getPoComputedTotal(po))
   drawPurchaseOrderFooter(doc)
   doc.save(`Cronos-${sanitizeFileName(po.poNumber)}-Purchase-Order.pdf`)
@@ -132,18 +137,28 @@ async function drawCronosLetterhead(doc: JsPdf, title: string) {
 }
 
 function drawMetadataBlock(doc: JsPdf, x: number, y: number, width: number, rows: string[][]) {
+  const labelWidth = 62
+  const valueWidth = width - labelWidth - 24
+  const preparedRows = rows.map(([label, value]) => ({
+    label,
+    value: wrapPdfText(doc, String(value || '-'), valueWidth),
+  }))
+  const rowHeights = preparedRows.map(row => Math.max(18, 8 + row.value.length * 10))
+  const blockHeight = 12 + rowHeights.reduce((total, height) => total + height, 0)
   doc.setDrawColor(...LINE)
   doc.setLineWidth(0.7)
-  doc.rect(x, y, width, rows.length * 18 + 12)
-  rows.forEach(([label, value], index) => {
-    const rowY = y + 18 + index * 18
+  doc.rect(x, y, width, blockHeight)
+  let rowY = y + 18
+  preparedRows.forEach(({ label, value }, index) => {
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(8.5)
     doc.setTextColor(...TEXT)
     doc.text(label, x + 10, rowY)
     doc.setFont('helvetica', 'normal')
-    doc.text(String(value || '-'), x + width - 10, rowY, { align: 'right' })
+    doc.text(value, x + labelWidth + 10, rowY)
+    rowY += rowHeights[index]
   })
+  return y + blockHeight
 }
 
 function drawInfoBox(doc: JsPdf, x: number, y: number, width: number, height: number, title: string, lines: string[]) {

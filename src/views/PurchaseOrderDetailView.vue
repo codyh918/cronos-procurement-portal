@@ -18,6 +18,38 @@
       </div>
     </header>
 
+    <section class="po-edit-card">
+      <div class="po-lines-heading">
+        <div>
+          <h2>Purchase Order Details</h2>
+          <p>Edit PO header, vendor, requestor, description, and commercial values.</p>
+        </div>
+        <StatusBadge :status="po.status" />
+      </div>
+      <div class="po-edit-grid">
+        <label class="tracking-field">
+          <span>PO Number</span>
+          <input :value="po.poNumber" @change="updatePo({ poNumber: inputValue($event) })" />
+        </label>
+        <label class="tracking-field">
+          <span>Vendor</span>
+          <input :value="po.vendor" @change="updatePo({ vendor: inputValue($event) })" />
+        </label>
+        <label class="tracking-field">
+          <span>Requestor</span>
+          <input :value="po.requestor ?? ''" @change="updatePo({ requestor: inputValue($event) })" />
+        </label>
+        <label class="tracking-field">
+          <span>Customer Total Cost</span>
+          <input type="number" min="0" step="0.01" :value="po.customerTotalCost ?? po.totalCost" @change="updatePo({ customerTotalCost: numberValue($event) })" />
+        </label>
+        <label class="tracking-field span-2">
+          <span>Description / Vendor Notes</span>
+          <textarea :value="po.description ?? ''" @change="updatePo({ description: inputValue($event) })" />
+        </label>
+      </div>
+    </section>
+
     <section class="po-tracking-card">
       <label class="tracking-field">
         <span>Status</span>
@@ -55,13 +87,14 @@
           </thead>
           <tbody>
             <tr v-for="line in po.lines" :key="line.id">
-              <td>{{ line.clin }}</td>
+              <td><input class="cell-input w-20" :value="line.clin" @change="updateLine(line.id, { clin: inputValue($event) })" /></td>
               <td>
-                <p class="line-part">{{ line.partNumber }}</p>
-                <p class="line-manufacturer">{{ line.manufacturer }}</p>
+                <input class="cell-input w-44" :value="line.partNumber" @change="updateLine(line.id, { partNumber: inputValue($event) })" />
+                <input class="cell-input w-44 line-sub-input" :value="line.manufacturer ?? ''" placeholder="Manufacturer" @change="updateLine(line.id, { manufacturer: inputValue($event) })" />
               </td>
-              <td class="line-description">{{ line.description }}</td>
-              <td>{{ line.quantityOrdered }}</td>
+              <td><textarea class="cell-input po-line-description-input" :value="line.description" @change="updateLine(line.id, { description: inputValue($event) })" /></td>
+              <td><input class="cell-input w-20" type="number" min="0" :value="line.quantityOrdered" @change="updateLine(line.id, { quantityOrdered: numberValue($event) })" /></td>
+              <td><input class="cell-input w-28" type="number" min="0" step="0.01" :value="line.unitCost" @change="updateLine(line.id, { unitCost: numberValue($event) })" /></td>
               <td>
                 <select class="cell-input w-40" :value="line.status" @change="updateLine(line.id, { status: inputValue($event) as Status })">
                   <option v-for="status in lineStatuses" :key="status" :value="status">{{ status }}</option>
@@ -95,8 +128,8 @@ import {
   loadPurchaseOrder,
   loadProject,
   syncCheckbookTrackingRows,
-  updatePurchaseOrderLineTracking,
-  updatePurchaseOrderTracking,
+  updatePurchaseOrderLineDetails,
+  updatePurchaseOrderDetails,
 } from '../services/localProjects'
 import { exportCustomerTrackingUpdatePdf, exportPurchaseOrderPdf } from '../services/pdfExports'
 import type { ProjectPurchaseOrder, PurchaseOrder, PurchaseOrderLine, Status } from '../types'
@@ -107,7 +140,7 @@ const loaded = ref(false)
 
 const poStatuses: Status[] = ['PO Generated', 'PO Issued', 'Ordered', 'Partially Received', 'Received', 'Backordered', 'Cancelled']
 const lineStatuses: Status[] = ['Ordered', 'Backordered', 'Partially Received', 'Received', 'Shipped', 'Delivered', 'Cancelled']
-const lineHeadings = ['CLIN', 'Part', 'Description', 'Qty', 'Status', 'Vendor Order', 'Tracking', 'Carrier', 'ESD', 'Notes']
+const lineHeadings = ['CLIN', 'Part / Manufacturer', 'Description', 'Qty', 'Unit Cost', 'Status', 'Vendor Order', 'Tracking', 'Carrier', 'ESD', 'Notes']
 
 onMounted(() => {
   syncCheckbookTrackingRows()
@@ -123,13 +156,25 @@ function updatePo(
   updates: Partial<
     Pick<
       PurchaseOrder,
-      'dateIssued' | 'status' | 'estimatedShipDate' | 'expectedDeliveryDate' | 'carrier' | 'trackingNumber' | 'trackingUrl' | 'customerUpdateNotes'
+      | 'poNumber'
+      | 'vendor'
+      | 'description'
+      | 'dateIssued'
+      | 'status'
+      | 'estimatedShipDate'
+      | 'expectedDeliveryDate'
+      | 'carrier'
+      | 'trackingNumber'
+      | 'trackingUrl'
+      | 'customerUpdateNotes'
+      | 'requestor'
+      | 'customerTotalCost'
     >
   >,
 ) {
   if (!po.value) return
 
-  updatePurchaseOrderTracking(po.value.projectId, po.value.id, updates)
+  updatePurchaseOrderDetails(po.value.projectId, po.value.id, updates)
   reloadPo()
 }
 
@@ -138,13 +183,25 @@ function updateLine(
   updates: Partial<
     Pick<
       PurchaseOrderLine,
-      'status' | 'vendorOrderNumber' | 'estimatedShipDate' | 'carrier' | 'trackingNumber' | 'trackingUrl' | 'notes'
+      | 'clin'
+      | 'partNumber'
+      | 'manufacturer'
+      | 'description'
+      | 'quantityOrdered'
+      | 'unitCost'
+      | 'status'
+      | 'vendorOrderNumber'
+      | 'estimatedShipDate'
+      | 'carrier'
+      | 'trackingNumber'
+      | 'trackingUrl'
+      | 'notes'
     >
   >,
 ) {
   if (!po.value) return
 
-  updatePurchaseOrderLineTracking(po.value.projectId, po.value.id, lineId, updates)
+  updatePurchaseOrderLineDetails(po.value.projectId, po.value.id, lineId, updates)
   reloadPo()
 }
 
@@ -160,5 +217,10 @@ async function exportPoPdf() {
 
 function inputValue(event: Event) {
   return (event.target as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).value
+}
+
+function numberValue(event: Event) {
+  const value = Number(inputValue(event))
+  return Number.isFinite(value) ? value : 0
 }
 </script>
