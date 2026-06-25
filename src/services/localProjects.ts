@@ -1,6 +1,6 @@
 import type { CustomerQuote, Project, ProjectFormInput, ProjectPurchaseOrder, PurchaseOrder, PurchaseOrderLine, QuoteLine, Status } from '../types'
 import { TRACKING_25_100_ROWS } from '../data/tracking-25-100-data'
-import { generateVendorPurchaseOrders } from './calculations'
+import { generateVendorPurchaseOrders, groupQuoteLinesByVendor } from './calculations'
 import type { CheckbookPoImportInput } from './checkbookImport'
 import { syncCustomerOrdersFromApprovedProjects } from './customerOrders'
 import { recordPurchaseOrdersInCatalog } from './partCatalog'
@@ -108,11 +108,7 @@ export function createQuoteForProject(
     throw new Error('Project not found.')
   }
 
-  const quoteLines: QuoteLine[] = lines.map(line => ({
-    ...line,
-    id: crypto.randomUUID(),
-    approved: false,
-  }))
+  const quoteLines: QuoteLine[] = lines.map(line => normalizeQuoteLineForSave({ ...line, id: crypto.randomUUID(), approved: false }))
   const quote: CustomerQuote = {
     id: crypto.randomUUID(),
     quoteNumber: nextQuoteNumber(project),
@@ -160,9 +156,8 @@ export function updateQuoteForProject(
   }
 
   const quoteLines: QuoteLine[] = lines.map(line => ({
-    ...line,
-    id: line.id ?? crypto.randomUUID(),
-    approved: line.approved ?? false,
+    ...normalizeQuoteLineForSave(line),
+    approved: existingQuote.status === 'Customer Approved' ? true : line.approved ?? false,
   }))
   const updatedQuote: CustomerQuote = {
     ...existingQuote,
@@ -173,17 +168,21 @@ export function updateQuoteForProject(
     lines: quoteLines,
   }
   const quotes = (project.quotes ?? []).map(quote => (quote.id === quoteId ? updatedQuote : quote))
-  const projects = loadProjects().map(current =>
-    current.id === project.id
-      ? normalizeProject({
-          ...current,
-          quotes,
-          quoteLines: quotes.flatMap(quote => quote.lines),
-        })
-      : current,
-  )
+  const projectWithQuote = normalizeProject({
+    ...project,
+    quotes,
+    quoteLines: quotes.flatMap(quote => quote.lines),
+  })
+  const syncResult = syncPurchaseOrdersForQuote(projectWithQuote, updatedQuote)
+  const updatedProject = syncResult.project
+  const projects = loadProjects().map(current => (current.id === project.id ? updatedProject : current))
 
   saveProjects(projects)
+  if (syncResult.touchedPurchaseOrders.length) {
+    recordPurchaseOrdersInCatalog(updatedProject, syncResult.touchedPurchaseOrders)
+    syncCustomerOrdersFromApprovedProjects([updatedProject])
+  }
+  logQuotePoSync(updatedQuote, syncResult)
   return updatedQuote
 }
 
@@ -277,10 +276,17 @@ export function generatePurchaseOrdersForQuote(projectId: string, quoteId: strin
 
   const existing = project.purchaseOrders.filter(po => po.quoteId === quoteId)
   if (existing.length) {
+    const syncResult = syncPurchaseOrdersForQuote(project, quote)
+    if (syncResult.touchedPurchaseOrders.length) {
+      saveProjects(loadProjects().map(current => (current.id === project.id ? syncResult.project : current)))
+      recordPurchaseOrdersInCatalog(syncResult.project, syncResult.touchedPurchaseOrders)
+      syncCustomerOrdersFromApprovedProjects([syncResult.project])
+    }
+    logQuotePoSync(quote, syncResult)
     return {
-      project,
+      project: syncResult.project,
       quote,
-      purchaseOrders: existing,
+      purchaseOrders: syncResult.project.purchaseOrders.filter(po => po.quoteId === quoteId),
     }
   }
 
@@ -308,31 +314,37 @@ export function generatePurchaseOrdersForApprovedQuotes(projectId?: string) {
   const projects = projectId ? loadProjects().filter(project => project.id === projectId) : loadProjects()
   const updatedProjects = projects.map(project => {
     const approvedQuotes = (project.quotes ?? []).filter(quote => quote.status === 'Customer Approved')
-    const missingQuotes = approvedQuotes.filter(quote => !project.purchaseOrders.some(po => po.quoteId === quote.id))
+    if (!approvedQuotes.length) return project
 
-    if (!missingQuotes.length) return project
-
-    let nextSequenceProject = project
-    const newPurchaseOrders = missingQuotes.flatMap(quote => {
-      const purchaseOrders = generateVendorPurchaseOrders(quote.lines, project.projectNumber, nextPoSequence(nextSequenceProject)).map(po => ({
-        ...po,
-        quoteId: quote.id,
-      }))
-      nextSequenceProject = {
-        ...nextSequenceProject,
-        purchaseOrders: [...nextSequenceProject.purchaseOrders, ...purchaseOrders],
+    let nextProject = project
+    const touchedPurchaseOrders: PurchaseOrder[] = []
+    approvedQuotes.forEach(quote => {
+      const hasRelatedPurchaseOrders = nextProject.purchaseOrders.some(po => po.quoteId === quote.id)
+      if (!hasRelatedPurchaseOrders) {
+        const purchaseOrders = generateVendorPurchaseOrders(quote.lines, nextProject.projectNumber, nextPoSequence(nextProject)).map(po => ({
+          ...po,
+          quoteId: quote.id,
+        }))
+        nextProject = normalizeProject({
+          ...nextProject,
+          purchaseOrders: [...nextProject.purchaseOrders, ...purchaseOrders],
+        })
+        touchedPurchaseOrders.push(...purchaseOrders)
+        return
       }
-      return purchaseOrders
+
+      const syncResult = syncPurchaseOrdersForQuote(nextProject, quote)
+      nextProject = syncResult.project
+      touchedPurchaseOrders.push(...syncResult.touchedPurchaseOrders)
+      logQuotePoSync(quote, syncResult)
     })
 
-    const updatedProject = normalizeProject({
-      ...project,
-      purchaseOrders: [...project.purchaseOrders, ...newPurchaseOrders],
-    })
-    saveProjects(loadProjects().map(current => (current.id === project.id ? updatedProject : current)))
-    recordPurchaseOrdersInCatalog(updatedProject, newPurchaseOrders)
-    syncCustomerOrdersFromApprovedProjects([updatedProject])
-    return updatedProject
+    if (!touchedPurchaseOrders.length) return project
+
+    saveProjects(loadProjects().map(current => (current.id === project.id ? nextProject : current)))
+    recordPurchaseOrdersInCatalog(nextProject, touchedPurchaseOrders)
+    syncCustomerOrdersFromApprovedProjects([nextProject])
+    return nextProject
   })
 
   return updatedProjects
@@ -743,6 +755,209 @@ function normalizeProject(project: Project): Project {
 
 function saveProjects(projects: Project[]) {
   saveLocalAndRemoteCollection(STORAGE_KEY, REMOTE_TYPE, REMOTE_KEY, projects.map(normalizeProject), 'cronos:projects-changed')
+}
+
+type QuotePoSyncResult = {
+  project: Project
+  relatedPurchaseOrdersFound: number
+  linesUpdated: number
+  linesCreated: number
+  linesRemoved: number
+  totalsRecalculated: number
+  touchedPurchaseOrders: PurchaseOrder[]
+}
+
+function normalizeQuoteLineForSave(
+  line: Omit<QuoteLine, 'id' | 'approved'> & Partial<Pick<QuoteLine, 'id' | 'approved'>>,
+): QuoteLine {
+  const unitCost = normalizeMoney(numberFromUnknown(line.unitCost))
+  const quantity = Math.max(0, numberFromUnknown(line.quantity))
+  const markupPercent = numberFromUnknown(line.markupPercent)
+  const marginPercent = line.marginPercent === undefined ? undefined : numberFromUnknown(line.marginPercent)
+
+  return {
+    ...line,
+    id: line.id ?? crypto.randomUUID(),
+    clin: String(line.clin ?? '').trim(),
+    partNumber: String(line.partNumber ?? '').trim(),
+    manufacturer: String(line.manufacturer ?? '').trim(),
+    description: String(line.description ?? '').trim(),
+    quantity,
+    unitCost,
+    markupPercent,
+    marginPercent,
+    vendor: String(line.vendor ?? '').trim(),
+    quoteNumber: String(line.quoteNumber ?? '').trim(),
+    leadTime: String(line.leadTime ?? '').trim(),
+    approved: line.approved ?? false,
+  }
+}
+
+function syncPurchaseOrdersForQuote(project: Project, quote: CustomerQuote): QuotePoSyncResult {
+  const relatedPurchaseOrders = project.purchaseOrders.filter(po => po.quoteId === quote.id)
+  if (!relatedPurchaseOrders.length && quote.status !== 'Customer Approved') {
+    return emptyQuotePoSyncResult(project, relatedPurchaseOrders.length)
+  }
+
+  const approvedLines = quote.lines.filter(line => line.approved)
+  const groupedLines = groupQuoteLinesByVendor(approvedLines)
+  const groupedVendorKeys = new Set(Object.keys(groupedLines).map(normalizeVendorKey))
+  const existingByVendor = new Map(
+    relatedPurchaseOrders.map(po => [normalizeVendorKey(po.vendor), po]),
+  )
+  const nextPurchaseOrders: PurchaseOrder[] = []
+  const touchedPurchaseOrders: PurchaseOrder[] = []
+  let linesUpdated = 0
+  let linesCreated = 0
+  let linesRemoved = 0
+  let totalsRecalculated = 0
+  let nextSequenceProject = project
+
+  const unrelatedPurchaseOrders = project.purchaseOrders.filter(po => po.quoteId !== quote.id)
+  nextPurchaseOrders.push(...unrelatedPurchaseOrders)
+
+  Object.entries(groupedLines).forEach(([vendor, vendorLines]) => {
+    const existingPo = existingByVendor.get(normalizeVendorKey(vendor))
+    const basePo = existingPo ?? {
+      ...generateVendorPurchaseOrders(vendorLines, project.projectNumber, nextPoSequence(nextSequenceProject))[0],
+      quoteId: quote.id,
+    }
+
+    if (!existingPo) {
+      nextSequenceProject = {
+        ...nextSequenceProject,
+        purchaseOrders: [...nextSequenceProject.purchaseOrders, basePo],
+      }
+      linesCreated += vendorLines.length
+    }
+
+    const syncedLines = vendorLines.map(line => {
+      const existingLine = findMatchingPurchaseOrderLine(existingPo?.lines ?? [], line)
+      if (existingLine) linesUpdated += 1
+      if (!existingLine && existingPo) linesCreated += 1
+      return syncPurchaseOrderLineFromQuoteLine(existingLine, line)
+    })
+
+    if (existingPo) {
+      linesRemoved += existingPo.lines.filter(line => !vendorLines.some(quoteLine => isPurchaseOrderLineMatch(line, quoteLine))).length
+    }
+
+    const syncedPo: PurchaseOrder = {
+      ...basePo,
+      quoteId: quote.id,
+      vendor,
+      lines: syncedLines,
+      totalCost: getPurchaseOrderComputedTotal(syncedLines),
+    }
+    totalsRecalculated += 1
+    touchedPurchaseOrders.push(syncedPo)
+    nextPurchaseOrders.push(syncedPo)
+  })
+
+  relatedPurchaseOrders.forEach(po => {
+    if (!groupedVendorKeys.has(normalizeVendorKey(po.vendor))) {
+      linesRemoved += po.lines.length
+      totalsRecalculated += 1
+    }
+  })
+
+  const updatedProject = normalizeProject({
+    ...project,
+    purchaseOrders: nextPurchaseOrders,
+  })
+
+  return {
+    project: updatedProject,
+    relatedPurchaseOrdersFound: relatedPurchaseOrders.length,
+    linesUpdated,
+    linesCreated,
+    linesRemoved,
+    totalsRecalculated,
+    touchedPurchaseOrders,
+  }
+}
+
+function emptyQuotePoSyncResult(project: Project, relatedPurchaseOrdersFound: number): QuotePoSyncResult {
+  return {
+    project,
+    relatedPurchaseOrdersFound,
+    linesUpdated: 0,
+    linesCreated: 0,
+    linesRemoved: 0,
+    totalsRecalculated: 0,
+    touchedPurchaseOrders: [],
+  }
+}
+
+function syncPurchaseOrderLineFromQuoteLine(existingLine: PurchaseOrderLine | undefined, quoteLine: QuoteLine): PurchaseOrderLine {
+  return {
+    id: existingLine?.id ?? `po-${quoteLine.id}`,
+    itemNumber: existingLine?.itemNumber,
+    clin: quoteLine.clin,
+    partNumber: quoteLine.partNumber,
+    manufacturer: quoteLine.manufacturer,
+    description: quoteLine.description,
+    quantityOrdered: Math.max(0, numberFromUnknown(quoteLine.quantity)),
+    quantityReceived: existingLine?.quantityReceived ?? 0,
+    unitCost: normalizeMoney(numberFromUnknown(quoteLine.unitCost)),
+    status: existingLine?.status ?? 'Ordered',
+    vendorOrderNumber: existingLine?.vendorOrderNumber ?? '',
+    estimatedShipDate: existingLine?.estimatedShipDate ?? '',
+    receivedDate: existingLine?.receivedDate ?? '',
+    carrier: existingLine?.carrier ?? '',
+    trackingNumber: existingLine?.trackingNumber ?? '',
+    trackingUrl: existingLine?.trackingUrl ?? '',
+    notes: existingLine?.notes ?? '',
+  }
+}
+
+function findMatchingPurchaseOrderLine(lines: PurchaseOrderLine[], quoteLine: QuoteLine) {
+  return (
+    lines.find(line => line.id === `po-${quoteLine.id}`) ??
+    lines.find(line => stripPoLineId(line.id) === quoteLine.id) ??
+    lines.find(line => normalizeComparable(line.partNumber) && normalizeComparable(line.partNumber) === normalizeComparable(quoteLine.partNumber)) ??
+    lines.find(
+      line =>
+        normalizeComparable(line.manufacturer ?? '') === normalizeComparable(quoteLine.manufacturer) &&
+        normalizeComparable(line.description) === normalizeComparable(quoteLine.description),
+    )
+  )
+}
+
+function isPurchaseOrderLineMatch(line: PurchaseOrderLine, quoteLine: QuoteLine) {
+  return Boolean(findMatchingPurchaseOrderLine([line], quoteLine))
+}
+
+function stripPoLineId(value: string) {
+  return value.replace(/^po-/, '')
+}
+
+function normalizeVendorKey(value: string) {
+  return normalizeComparable(value || 'Unassigned')
+}
+
+function normalizeComparable(value: string) {
+  return String(value ?? '').trim().toLowerCase()
+}
+
+function numberFromUnknown(value: unknown) {
+  if (typeof value === 'number') return Number.isFinite(value) ? value : 0
+  if (typeof value === 'string') {
+    const parsed = Number(value.replace(/[$,]/g, '').trim())
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+  return 0
+}
+
+function logQuotePoSync(quote: CustomerQuote, result: QuotePoSyncResult) {
+  if (typeof console === 'undefined') return
+  console.info('[Atlas PO Sync] Quote updated', quote.quoteNumber)
+  console.info('[Atlas PO Sync] Related POs found', result.relatedPurchaseOrdersFound)
+  console.info('[Atlas PO Sync] PO lines updated', result.linesUpdated)
+  console.info('[Atlas PO Sync] PO lines created', result.linesCreated)
+  console.info('[Atlas PO Sync] PO lines removed', result.linesRemoved)
+  console.info('[Atlas PO Sync] PO totals recalculated', result.totalsRecalculated)
+  console.info('[Atlas PO Sync] PO PDFs regenerated', result.touchedPurchaseOrders.map(po => po.poNumber))
 }
 
 function nextQuoteNumber(project: Project) {
