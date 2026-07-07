@@ -315,7 +315,8 @@ const contractFeeEnabled = ref(false)
 const shippingCost = ref(0)
 const importStatus = ref('')
 const rfqStatus = ref('')
-const isEditMode = computed(() => Boolean(route.params.quoteId))
+const routeQuoteId = computed(() => String(route.params.quoteId ?? route.params.quoteNumber ?? ''))
+const isEditMode = computed(() => Boolean(routeQuoteId.value))
 const catalogStatus = ref('')
 
 const lineForm = reactive({
@@ -375,7 +376,7 @@ onUnmounted(() => {
 
 function loadQuoteDraft(force = false) {
   const loadedProject = loadProject(String(route.params.id))
-  const loadedQuote = loadedProject?.quotes.find(item => item.id === String(route.params.quoteId))
+  const loadedQuote = loadedProject?.quotes.find(item => item.id === routeQuoteId.value || item.quoteNumber === routeQuoteId.value)
   project.value = loadedProject
   quote.value = loadedQuote
 
