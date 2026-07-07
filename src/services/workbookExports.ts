@@ -1,10 +1,10 @@
 import type { CustomerQuote, Project, PurchaseOrderLine, QuoteLine, Status } from '../types'
 import { calculateLineTotals, calculateQuoteSummary } from './calculations'
 import { getCheckbookSummary } from './checkbook'
+import { getProjectDocumentContact } from './documentContacts'
+import { loadVendorDirectory } from './vendorDirectory'
 
 const CRONOS_CAGE_CODE = '8NPB1'
-const CRONOS_POC_EMAIL = 'cody.hibbard@cronosllc.com'
-const CRONOS_POC_PHONE = '(352) 464-4046'
 
 type WorkbookCell =
   | string
@@ -20,6 +20,7 @@ type WorkbookSheet = {
   columnWidths?: number[]
   merges?: string[]
   freezePane?: string
+  autoFilter?: string
   image?: 'cronosLogo'
 }
 
@@ -79,6 +80,7 @@ export async function exportCheckbookFinancialWorkbook(project: Project) {
 
 export async function exportCustomerQuoteWorkbook(quote: CustomerQuote, project?: Project) {
   const summary = calculateQuoteSummary(quote.lines, quote.contractFeeEnabled, quote.shippingCost ?? 0)
+  const poc = getProjectDocumentContact(project)
   const startRow = 18
   const lineRows = quote.lines.map((line, index) => {
     const rowNumber = startRow + index
@@ -86,7 +88,6 @@ export async function exportCustomerQuoteWorkbook(quote: CustomerQuote, project?
     return [
       { value: index + 1, style: 6 },
       { value: line.manufacturer || '', style: 6 },
-      { value: line.clin || '', style: 6 },
       { value: line.quantity || 0, style: 6 },
       { value: line.partNumber || '', style: 6 },
       { value: line.description || '', style: 7 },
@@ -101,8 +102,8 @@ export async function exportCustomerQuoteWorkbook(quote: CustomerQuote, project?
       {
         name: sanitizeSheetName(quote.quoteNumber),
         image: 'cronosLogo',
-        columnWidths: [1, 8, 14, 17, 8, 17, 52, 15, 17],
-        merges: ['B11:C11', 'D11:F11', 'G11:G11', 'H11:I11', 'B12:C12', 'D12:F12', 'G12:G12', 'H12:I12', 'B13:C13', 'D13:F13', 'G13:G13', 'H13:I13'],
+        columnWidths: [1, 8, 16, 8, 18, 58, 15, 17],
+        merges: ['B11:C11', 'D11:F11', 'G11:G11', 'H11:H11', 'B12:C12', 'D12:F12', 'G12:G12', 'H12:H12', 'B13:C13', 'D13:F13', 'G13:G13', 'H13:H13'],
         rows: [
           [],
           [],
@@ -114,19 +115,19 @@ export async function exportCustomerQuoteWorkbook(quote: CustomerQuote, project?
           [],
           ['', '', '', '', { value: `Project: ${quote.projectNumber} - ${quote.projectName}`, style: 5 }],
           [],
-          ['', { value: 'Customer Account:', style: 3 }, '', { value: quote.customer || project?.customer || '', style: 4 }, '', '', { value: 'Cronos POC:', style: 3 }, { value: project?.projectManager || 'Cody Hibbard', style: 4 }],
-          ['', { value: 'Customer Name:', style: 3 }, '', { value: project?.customerContactName || '', style: 4 }, '', '', { value: 'Email:', style: 3 }, { value: CRONOS_POC_EMAIL, style: 4 }],
-          ['', { value: 'Customer Email:', style: 3 }, '', { value: project?.customerEmail || '', style: 4 }, '', '', { value: 'Direct Phone:', style: 3 }, { value: CRONOS_POC_PHONE, style: 4 }],
+          ['', { value: 'Customer:', style: 3 }, '', { value: quote.customer || project?.customer || '', style: 4 }, '', '', { value: 'Cronos POC:', style: 3 }, { value: poc.name, style: 4 }],
+          ['', { value: 'Customer Name:', style: 3 }, '', { value: project?.customerContactName || '', style: 4 }, '', '', { value: 'Email:', style: 3 }, { value: poc.email, style: 4 }],
+          ['', { value: 'Customer Email:', style: 3 }, '', { value: project?.customerEmail || '', style: 4 }, '', '', { value: 'Direct Phone:', style: 3 }, { value: poc.phone, style: 4 }],
           [],
           [],
-          ['', { value: 'Line', style: 9 }, { value: 'Manufacturer', style: 9 }, { value: 'CLIN', style: 9 }, { value: 'QTY', style: 9 }, { value: 'Part #', style: 9 }, { value: 'Description', style: 9 }, { value: 'Unit Cost', style: 9 }, { value: 'Extended Cost', style: 9 }],
+          ['', { value: 'Line', style: 9 }, { value: 'Manufacturer', style: 9 }, { value: 'QTY', style: 9 }, { value: 'Part #', style: 9 }, { value: 'Description', style: 9 }, { value: 'Unit Cost', style: 9 }, { value: 'Extended Cost', style: 9 }],
           [],
           ...lineRows.map(row => ['', ...row]),
           [],
-          ['', '', '', '', '', '', { value: 'Line Item Total', style: 10 }, '', { formula: `SUM(I${startRow}:I${startRow + Math.max(lineRows.length - 1, 0)})`, value: summary.totalSellPrice, style: 11 }],
-          ['', '', '', '', '', '', { value: 'Contract Fee', style: 10 }, '', { value: summary.contractFee, style: 11 }],
-          ['', '', '', '', '', '', { value: 'Shipping', style: 10 }, '', { value: summary.shippingCost, style: 11 }],
-          ['', '', '', '', '', '', { value: 'Quote Total', style: 12 }, '', { formula: `I${totalRow}+I${totalRow + 1}+I${totalRow + 2}`, value: summary.customerTotal, style: 13 }],
+          ['', '', '', '', '', { value: 'Line Item Total', style: 10 }, '', { formula: `SUM(H${startRow}:H${startRow + Math.max(lineRows.length - 1, 0)})`, value: summary.totalSellPrice, style: 11 }],
+          ['', '', '', '', '', { value: 'Contract Fee', style: 10 }, '', { value: summary.contractFee, style: 11 }],
+          ['', '', '', '', '', { value: 'Shipping', style: 10 }, '', { value: summary.shippingCost, style: 11 }],
+          ['', '', '', '', '', { value: 'Quote Total', style: 12 }, '', { formula: `H${totalRow}+H${totalRow + 1}+H${totalRow + 2}`, value: summary.customerTotal, style: 13 }],
         ],
       },
     ],
@@ -141,10 +142,9 @@ export async function exportVendorRfqPackage(project: Project, lines: QuoteLine[
   for (const [vendor, vendorLines] of vendors) {
     await downloadWorkbook(
       [
-        {
-          name: 'RFQ',
-          rows: buildVendorRfqRows(project, vendor, vendorLines),
-        },
+        buildVendorRfqSheet(project, vendor, vendorLines),
+        buildVendorRfqSummarySheet(project, vendor, vendorLines),
+        buildVendorRfqInstructionsSheet(),
       ],
       `Cronos-${sanitizeFileName(project.projectNumber)}-${sanitizeFileName(vendor)}-RFQ.xlsx`,
     )
@@ -195,40 +195,108 @@ function groupQuoteLinesByVendor(lines: QuoteLine[]) {
   }, {})
 }
 
-function buildVendorRfqRows(project: Project, vendor: string, lines: QuoteLine[]) {
-  return [
-    [{ value: 'CRONOS LLC', style: 14 }],
-    [{ value: 'Vendor Request for Quote', style: 15 }],
-    [{ value: 'Please complete Vendor Quote #, Vendor Unit Cost, Lead Time, and Notes, then return this workbook to Cronos.', style: 22 }],
+function buildVendorRfqSheet(project: Project, vendor: string, lines: QuoteLine[]): WorkbookSheet {
+  const poc = getProjectDocumentContact(project)
+  const vendorRecord = findVendorRecord(vendor)
+  const vendorContact = [vendorRecord?.primaryContact, vendorRecord?.email, vendorRecord?.phone].filter(Boolean).join(' | ')
+  const rfqNumber = `${project.projectNumber}-${sanitizeFileName(vendor)}-RFQ`
+  const dueDate = vendorRfqDueDate()
+  const headerRow = 15
+  const firstDataRow = headerRow + 1
+  const rows: WorkbookCell[][] = [
     [],
-    [{ value: `Project: ${project.projectNumber} - ${project.projectName}`, style: 22 }],
-    [{ value: `Vendor: ${vendor}`, style: 22 }],
-    [{ value: `RFQ Date: ${new Date().toLocaleDateString('en-US')}`, style: 19 }],
+    [],
+    ['', '', '', { value: 'CRONOS LLC', style: 14 }],
+    ['', '', '', { value: 'Vendor Request for Quote', style: 15 }],
+    [],
+    ['', { value: 'RFQ Number', style: 3 }, { value: rfqNumber, style: 4 }, '', { value: 'Vendor Name', style: 3 }, { value: vendor, style: 4 }],
+    ['', { value: 'Project Number', style: 3 }, { value: project.projectNumber, style: 4 }, '', { value: 'Vendor Contact', style: 3 }, { value: vendorContact, style: 4 }],
+    ['', { value: 'Project Name', style: 3 }, { value: project.projectName, style: 4 }, '', { value: 'Requested Date', style: 3 }, { value: formatDateForWorkbook(new Date().toISOString()), style: 4 }],
+    ['', { value: 'Customer', style: 3 }, { value: project.customer, style: 4 }, '', { value: 'Due Date', style: 3 }, { value: dueDate, style: 4 }],
+    ['', { value: 'Requested By', style: 3 }, { value: poc.name, style: 4 }, '', { value: 'Email', style: 3 }, { value: poc.email, style: 4 }],
+    ['', { value: 'Phone', style: 3 }, { value: poc.phone, style: 4 }, '', { value: 'Cage Code', style: 3 }, { value: poc.cageCode, style: 4 }],
+    [],
+    [{ value: 'Please complete the vendor response fields and return this workbook to Cronos by the due date.', style: 22 }],
+    [],
     [
-      'CLIN',
-      'Part Number',
+      'Line',
       'Manufacturer',
+      'Part Number',
       'Description',
-      'Quantity',
-      'Vendor',
-      'Requested Vendor Quote #',
-      'Vendor Unit Cost',
+      'Qty',
+      'Requested Unit Cost',
+      'Vendor Part Number',
+      'Unit Price',
+      'Extended Price',
       'Lead Time',
-      'Notes',
+      'TAA Compliant',
+      'Warranty',
+      'Substitute/Alternate Offered',
+      'Vendor Notes',
     ].map(value => ({ value, style: 18 })),
-    ...lines.map(line => [
-      { value: line.clin, style: 19 },
-      { value: line.partNumber, style: 19 },
-      { value: line.manufacturer, style: 19 },
-      { value: line.description, style: 22 },
-      { value: line.quantity, style: 19 },
-      { value: vendor, style: 22 },
-      { value: '', style: 19 },
-      { value: '', style: 20 },
-      { value: line.leadTime || '', style: 19 },
-      { value: '', style: 22 },
-    ]),
+    ...lines.map((line, index) => {
+      const rowNumber = firstDataRow + index
+      return [
+        { value: index + 1, style: 19 },
+        { value: line.manufacturer, style: 19 },
+        { value: line.partNumber, style: 19 },
+        { value: line.description, style: 22 },
+        { value: line.quantity, style: 19 },
+        { value: line.unitCost, style: 20 },
+        { value: '', style: 19 },
+        { value: '', style: 20 },
+        { formula: `E${rowNumber}*H${rowNumber}`, value: 0, style: 20 },
+        { value: line.leadTime || '', style: 19 },
+        { value: '', style: 19 },
+        { value: '', style: 19 },
+        { value: '', style: 19 },
+        { value: '', style: 22 },
+      ]
+    }),
   ]
+
+  const lastRow = Math.max(firstDataRow, firstDataRow + lines.length - 1)
+  return {
+    name: 'RFQ',
+    image: 'cronosLogo',
+    rows,
+    columnWidths: [8, 18, 20, 52, 10, 18, 22, 16, 18, 16, 16, 18, 24, 38],
+    merges: ['D3:F3', 'D4:F4', 'A13:N13'],
+    freezePane: `A${firstDataRow}`,
+    autoFilter: `A${headerRow}:N${lastRow}`,
+  }
+}
+
+function buildVendorRfqSummarySheet(project: Project, vendor: string, lines: QuoteLine[]): WorkbookSheet {
+  const dueDate = vendorRfqDueDate()
+  return {
+    name: 'Summary',
+    rows: [
+      [{ value: 'RFQ Summary', style: 14 }],
+      [],
+      ['Project Number', project.projectNumber],
+      ['Project Name', project.projectName],
+      ['Vendor', vendor],
+      ['Vendor Response Due Date', dueDate],
+      ['Total Items', lines.length],
+      ['Total Quoted Amount', { formula: `SUM('RFQ'!I16:I${15 + Math.max(lines.length, 1)})`, value: 0, style: 20 }],
+    ],
+    columnWidths: [28, 42],
+  }
+}
+
+function buildVendorRfqInstructionsSheet(): WorkbookSheet {
+  return {
+    name: 'Instructions',
+    rows: [
+      [{ value: 'Vendor Instructions', style: 14 }],
+      [],
+      [{ value: 'Complete the response fields on the RFQ tab: Vendor Part Number, Unit Price, Lead Time, TAA Compliant, Warranty, Substitute/Alternate Offered, and Vendor Notes.', style: 22 }],
+      [{ value: 'Extended Price is formula-driven from Quantity and Unit Price. Please do not remove formulas unless you are returning a flat priced response.', style: 22 }],
+      [{ value: 'Return this workbook to the Cronos contact listed on the RFQ tab by the response due date.', style: 22 }],
+    ],
+    columnWidths: [110],
+  }
 }
 
 function buildTrackingSummarySheet(project: Project, lines: TrackingWorkbookLine[], generatedDate: string, includeCosts: boolean): WorkbookSheet {
@@ -377,6 +445,7 @@ function worksheetXml(sheet: WorkbookSheet, sheetIndex: number, hasLogo: boolean
   const mergeXml = sheet.merges?.length
     ? `<mergeCells count="${sheet.merges.length}">${sheet.merges.map(ref => `<mergeCell ref="${ref}"/>`).join('')}</mergeCells>`
     : ''
+  const autoFilterXml = sheet.autoFilter ? `<autoFilter ref="${escapeXml(sheet.autoFilter)}"/>` : ''
   const drawingXml = sheetIndex === 0 && sheet.image === 'cronosLogo' && hasLogo ? '<drawing r:id="rId1"/>' : ''
   const body = sheet.rows
     .map((row, rowIndex) => {
@@ -388,7 +457,7 @@ function worksheetXml(sheet: WorkbookSheet, sheetIndex: number, hasLogo: boolean
     })
     .join('')
 
-  return xmlHeader(`<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${sheetViewsXml}${columnXml}<sheetData>${body}</sheetData>${mergeXml}${drawingXml}</worksheet>`)
+  return xmlHeader(`<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${sheetViewsXml}${columnXml}<sheetData>${body}</sheetData>${autoFilterXml}${mergeXml}${drawingXml}</worksheet>`)
 }
 
 function worksheetRowHeight(row: WorkbookCell[]) {
@@ -586,6 +655,17 @@ function getQuoteExpirationDateForWorkbook(quote: CustomerQuote) {
   const date = new Date(quote.createdAt || Date.now())
   date.setDate(date.getDate() + (quote.expirationDays ?? 30))
   return formatDateForWorkbook(date.toISOString())
+}
+
+function vendorRfqDueDate() {
+  const date = new Date()
+  date.setDate(date.getDate() + 7)
+  return formatDateForWorkbook(date.toISOString())
+}
+
+function findVendorRecord(vendor: string) {
+  const normalized = vendor.trim().toLowerCase()
+  return loadVendorDirectory().find(record => record.vendor.trim().toLowerCase() === normalized)
 }
 
 function sanitizeSheetName(value: string) {

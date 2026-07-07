@@ -385,7 +385,7 @@ function getCustomerBoxLines(quote: CustomerQuote, project: Project | undefined,
 }
 
 function getQuotePocBoxLines(poc: ReturnType<typeof getProjectDocumentContact>) {
-  return [poc.name, poc.email].filter(Boolean)
+  return documentContactLines(poc)
 }
 
 function splitAddress(value: string) {
@@ -688,10 +688,10 @@ function drawQuoteLines(doc: JsPdf, startY: number, quote: CustomerQuote) {
 
 function drawPoLines(doc: JsPdf, startY: number, po: PurchaseOrder | ProjectPurchaseOrder, trackingOnly = false) {
   const headers = trackingOnly
-    ? ['CLIN', 'Part', 'Description', 'Qty', 'Status', 'Tracking']
-    : ['CLIN', 'Part', 'Description', 'Qty', 'Unit', 'Extended']
+    ? ['Line', 'Part', 'Description', 'Qty', 'Status', 'Tracking']
+    : ['Line', 'Part', 'Description', 'Qty', 'Unit', 'Extended']
   let y = drawTableHeader(doc, startY, headers)
-  po.lines.forEach(line => {
+  po.lines.forEach((line, index) => {
     const partLines = AtlasWrappedText(doc, line.partNumber || '-', 72)
     const descriptionLines = AtlasWrappedText(doc, line.description || '-', 188)
     const statusLines = trackingOnly ? AtlasWrappedText(doc, line.status || '-', 72) : []
@@ -699,7 +699,7 @@ function drawPoLines(doc: JsPdf, startY: number, po: PurchaseOrder | ProjectPurc
     const rowHeight = getPdfRowHeight(partLines, descriptionLines, statusLines, trackingLines)
     y = AtlasPageBreakHandler(doc, y, rowHeight)
     drawTableRow(doc, y, rowHeight)
-    doc.text(line.clin, 40, y + 16)
+    doc.text(String(index + 1), 40, y + 16)
     doc.text(partLines, 76, y + 16)
     doc.text(descriptionLines, 158, y + 16)
     doc.text(String(line.quantityOrdered), 362, y + 16)

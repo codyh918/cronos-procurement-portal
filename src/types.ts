@@ -192,6 +192,7 @@ export type PurchaseOrder = {
   trackingUrl?: string
   customerUpdateNotes?: string
   requestor?: string
+  terms?: string
   lines: PurchaseOrderLine[]
 }
 

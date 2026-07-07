@@ -19,16 +19,32 @@ export function calculateMarginSellPrice(unitCost: number, marginPercent: number
 }
 
 export function calculateSellPrice(unitCost: number, percentage: number, mode: PricingMode = 'markup') {
-  return mode === 'margin'
-    ? calculateMarginSellPrice(unitCost, percentage)
-    : calculateMarkupSellPrice(unitCost, percentage)
+  if (mode === 'margin') {
+    return calculateMarkupSellPrice(unitCost, marginPercentToMarkupPercent(percentage))
+  }
+
+  return calculateMarkupSellPrice(unitCost, percentage)
 }
 
 export function calculateLineTotals(line: QuoteLine) {
   const pricingMode = line.pricingMode ?? 'markup'
-  const appliedPercent = pricingMode === 'margin' ? line.marginPercent ?? 0 : line.markupPercent
-  const sellPrice = calculateSellPrice(line.unitCost, appliedPercent, pricingMode)
+  const appliedPercent = normalizeMarkupPercent(line)
+  const sellPrice = calculateSellPrice(line.unitCost, appliedPercent, 'markup')
   return calculateTotalsFromSellPrice(line.quantity, line.unitCost, sellPrice)
+}
+
+export function normalizeMarkupPercent(line: Pick<QuoteLine, 'pricingMode' | 'marginPercent' | 'markupPercent'>) {
+  if (line.pricingMode === 'margin' && line.marginPercent !== undefined) {
+    return marginPercentToMarkupPercent(line.marginPercent)
+  }
+
+  return line.markupPercent || 0
+}
+
+export function marginPercentToMarkupPercent(marginPercent: number) {
+  if (marginPercent <= 0) return 0
+  if (marginPercent >= 100) return 0
+  return roundCurrency((marginPercent / (100 - marginPercent)) * 100)
 }
 
 export function calculateTotalsFromSellPrice(quantity: number, unitCost: number, sellPrice: number) {
@@ -131,6 +147,7 @@ export function generateVendorPurchaseOrders(lines: QuoteLine[], projectNumber: 
       dateIssued: todayLocalDateString(),
       status: 'PO Generated',
       totalCost: roundCurrency(poLines.reduce((total, line) => total + line.unitCost * line.quantityOrdered, 0)),
+      terms: 'NET30',
       expectedDeliveryDate: '',
       lines: poLines,
     }

@@ -8,6 +8,7 @@ import type {
   PublicLookupAuditLog,
 } from '../types'
 import { getAppBaseUrl } from './environment'
+import { getProjectDocumentContact } from './documentContacts'
 import { hydrateLocalCollection, readLocalCollection, saveLocalAndRemoteCollection } from './remoteRecords'
 
 const ORDERS_KEY = 'cronos.customerOrders'
@@ -375,6 +376,7 @@ function buildCustomerOrderFromApprovedQuote(project: Project, quote: Project['q
     }
   })
   const overallStatus = deriveOverallStatus(items, sourcePurchaseOrders.length ? 'PO Issued' : 'Pending Procurement')
+  const poc = getProjectDocumentContact(project)
 
   return normalizeOrder({
     id: existing?.id ?? crypto.randomUUID(),
@@ -388,8 +390,8 @@ function buildCustomerOrderFromApprovedQuote(project: Project, quote: Project['q
     overallStatus,
     customerContactName: project.customerContactName ?? existing?.customerContactName ?? '',
     customerContactEmail: project.customerEmail ?? existing?.customerContactEmail ?? '',
-    cronosContactName: existing?.cronosContactName ?? 'Cody Hibbard',
-    cronosContactEmail: existing?.cronosContactEmail ?? 'cody.hibbard@cronosllc.com',
+    cronosContactName: poc.name,
+    cronosContactEmail: poc.email,
     estimatedShipDate: earliestNonEmpty(items.map(item => item.expectedShipDate)) || existing?.estimatedShipDate || '',
     publicNotes: existing?.publicNotes ?? 'Cronos will update this order page as procurement and shipment status changes.',
     internalNotes: existing?.internalNotes ?? '',

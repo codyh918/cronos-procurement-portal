@@ -27,7 +27,7 @@
 
       <div class="public-security-note">
         <ShieldCheck :size="20" />
-        <p>Secure tracking links provide read-only access to a single order. Internal pricing, margin, and procurement notes are never shown on this customer page.</p>
+        <p>Secure tracking links provide read-only access to a single order. Internal pricing, markup, and procurement notes are never shown on this customer page.</p>
       </div>
     </section>
   </div>

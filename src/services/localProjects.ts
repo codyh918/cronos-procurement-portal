@@ -1,11 +1,12 @@
 import type { CustomerQuote, Project, ProjectFormInput, ProjectPurchaseOrder, PurchaseOrder, PurchaseOrderLine, QuoteLine, Status } from '../types'
 import { TRACKING_25_100_ROWS } from '../data/tracking-25-100-data'
-import { generateVendorPurchaseOrders, groupQuoteLinesByVendor } from './calculations'
+import { generateVendorPurchaseOrders, groupQuoteLinesByVendor, marginPercentToMarkupPercent } from './calculations'
 import type { CheckbookPoImportInput } from './checkbookImport'
 import { syncCustomerOrdersFromApprovedProjects } from './customerOrders'
 import { recordPurchaseOrdersInCatalog } from './partCatalog'
 import { hydrateLocalCollection, readLocalCollection, saveLocalAndRemoteCollection } from './remoteRecords'
 import type { TrackingImportInput } from './trackingImport'
+import { loadVendorDirectory } from './vendorDirectory'
 
 const STORAGE_KEY = 'cronos.projects'
 const REMOTE_TYPE = 'projects'
@@ -409,6 +410,7 @@ export function importCheckbookPurchaseOrders(projectId: string, rows: Checkbook
         status: 'PO Issued',
         totalCost,
         customerTotalCost,
+        terms: defaultPurchaseOrderTerms(row.vendor),
         expectedDeliveryDate: '',
         customerUpdateNotes: row.description.trim(),
         requestor: row.requestor?.trim() ?? '',
@@ -503,6 +505,7 @@ export function updatePurchaseOrderDetails(
       | 'customerUpdateNotes'
       | 'requestor'
       | 'customerTotalCost'
+      | 'terms'
     >
   >,
 ) {
@@ -521,6 +524,7 @@ export function updatePurchaseOrderDetails(
         ...updates,
         poNumber: updates.poNumber?.trim() || po.poNumber,
         vendor: updates.vendor?.trim() || po.vendor,
+        terms: updates.terms?.trim() ?? po.terms,
         dateIssued: normalizeOptionalDateString(updates.dateIssued) || updates.dateIssued || po.dateIssued,
         estimatedShipDate: normalizeOptionalDateString(updates.estimatedShipDate) || updates.estimatedShipDate || po.estimatedShipDate,
         expectedDeliveryDate: normalizeOptionalDateString(updates.expectedDeliveryDate) || updates.expectedDeliveryDate || po.expectedDeliveryDate,
@@ -744,9 +748,13 @@ function normalizeProject(project: Project): Project {
     quotes: (project.quotes ?? []).map(quote => ({
       ...quote,
       quoteName: quote.quoteName ?? '',
+      lines: (quote.lines ?? []).map(line => normalizeQuoteLineForSave(line)),
     })),
-    quoteLines: project.quoteLines ?? [],
-    purchaseOrders: project.purchaseOrders ?? [],
+    quoteLines: (project.quoteLines ?? []).map(line => normalizeQuoteLineForSave(line)),
+    purchaseOrders: (project.purchaseOrders ?? []).map(po => ({
+      ...po,
+      terms: po.terms ?? defaultPurchaseOrderTerms(po.vendor),
+    })),
     inventory: project.inventory ?? [],
     kitStatus: project.kitStatus ?? 'Quoted',
     shipmentStatus: project.shipmentStatus ?? 'Quoted',
@@ -772,8 +780,11 @@ function normalizeQuoteLineForSave(
 ): QuoteLine {
   const unitCost = normalizeMoney(numberFromUnknown(line.unitCost))
   const quantity = Math.max(0, numberFromUnknown(line.quantity))
-  const markupPercent = numberFromUnknown(line.markupPercent)
+  const rawMarkupPercent = numberFromUnknown(line.markupPercent)
   const marginPercent = line.marginPercent === undefined ? undefined : numberFromUnknown(line.marginPercent)
+  const markupPercent = line.pricingMode === 'margin' && marginPercent !== undefined
+    ? marginPercentToMarkupPercent(marginPercent)
+    : rawMarkupPercent
 
   return {
     ...line,
@@ -784,8 +795,9 @@ function normalizeQuoteLineForSave(
     description: String(line.description ?? '').trim(),
     quantity,
     unitCost,
+    pricingMode: 'markup',
     markupPercent,
-    marginPercent,
+    marginPercent: undefined,
     vendor: String(line.vendor ?? '').trim(),
     quoteNumber: String(line.quoteNumber ?? '').trim(),
     leadTime: String(line.leadTime ?? '').trim(),
@@ -846,6 +858,7 @@ function syncPurchaseOrdersForQuote(project: Project, quote: CustomerQuote): Quo
       ...basePo,
       quoteId: quote.id,
       vendor,
+      terms: basePo.terms ?? defaultPurchaseOrderTerms(vendor),
       lines: syncedLines,
       totalCost: getPurchaseOrderComputedTotal(syncedLines),
     }
@@ -909,6 +922,12 @@ function syncPurchaseOrderLineFromQuoteLine(existingLine: PurchaseOrderLine | un
     trackingUrl: existingLine?.trackingUrl ?? '',
     notes: existingLine?.notes ?? '',
   }
+}
+
+function defaultPurchaseOrderTerms(vendor: string) {
+  const vendorRecord = loadVendorDirectory().find(record => normalizeVendorKey(record.vendor) === normalizeVendorKey(vendor))
+  const vendorTerms = vendorRecord?.notes.match(/\b(?:net\s*\d+|due\s+on\s+receipt|cod|prepaid)\b/i)?.[0]
+  return vendorTerms ? vendorTerms.toUpperCase().replace(/\s+/g, ' ') : 'NET30'
 }
 
 function findMatchingPurchaseOrderLine(lines: PurchaseOrderLine[], quoteLine: QuoteLine) {

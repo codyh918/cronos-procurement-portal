@@ -40,6 +40,10 @@
           <input :value="po.requestor ?? ''" @change="updatePo({ requestor: inputValue($event) })" />
         </label>
         <label class="tracking-field">
+          <span>Terms</span>
+          <input :value="po.terms ?? 'NET30'" @change="updatePo({ terms: inputValue($event) })" />
+        </label>
+        <label class="tracking-field">
           <span>Customer Total Cost</span>
           <input type="number" min="0" step="0.01" :value="po.customerTotalCost ?? po.totalCost" @change="updatePo({ customerTotalCost: numberValue($event) })" />
         </label>
@@ -169,6 +173,7 @@ function updatePo(
       | 'customerUpdateNotes'
       | 'requestor'
       | 'customerTotalCost'
+      | 'terms'
     >
   >,
 ) {
@@ -207,7 +212,7 @@ function updateLine(
 
 async function exportCustomerUpdate() {
   if (!po.value) return
-  await exportCustomerTrackingUpdatePdf(po.value)
+  await exportCustomerTrackingUpdatePdf(po.value, loadProject(po.value.projectId))
 }
 
 async function exportPoPdf() {

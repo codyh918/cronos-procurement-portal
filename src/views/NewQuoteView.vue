@@ -82,7 +82,6 @@
 
     <section v-if="showPricingControls" class="quote-profit-grid">
       <QuoteSummaryTile label="Gross Profit" :value="currency(summary.totalGrossProfit)" />
-      <QuoteSummaryTile label="Gross Margin" :value="`${summary.totalGrossMarginPercent}%`" />
     </section>
 
     <section class="settings-strip">
@@ -215,33 +214,12 @@
 
         <template v-if="showPricingControls">
           <label class="form-field">
-            <span>Pricing Mode</span>
-            <select v-model="pricingMode">
-              <option value="markup">Apply Markup</option>
-              <option value="margin">Apply Margin</option>
-            </select>
+            <span>Markup %</span>
+            <input v-model.number="markupPercent" type="number" min="0" step="0.01" placeholder="15" />
           </label>
-          <FormField
-            v-if="pricingMode === 'markup'"
-            v-model.number="markupPercent"
-            label="Markup %"
-            placeholder="15"
-            type="number"
-            min="0"
-            step="0.01"
-          />
-          <FormField
-            v-else
-            v-model.number="marginPercent"
-            label="Margin %"
-            placeholder="20"
-            type="number"
-            min="0"
-            step="0.01"
-          />
         </template>
         <div v-else class="pricing-info span-2">
-          Design &amp; Install project: line pricing uses verified vendor cost only. Markup and margin controls are hidden.
+          Design &amp; Install project: line pricing uses verified vendor cost only. Markup controls are hidden.
         </div>
 
         <FormField v-model="lineForm.quoteNumber" label="Vendor Quote Number" placeholder="Optional" />
@@ -266,7 +244,6 @@
         <div class="preview-row"><span>Extended Sell</span><strong>{{ currency(previewTotals.extendedSellPrice) }}</strong></div>
         <template v-if="showPricingControls">
           <div class="preview-row"><span>Gross Profit</span><strong>{{ currency(previewTotals.grossProfit) }}</strong></div>
-          <div class="preview-row"><span>Gross Margin</span><strong>{{ previewTotals.grossMarginPercent }}%</strong></div>
         </template>
       </aside>
     </form>
@@ -335,7 +312,6 @@ const pricingMode = ref<PricingMode>('markup')
 const quantity = ref(1)
 const unitCost = ref(0)
 const markupPercent = ref(15)
-const marginPercent = ref(20)
 const draftLines = ref<QuoteLine[]>([])
 const quoteName = ref('')
 const expirationDays = ref<ExpirationDays>(30)
@@ -370,7 +346,7 @@ const previewLine = computed(() =>
     unitCost: unitCost.value,
     pricingMode: showPricingControls.value ? pricingMode.value : 'markup',
     markupPercent: showPricingControls.value ? markupPercent.value : 0,
-    marginPercent: showPricingControls.value ? marginPercent.value : 0,
+    marginPercent: 0,
     vendor: lineForm.vendor,
     quoteNumber: lineForm.quoteNumber,
     leadTime: lineForm.leadTime,
@@ -507,7 +483,7 @@ async function handleImport(event: Event) {
         ...line,
         pricingMode: showPricingControls.value ? line.pricingMode ?? 'markup' : 'markup',
         markupPercent: showPricingControls.value ? line.markupPercent : 0,
-        marginPercent: showPricingControls.value ? line.marginPercent : 0,
+        marginPercent: 0,
       })),
     )
     draftLines.value = normalizePricingForProject(applySequentialClins([...draftLines.value, ...materialLines]), showPricingControls.value)
