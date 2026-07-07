@@ -12,7 +12,6 @@
       </thead>
       <tbody>
         <tr v-for="line in lines" :key="line.id">
-          <td><span class="clin-pill">{{ line.clin }}</span></td>
           <td>
             <input
               class="cell-input w-36"
@@ -109,7 +108,6 @@ const emit = defineEmits<{
 }>()
 
 const headings = computed(() => [
-  'CLIN',
   'Part Number',
   'Manufacturer',
   'Description',

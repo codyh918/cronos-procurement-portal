@@ -171,10 +171,6 @@
     <form class="quote-entry-grid" @submit.prevent="addLine">
       <section class="quote-line-form">
         <label class="form-field">
-          <span>CLIN</span>
-          <input class="readonly-input" :value="nextClin" readonly />
-        </label>
-        <label class="form-field">
           <span>Part Number</span>
           <input
             v-model="lineForm.partNumber"
@@ -386,7 +382,7 @@ function loadQuoteDraft(force = false) {
   if (loadedQuote) {
     const editableLines = getEditableQuoteLines(loadedQuote, loadedProject)
     quoteName.value = loadedQuote.quoteName ?? ''
-    if (force || !draftLines.value.length) {
+    if (force || (!draftLines.value.length && editableLines.length)) {
       draftLines.value = normalizePricingForProject(applySequentialClins(editableLines), loadedProject?.projectType !== 'Design & Install')
     }
     expirationDays.value = loadedQuote.expirationDays ?? 30
