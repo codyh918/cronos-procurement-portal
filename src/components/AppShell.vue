@@ -2,7 +2,7 @@
   <div class="app-shell">
     <Sidebar />
     <main class="app-main">
-      <slot />
+      <RouterView />
     </main>
     <AiAssistant />
   </div>

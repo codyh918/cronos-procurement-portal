@@ -46,12 +46,6 @@
           </td>
           <template v-if="showPricingControls">
             <td>
-              <select class="cell-input w-28" :value="line.pricingMode ?? 'markup'" @change="updateLine(line.id, { pricingMode: inputValue($event) as PricingMode })">
-                <option value="markup">Markup</option>
-                <option value="margin">Margin</option>
-              </select>
-            </td>
-            <td>
               <input
                 class="cell-input w-24"
                 type="number"
@@ -59,17 +53,6 @@
                 step="0.01"
                 :value="line.markupPercent"
                 @input="updateLine(line.id, { pricingMode: 'markup', markupPercent: numberValue($event) })"
-              />
-            </td>
-            <td>
-              <input
-                class="cell-input w-24"
-                type="number"
-                min="0"
-                max="99"
-                step="0.01"
-                :value="line.marginPercent ?? 0"
-                @input="updateLine(line.id, { pricingMode: 'margin', marginPercent: numberValue($event) })"
               />
             </td>
           </template>
@@ -80,11 +63,18 @@
             </select>
           </td>
           <td><input class="cell-input w-36" :value="line.quoteNumber" @input="updateLine(line.id, { quoteNumber: inputValue($event) })" /></td>
-          <td><input class="cell-input w-28" :value="line.leadTime" @input="updateLine(line.id, { leadTime: inputValue($event) })" /></td>
+          <td>
+            <input
+              class="cell-input w-40"
+              :value="line.leadTime"
+              placeholder="8-10 weeks"
+              aria-label="Lead time"
+              @input="updateLine(line.id, { leadTime: inputValue($event) })"
+            />
+          </td>
           <td>{{ currency(calculateLineTotals(line).sellPrice) }}</td>
           <td>{{ currency(calculateLineTotals(line).extendedSellPrice) }}</td>
           <td class="profit-cell">{{ currency(calculateLineTotals(line).grossProfit) }}</td>
-          <td>{{ calculateLineTotals(line).grossMarginPercent }}%</td>
           <td class="action-cell">
             <button class="delete-line-button" type="button" :aria-label="`Remove ${line.partNumber || 'line'}`" @click="removeLine(line.id)">
               <Trash2 :size="16" />
@@ -99,7 +89,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { Trash2 } from '@lucide/vue'
-import { calculateLineTotals, currency, type PricingMode } from '../services/calculations'
+import { calculateLineTotals, currency } from '../services/calculations'
 import { findLatestPartPrice, findPartPriceSuggestions } from '../services/partCatalog'
 import { recommendVendorForPart } from '../services/vendorIntelligence'
 import { getVendorOptions } from '../services/vendors'
@@ -125,14 +115,13 @@ const headings = computed(() => [
   'Description',
   'Qty',
   'Unit Cost',
-  ...(props.showPricingControls ? ['Mode', 'Markup %', 'Margin %'] : []),
+  ...(props.showPricingControls ? ['Markup %'] : []),
   'Vendor',
   'Vendor Quote #',
   'Lead Time',
   'Sell',
   'Ext Sell',
   'GP',
-  'GM %',
   '',
 ])
 

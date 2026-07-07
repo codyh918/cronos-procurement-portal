@@ -1,5 +1,5 @@
 ﻿<template>
-  <slot v-if="session" />
+  <RouterView v-if="session" />
 
   <div v-else class="auth-gate-page">
     <section class="auth-hero-panel" aria-label="Cronos">
