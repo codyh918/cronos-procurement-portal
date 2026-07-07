@@ -97,15 +97,25 @@ export async function hydrateLocalCollection<T>(
     normalize?: (items: T[]) => T[]
   } = {},
 ) {
+  const local = readLocalCollection<T>(storageKey)
   const remote = await loadRemoteRecord<T[]>(recordType, recordKey)
   if (Array.isArray(remote)) {
     const normalized = options.normalize ? options.normalize(remote) : remote
+    if (!normalized.length && local.length) {
+      console.warn(`Remote ${recordType}:${recordKey} is empty; preserving non-empty local ${storageKey}.`)
+      try {
+        await saveRemoteRecord(recordType, recordKey, local)
+      } catch {
+        // Keep the local cache usable even if the remote write is temporarily unavailable.
+      }
+      return local
+    }
+    backupLocalCollection(storageKey, `before-hydrate-${recordType}`)
     window.localStorage.setItem(storageKey, JSON.stringify(normalized))
     if (options.eventName) window.dispatchEvent(new Event(options.eventName))
     return normalized
   }
 
-  const local = readLocalCollection<T>(storageKey)
   if (local.length) {
     try {
       await saveRemoteRecord(recordType, recordKey, local)
@@ -118,6 +128,7 @@ export async function hydrateLocalCollection<T>(
 }
 
 export function saveLocalAndRemoteCollection<T>(storageKey: string, recordType: string, recordKey: string, items: T[], eventName?: string) {
+  backupLocalCollection(storageKey, `before-save-${recordType}`)
   window.localStorage.setItem(storageKey, JSON.stringify(items))
   if (eventName) window.dispatchEvent(new Event(eventName))
   void saveRemoteRecord(recordType, recordKey, items).catch(error => {
@@ -132,4 +143,75 @@ export function readLocalCollection<T>(storageKey: string) {
   } catch {
     return []
   }
+}
+
+export function listLocalCollectionBackups(storageKey: string) {
+  const prefix = `${storageKey}.backup.`
+  return Object.keys(window.localStorage)
+    .filter(key => key.startsWith(prefix) && key !== `${prefix}latest` && key !== `${prefix}latest.meta`)
+    .sort()
+    .reverse()
+    .map(key => {
+      const raw = window.localStorage.getItem(key) ?? '[]'
+      return {
+        key,
+        createdAt: key.replace(prefix, '').replace(/-/g, ':').replace(/:(\d{3})Z$/, '.$1Z'),
+        records: safeRecordCount(raw),
+      }
+    })
+}
+
+export async function restoreLocalCollectionBackup<T>(
+  storageKey: string,
+  backupKey: string,
+  recordType: string,
+  recordKey: string,
+  eventName?: string,
+) {
+  const raw = window.localStorage.getItem(backupKey)
+  if (!raw) throw new Error('Backup was not found in this browser.')
+
+  const items = JSON.parse(raw) as T[]
+  if (!Array.isArray(items)) throw new Error('Backup is not a valid collection.')
+
+  backupLocalCollection(storageKey, `before-restore-${recordType}`)
+  window.localStorage.setItem(storageKey, JSON.stringify(items))
+  if (eventName) window.dispatchEvent(new Event(eventName))
+  await saveRemoteRecord(recordType, recordKey, items)
+  return items
+}
+
+function safeRecordCount(raw: string) {
+  try {
+    const value = JSON.parse(raw) as unknown
+    return Array.isArray(value) ? value.length : 0
+  } catch {
+    return 0
+  }
+}
+
+function backupLocalCollection(storageKey: string, reason: string) {
+  const raw = window.localStorage.getItem(storageKey)
+  if (!raw || raw === '[]') return
+
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
+  const backupKey = `${storageKey}.backup.${timestamp}`
+  const latestKey = `${storageKey}.backup.latest`
+  try {
+    window.localStorage.setItem(backupKey, raw)
+    window.localStorage.setItem(latestKey, raw)
+    window.localStorage.setItem(`${latestKey}.meta`, JSON.stringify({ reason, createdAt: new Date().toISOString() }))
+    pruneBackups(storageKey, 8)
+  } catch (error) {
+    console.warn(`Unable to back up ${storageKey} before ${reason}.`, error)
+  }
+}
+
+function pruneBackups(storageKey: string, keep: number) {
+  const prefix = `${storageKey}.backup.`
+  const backupKeys = Object.keys(window.localStorage)
+    .filter(key => key.startsWith(prefix) && key !== `${prefix}latest` && key !== `${prefix}latest.meta`)
+    .sort()
+
+  backupKeys.slice(0, Math.max(0, backupKeys.length - keep)).forEach(key => window.localStorage.removeItem(key))
 }

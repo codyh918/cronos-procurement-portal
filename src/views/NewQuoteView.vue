@@ -283,7 +283,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { BadgeDollarSign, CheckCircle2, Download, FileSpreadsheet, FileUp, Plus, Save, Send, Upload, XCircle } from '@lucide/vue'
 import FormField from '../components/FormField.vue'
@@ -369,21 +369,37 @@ const rfqReadiness = computed(() => {
 })
 
 onMounted(() => {
+  loadQuoteDraft(true)
+  window.addEventListener('cronos:projects-changed', reloadQuoteDraftAfterSync)
+})
+
+onUnmounted(() => {
+  window.removeEventListener('cronos:projects-changed', reloadQuoteDraftAfterSync)
+})
+
+function loadQuoteDraft(force = false) {
   const loadedProject = loadProject(String(route.params.id))
   const loadedQuote = loadedProject?.quotes.find(item => item.id === String(route.params.quoteId))
   project.value = loadedProject
   quote.value = loadedQuote
 
   if (loadedQuote) {
+    const editableLines = getEditableQuoteLines(loadedQuote, loadedProject)
     quoteName.value = loadedQuote.quoteName ?? ''
-    draftLines.value = normalizePricingForProject(applySequentialClins(loadedQuote.lines ?? []), loadedProject?.projectType !== 'Design & Install')
+    if (force || !draftLines.value.length) {
+      draftLines.value = normalizePricingForProject(applySequentialClins(editableLines), loadedProject?.projectType !== 'Design & Install')
+    }
     expirationDays.value = loadedQuote.expirationDays ?? 30
     contractFeeEnabled.value = loadedQuote.contractFeeEnabled ?? false
     shippingCost.value = loadedQuote.shippingCost ?? 0
   }
 
   loaded.value = true
-})
+}
+
+function reloadQuoteDraftAfterSync() {
+  loadQuoteDraft(false)
+}
 
 function addLine() {
   draftLines.value = applySequentialClins([...draftLines.value, previewLine.value])
@@ -546,6 +562,35 @@ function normalizePricingForProject(lines: QuoteLine[], controlsVisible: boolean
     markupPercent: 0,
     marginPercent: 0,
   }))
+}
+
+function getEditableQuoteLines(loadedQuote: CustomerQuote, loadedProject?: Project) {
+  if (loadedQuote.lines?.length) return loadedQuote.lines
+
+  const relatedPoLines = (loadedProject?.purchaseOrders ?? [])
+    .filter(po => po.quoteId === loadedQuote.id)
+    .flatMap(po => po.lines.map(line => ({
+      id: stripPoLineId(line.id),
+      clin: line.clin,
+      partNumber: line.partNumber,
+      manufacturer: line.manufacturer || '',
+      description: line.description,
+      quantity: line.quantityOrdered,
+      unitCost: line.unitCost,
+      pricingMode: 'markup' as const,
+      markupPercent: 0,
+      marginPercent: 0,
+      vendor: po.vendor,
+      quoteNumber: '',
+      leadTime: line.estimatedShipDate || '',
+      approved: loadedQuote.status === 'Customer Approved',
+    })))
+
+  return relatedPoLines
+}
+
+function stripPoLineId(id: string) {
+  return id.startsWith('po-') ? id.slice(3) : id
 }
 
 function resetLineForm() {

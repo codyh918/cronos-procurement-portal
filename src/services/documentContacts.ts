@@ -39,7 +39,6 @@ export function getProjectDocumentContact(project?: Project): DocumentContact {
 export function documentContactLines(contact: DocumentContact) {
   return [
     contact.name,
-    contact.title,
     contact.email,
     contact.phone,
     contact.company,

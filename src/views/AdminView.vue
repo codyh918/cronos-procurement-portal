@@ -57,6 +57,21 @@
       <p v-if="syncMessage" class="sync-message" :class="{ success: syncOk }">{{ syncMessage }}</p>
     </section>
 
+    <section class="admin-card admin-sync-card">
+      <div class="admin-card-heading">
+        <h2>Project Data Recovery</h2>
+        <p>Restore the latest browser backup if shared sync ever replaces projects with an empty record.</p>
+      </div>
+      <div class="sync-status-grid">
+        <span :class="{ active: projectBackupCount > 0 }">Backups {{ projectBackupCount }}</span>
+        <span :class="{ active: latestProjectBackupRecords > 0 }">Latest records {{ latestProjectBackupRecords }}</span>
+      </div>
+      <button class="secondary-action admin-save-button" type="button" :disabled="!latestProjectBackup" @click="restoreLatestProjectBackup">
+        Restore Latest Project Backup
+      </button>
+      <p v-if="recoveryMessage" class="sync-message" :class="{ success: recoveryOk }">{{ recoveryMessage }}</p>
+    </section>
+
     <section class="admin-card">
       <div class="admin-card-heading">
         <h2>Add User</h2>
@@ -192,7 +207,7 @@ import {
   updateUser,
 } from '../services/auth'
 import { getAppBaseUrl } from '../services/environment'
-import { getRemoteConfigStatus, testRemoteConnection } from '../services/remoteRecords'
+import { getRemoteConfigStatus, listLocalCollectionBackups, restoreLocalCollectionBackup, testRemoteConnection } from '../services/remoteRecords'
 import type { AppRole, UserProfile, UserSession } from '../types'
 
 type NewUserForm = Omit<UserProfile, 'id'>
@@ -216,10 +231,16 @@ const newUser = reactive<NewUserForm>({ ...emptyUser })
 const remoteStatus = ref(getRemoteConfigStatus())
 const syncMessage = ref('')
 const syncOk = ref(false)
+const projectBackups = ref<ReturnType<typeof listLocalCollectionBackups>>([])
+const recoveryMessage = ref('')
+const recoveryOk = ref(false)
 
 const isAdmin = computed(() => session.value?.role === 'Admin')
 const activeUserCount = computed(() => users.value.filter(user => user.active).length)
 const previewableRoles = computed(() => appRoles.filter(role => role !== 'Admin'))
+const projectBackupCount = computed(() => projectBackups.value.length)
+const latestProjectBackup = computed(() => projectBackups.value[0])
+const latestProjectBackupRecords = computed(() => latestProjectBackup.value?.records ?? 0)
 const credentialText = computed(() =>
   createdCredentials.value
     ? `Cronos Procurement App\nURL: ${getAppBaseUrl()}\nName: ${createdCredentials.value.name}\nEmail: ${createdCredentials.value.email}\nTemporary password: ${createdCredentials.value.password}\nRole: ${createdCredentials.value.role}`
@@ -244,6 +265,7 @@ function refreshAdminState() {
   previewRole.value = getRolePreview()
   users.value = loadUsers()
   remoteStatus.value = getRemoteConfigStatus()
+  projectBackups.value = listLocalCollectionBackups('cronos.projects')
 }
 
 function changePreviewRole(role: AppRole | '') {
@@ -318,6 +340,22 @@ async function runSyncTest() {
   const result = await testRemoteConnection()
   syncOk.value = result.ok
   syncMessage.value = result.message
+}
+
+async function restoreLatestProjectBackup() {
+  if (!latestProjectBackup.value) return
+  if (!window.confirm(`Restore ${latestProjectBackup.value.records} project records from the latest browser backup? This will replace the current project list and sync it to Supabase.`)) return
+
+  recoveryMessage.value = 'Restoring project backup...'
+  recoveryOk.value = false
+  try {
+    const restored = await restoreLocalCollectionBackup('cronos.projects', latestProjectBackup.value.key, 'projects', 'all', 'cronos:projects-changed')
+    recoveryOk.value = true
+    recoveryMessage.value = `Restored ${restored.length} project records. Refresh the Quotes page to reload saved quotes.`
+    projectBackups.value = listLocalCollectionBackups('cronos.projects')
+  } catch (error) {
+    recoveryMessage.value = error instanceof Error ? error.message : 'Unable to restore project backup.'
+  }
 }
 
 function inputValue(event: Event) {
