@@ -1,3 +1,5 @@
+import { createDocumentAudit, documentValue, finishDocumentAudit } from './documentGeneration'
+
 const exportKeys = [
   ['Projects', 'cronos.projects'],
   ['Customer Orders', 'cronos.customerOrders'],
@@ -8,9 +10,10 @@ const exportKeys = [
 ]
 
 export function downloadExportCsv() {
+  const audit = createDocumentAudit('Data Export CSV', 'cronos-export.csv')
   const rows = [
     ['Dataset', 'Records'],
-    ...exportKeys.map(([label, key]) => [label, String(recordCount(key))]),
+    ...exportKeys.map(([label, key]) => [documentValue(label), String(recordCount(key))]),
   ]
   const csv = toCsv(rows)
   const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' })
@@ -22,6 +25,7 @@ export function downloadExportCsv() {
   link.click()
   link.remove()
   window.URL.revokeObjectURL(url)
+  finishDocumentAudit(audit)
 }
 
 function recordCount(key: string) {

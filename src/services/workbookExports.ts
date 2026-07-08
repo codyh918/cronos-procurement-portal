@@ -2,6 +2,17 @@ import type { CustomerQuote, Project, PurchaseOrderLine, QuoteLine, Status } fro
 import { calculateLineTotals, calculateQuoteSummary } from './calculations'
 import { getCheckbookSummary } from './checkbook'
 import { getProjectDocumentContact } from './documentContacts'
+import {
+  createDocumentAudit,
+  documentValue,
+  finishDocumentAudit,
+  normalizePurchaseOrderLineForDocument,
+  normalizeQuoteLineForDocument,
+  validateProjectDocumentFields,
+  validatePurchaseOrderLines,
+  validateQuoteDocument,
+  validateQuoteLines,
+} from './documentGeneration'
 import { loadVendorDirectory } from './vendorDirectory'
 
 const CRONOS_CAGE_CODE = '8NPB1'
@@ -31,7 +42,10 @@ type TrackingWorkbookLine = PurchaseOrderLine & {
 }
 
 export async function exportProjectTrackingWorkbook(project: Project) {
+  const audit = createDocumentAudit('Project Tracking Workbook', project.projectNumber)
+  validateProjectDocumentFields(audit, project)
   const lines = getTrackingWorkbookLines(project)
+  validatePurchaseOrderLines(audit, lines)
   const generatedDate = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).format(new Date())
   const isCheckbook = project.projectType === 'Checkbook'
 
@@ -42,17 +56,20 @@ export async function exportProjectTrackingWorkbook(project: Project) {
     ],
     `Cronos-${sanitizeFileName(project.projectNumber)}-Tracking-Report.xlsx`,
   )
+  finishDocumentAudit(audit)
 }
 
 export async function exportCheckbookFinancialWorkbook(project: Project) {
+  const audit = createDocumentAudit('Checkbook Financial Workbook', project.projectNumber)
+  validateProjectDocumentFields(audit, project)
   const summary = getCheckbookSummary(project)
   await downloadWorkbook(
     [
       {
         name: 'Financial Summary',
         rows: [
-          ['Project', project.projectNumber],
-          ['Customer', project.customer],
+          ['Project', documentValue(project.projectNumber)],
+          ['Customer', documentValue(project.customer)],
           ['Starting Balance', summary.startingBalance],
           ['Cost to Customer', summary.customerCost],
           ['Remaining Balance', summary.remainingBalance],
@@ -63,12 +80,12 @@ export async function exportCheckbookFinancialWorkbook(project: Project) {
         rows: [
           ['PO #', 'Quote #', 'Vendor', 'Description', 'Requestor', 'Date Issued', 'Cost to Customer'],
           ...summary.lines.map(line => [
-            line.poNumber,
-            line.quoteNumber,
-            line.vendor,
-            line.description,
-            line.requestor,
-            line.dateIssued,
+            documentValue(line.poNumber),
+            documentValue(line.quoteNumber),
+            documentValue(line.vendor),
+            documentValue(line.description),
+            documentValue(line.requestor),
+            documentValue(line.dateIssued),
             line.customerCost,
           ]),
         ],
@@ -76,21 +93,24 @@ export async function exportCheckbookFinancialWorkbook(project: Project) {
     ],
     `Cronos-${sanitizeFileName(project.projectNumber)}-Checkbook-Tracking.xlsx`,
   )
+  finishDocumentAudit(audit)
 }
 
 export async function exportCustomerQuoteWorkbook(quote: CustomerQuote, project?: Project) {
+  const audit = createDocumentAudit('Customer Quote Workbook', quote.quoteNumber)
+  validateQuoteDocument(audit, quote, project)
   const summary = calculateQuoteSummary(quote.lines, quote.contractFeeEnabled, quote.shippingCost ?? 0)
   const poc = getProjectDocumentContact(project)
   const startRow = 18
-  const lineRows = quote.lines.map((line, index) => {
+  const lineRows = quote.lines.map(normalizeQuoteLineForDocument).map((line, index) => {
     const rowNumber = startRow + index
     const totals = calculateLineTotals(line)
     return [
       { value: index + 1, style: 6 },
-      { value: line.manufacturer || '', style: 6 },
+      { value: line.manufacturer, style: 6 },
       { value: line.quantity || 0, style: 6 },
-      { value: line.partNumber || '', style: 6 },
-      { value: line.description || '', style: 7 },
+      { value: line.partNumber, style: 6 },
+      { value: line.description, style: 7 },
       { value: totals.sellPrice, style: 8 },
       { formula: `D${rowNumber}*G${rowNumber}`, value: totals.extendedSellPrice, style: 8 },
     ]
@@ -110,14 +130,14 @@ export async function exportCustomerQuoteWorkbook(quote: CustomerQuote, project?
           ['', '', '', '', { value: 'CRONOS LLC', style: 1 }],
           ['', '', '', '', { value: '4301 Evans to Locks Road', style: 2 }, '', { value: 'Quote Number:', style: 3 }, { value: quote.quoteNumber, style: 4 }],
           ['', '', '', '', { value: 'Evans, GA 30809', style: 2 }, '', { value: 'Quote Name:', style: 3 }, { value: quote.quoteName || '-', style: 4 }],
-          ['', '', '', '', { value: `Cage Code: ${CRONOS_CAGE_CODE}`, style: 2 }, '', { value: 'Date:', style: 3 }, { value: formatDateForWorkbook(quote.createdAt), style: 4 }],
+          ['', '', '', '', { value: `Cage Code: ${CRONOS_CAGE_CODE}`, style: 2 }, '', { value: 'Date:', style: 3 }, { value: documentValue(formatDateForWorkbook(quote.createdAt)), style: 4 }],
           ['', '', '', '', { value: 'cronosllc.com', style: 2 }, '', { value: 'Expires:', style: 3 }, { value: getQuoteExpirationDateForWorkbook(quote), style: 4 }],
           [],
-          ['', '', '', '', { value: `Project: ${quote.projectNumber} - ${quote.projectName}`, style: 5 }],
+          ['', '', '', '', { value: `Project: ${documentValue(quote.projectNumber)} - ${documentValue(quote.projectName)}`, style: 5 }],
           [],
-          ['', { value: 'Customer:', style: 3 }, '', { value: quote.customer || project?.customer || '', style: 4 }, '', '', { value: 'Cronos POC:', style: 3 }, { value: poc.name, style: 4 }],
-          ['', { value: 'Customer Name:', style: 3 }, '', { value: project?.customerContactName || '', style: 4 }, '', '', { value: 'Email:', style: 3 }, { value: poc.email, style: 4 }],
-          ['', { value: 'Customer Email:', style: 3 }, '', { value: project?.customerEmail || '', style: 4 }, '', '', { value: 'Direct Phone:', style: 3 }, { value: poc.phone, style: 4 }],
+          ['', { value: 'Customer:', style: 3 }, '', { value: documentValue(quote.customer || project?.customer), style: 4 }, '', '', { value: 'Cronos POC:', style: 3 }, { value: documentValue(poc.name), style: 4 }],
+          ['', { value: 'Customer Name:', style: 3 }, '', { value: documentValue(project?.customerContactName), style: 4 }, '', '', { value: 'Email:', style: 3 }, { value: documentValue(poc.email), style: 4 }],
+          ['', { value: 'Customer Email:', style: 3 }, '', { value: documentValue(project?.customerEmail), style: 4 }, '', '', { value: 'Direct Phone:', style: 3 }, { value: documentValue(poc.phone), style: 4 }],
           [],
           [],
           ['', { value: 'Line', style: 9 }, { value: 'Manufacturer', style: 9 }, { value: 'QTY', style: 9 }, { value: 'Part #', style: 9 }, { value: 'Description', style: 9 }, { value: 'Unit Cost', style: 9 }, { value: 'Extended Cost', style: 9 }],
@@ -133,9 +153,13 @@ export async function exportCustomerQuoteWorkbook(quote: CustomerQuote, project?
     ],
     `Cronos-${sanitizeFileName(quote.quoteNumber)}-Quote.xlsx`,
   )
+  finishDocumentAudit(audit)
 }
 
 export async function exportVendorRfqPackage(project: Project, lines: QuoteLine[]) {
+  const audit = createDocumentAudit('Vendor RFQ Workbook', project.projectNumber)
+  validateProjectDocumentFields(audit, project)
+  validateQuoteLines(audit, lines)
   const grouped = groupQuoteLinesByVendor(lines)
   const vendors = Object.entries(grouped)
 
@@ -150,6 +174,7 @@ export async function exportVendorRfqPackage(project: Project, lines: QuoteLine[
     )
   }
 
+  finishDocumentAudit(audit)
   return vendors.length
 }
 
@@ -209,12 +234,12 @@ function buildVendorRfqSheet(project: Project, vendor: string, lines: QuoteLine[
     ['', '', '', { value: 'CRONOS LLC', style: 14 }],
     ['', '', '', { value: 'Vendor Request for Quote', style: 15 }],
     [],
-    ['', { value: 'RFQ Number', style: 3 }, { value: rfqNumber, style: 4 }, '', { value: 'Vendor Name', style: 3 }, { value: vendor, style: 4 }],
-    ['', { value: 'Project Number', style: 3 }, { value: project.projectNumber, style: 4 }, '', { value: 'Vendor Contact', style: 3 }, { value: vendorContact, style: 4 }],
-    ['', { value: 'Project Name', style: 3 }, { value: project.projectName, style: 4 }, '', { value: 'Requested Date', style: 3 }, { value: formatDateForWorkbook(new Date().toISOString()), style: 4 }],
-    ['', { value: 'Customer', style: 3 }, { value: project.customer, style: 4 }, '', { value: 'Due Date', style: 3 }, { value: dueDate, style: 4 }],
-    ['', { value: 'Requested By', style: 3 }, { value: poc.name, style: 4 }, '', { value: 'Email', style: 3 }, { value: poc.email, style: 4 }],
-    ['', { value: 'Phone', style: 3 }, { value: poc.phone, style: 4 }, '', { value: 'Cage Code', style: 3 }, { value: poc.cageCode, style: 4 }],
+    ['', { value: 'RFQ Number', style: 3 }, { value: documentValue(rfqNumber), style: 4 }, '', { value: 'Vendor Name', style: 3 }, { value: documentValue(vendor), style: 4 }],
+    ['', { value: 'Project Number', style: 3 }, { value: documentValue(project.projectNumber), style: 4 }, '', { value: 'Vendor Contact', style: 3 }, { value: documentValue(vendorContact), style: 4 }],
+    ['', { value: 'Project Name', style: 3 }, { value: documentValue(project.projectName), style: 4 }, '', { value: 'Requested Date', style: 3 }, { value: formatDateForWorkbook(new Date().toISOString()), style: 4 }],
+    ['', { value: 'Customer', style: 3 }, { value: documentValue(project.customer), style: 4 }, '', { value: 'Due Date', style: 3 }, { value: dueDate, style: 4 }],
+    ['', { value: 'Requested By', style: 3 }, { value: documentValue(poc.name), style: 4 }, '', { value: 'Email', style: 3 }, { value: documentValue(poc.email), style: 4 }],
+    ['', { value: 'Phone', style: 3 }, { value: documentValue(poc.phone), style: 4 }, '', { value: 'Cage Code', style: 3 }, { value: documentValue(poc.cageCode), style: 4 }],
     [],
     [{ value: 'Please complete the vendor response fields and return this workbook to Cronos by the due date.', style: 22 }],
     [],
@@ -234,7 +259,7 @@ function buildVendorRfqSheet(project: Project, vendor: string, lines: QuoteLine[
       'Substitute/Alternate Offered',
       'Vendor Notes',
     ].map(value => ({ value, style: 18 })),
-    ...lines.map((line, index) => {
+    ...lines.map(normalizeQuoteLineForDocument).map((line, index) => {
       const rowNumber = firstDataRow + index
       return [
         { value: index + 1, style: 19 },
@@ -246,7 +271,7 @@ function buildVendorRfqSheet(project: Project, vendor: string, lines: QuoteLine[
         { value: '', style: 19 },
         { value: '', style: 20 },
         { formula: `E${rowNumber}*H${rowNumber}`, value: 0, style: 20 },
-        { value: line.leadTime || '', style: 19 },
+        { value: line.leadTime || 'TBD', style: 19 },
         { value: '', style: 19 },
         { value: '', style: 19 },
         { value: '', style: 19 },
@@ -424,7 +449,7 @@ function buildTrackingDetailSheet(project: Project, lines: TrackingWorkbookLine[
 function getTrackingWorkbookLines(project: Project): TrackingWorkbookLine[] {
   return project.purchaseOrders.flatMap(po =>
     po.lines.map(line => ({
-      ...line,
+      ...normalizePurchaseOrderLineForDocument(line),
       poNumber: po.poNumber,
       poStatus: po.status,
       vendor: po.vendor,
@@ -486,8 +511,9 @@ function cellXml(cell: WorkbookCell, reference: string) {
     return `<c r="${reference}"${style}><f>${escapeXml(normalized.formula)}</f>${cached}</c>`
   }
   if (typeof normalized.value === 'number') return `<c r="${reference}"${style}><v>${Number.isFinite(normalized.value) ? normalized.value : 0}</v></c>`
-  const value = normalized.value ?? ''
-  return `<c r="${reference}"${style} t="inlineStr"><is><t>${escapeXml(String(value))}</t></is></c>`
+  const isLayoutBlank = normalized.value === ''
+  const value = isLayoutBlank ? '' : documentValue(normalized.value)
+  return `<c r="${reference}"${style} t="inlineStr"><is><t>${escapeXml(value)}</t></is></c>`
 }
 
 function workbookXml(sheets: WorkbookSheet[]) {
