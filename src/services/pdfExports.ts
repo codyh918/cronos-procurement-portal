@@ -21,6 +21,7 @@ type PdfTableColumn = {
   width: number
   align: 'left' | 'center' | 'right'
   wrap?: boolean
+  breakWords?: boolean
   numeric?: boolean
 }
 type PdfTableCell = {
@@ -209,7 +210,7 @@ function drawPurchaseOrderTemplateTable(doc: JsPdf, startY: number, po: Purchase
     { label: 'Item #', x: 40, width: 42, align: 'left' as const, wrap: false },
     { label: 'Manufacturer', x: 82, width: 82, align: 'left' as const, wrap: true },
     { label: 'Description', x: 164, width: 178, align: 'left' as const, wrap: true },
-    { label: 'Part Number', x: 342, width: 76, align: 'left' as const, wrap: false },
+    { label: 'Part Number', x: 342, width: 76, align: 'left' as const, wrap: true, breakWords: true },
     { label: 'Qty', x: 418, width: 38, align: 'center' as const, numeric: true },
     { label: 'Unit Cost', x: 456, width: 58, align: 'right' as const, numeric: true },
     { label: 'Total Cost', x: 514, width: 58, align: 'right' as const, numeric: true },
@@ -243,8 +244,8 @@ function drawQuoteTemplateTable(doc: JsPdf, startY: number, quote: CustomerQuote
     { label: 'Line', x: 40, width: 30, align: 'left' as const, wrap: false },
     { label: 'Manufacturer', x: 70, width: 78, align: 'left' as const, wrap: true },
     { label: 'QTY', x: 148, width: 34, align: 'center' as const, numeric: true },
-    { label: 'Part #', x: 182, width: 78, align: 'left' as const, wrap: false },
-    { label: 'Description', x: 260, width: 138, align: 'left' as const, wrap: true },
+    { label: 'Part #', x: 182, width: 92, align: 'left' as const, wrap: true, breakWords: true },
+    { label: 'Description', x: 274, width: 124, align: 'left' as const, wrap: true },
     { label: 'Unit Cost', x: 398, width: 58, align: 'right' as const, numeric: true },
     { label: 'Extended Cost', x: 456, width: 62, align: 'right' as const, numeric: true },
     { label: 'Lead Time', x: 518, width: 54, align: 'left' as const, wrap: true },
@@ -296,7 +297,7 @@ function AtlasWrappedText(doc: JsPdf, value: string | string[], width: number) {
   const raw = Array.isArray(value) ? value.join('\n') : documentValue(value)
   return raw
     .split(/\r?\n/)
-    .flatMap(line => doc.splitTextToSize(line.trim() || '-', Math.max(12, width)))
+    .flatMap(line => splitTextToWidth(doc, line.trim() || '-', Math.max(12, width), true))
 }
 
 function AtlasCurrencyCell(doc: JsPdf, value: string, width: number, fontSize = 8) {
@@ -314,7 +315,7 @@ function AtlasCurrencyCell(doc: JsPdf, value: string, width: number, fontSize = 
 function calculatePdfTableRowHeight(doc: JsPdf, cells: PdfTableCell[], lineHeight = 10) {
   const maxLines = Math.max(
     1,
-    ...cells.map(cell => (cell.column.wrap === false || cell.column.numeric ? 1 : AtlasWrappedText(doc, cell.text, cell.column.width - 12).length)),
+    ...cells.map(cell => (cell.column.wrap === false || cell.column.numeric ? 1 : wrapCellText(doc, cell).length)),
   )
   return Math.max(30, 14 + maxLines * lineHeight)
 }
@@ -330,7 +331,7 @@ function AtlasTable(doc: JsPdf, y: number, height: number, cells: PdfTableCell[]
     const text = Array.isArray(cell.text) ? cell.text.join(' ') : documentValue(cell.text)
     const lines = cell.column.wrap === false || cell.column.numeric
       ? [AtlasCurrencyCell(doc, text, cell.column.width - 12, fontSize)]
-      : AtlasWrappedText(doc, cell.text, cell.column.width - 12)
+      : wrapCellText(doc, cell)
     const textX =
       cell.column.align === 'right'
         ? cell.column.x + cell.column.width - 6
@@ -340,6 +341,42 @@ function AtlasTable(doc: JsPdf, y: number, height: number, cells: PdfTableCell[]
     doc.setFontSize(fontSize)
     doc.text(lines, textX, y + 17, { align: cell.column.align })
   })
+}
+
+function wrapCellText(doc: JsPdf, cell: PdfTableCell) {
+  const width = Math.max(12, cell.column.width - 12)
+  const value = Array.isArray(cell.text) ? cell.text.join('\n') : documentValue(cell.text)
+  return value
+    .split(/\r?\n/)
+    .flatMap(line => splitTextToWidth(doc, line.trim() || 'N/A', width, cell.column.breakWords))
+}
+
+function splitTextToWidth(doc: JsPdf, value: string, width: number, breakWords = false) {
+  const lines = doc.splitTextToSize(value, width) as string[]
+  if (!breakWords) return lines
+
+  return lines.flatMap(line => {
+    if (doc.getTextWidth(line) <= width) return [line]
+    return breakLongToken(doc, line, width)
+  })
+}
+
+function breakLongToken(doc: JsPdf, value: string, width: number) {
+  const lines: string[] = []
+  let current = ''
+
+  Array.from(value).forEach(char => {
+    const candidate = `${current}${char}`
+    if (current && doc.getTextWidth(candidate) > width) {
+      lines.push(current)
+      current = char
+      return
+    }
+    current = candidate
+  })
+
+  if (current) lines.push(current)
+  return lines.length ? lines : ['N/A']
 }
 
 function drawPurchaseOrderTotal(doc: JsPdf, y: number, total: number) {
