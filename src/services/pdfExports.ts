@@ -242,10 +242,10 @@ function drawPurchaseOrderTemplateTable(doc: JsPdf, startY: number, po: Purchase
 function drawQuoteTemplateTable(doc: JsPdf, startY: number, quote: CustomerQuote) {
   const columns = [
     { label: 'Line', x: 40, width: 30, align: 'left' as const, wrap: false },
-    { label: 'Manufacturer', x: 70, width: 78, align: 'left' as const, wrap: true },
-    { label: 'QTY', x: 148, width: 34, align: 'center' as const, numeric: true },
-    { label: 'Part #', x: 182, width: 92, align: 'left' as const, wrap: true, breakWords: true },
-    { label: 'Description', x: 274, width: 124, align: 'left' as const, wrap: true },
+    { label: 'Manufacturer', x: 70, width: 70, align: 'left' as const, wrap: true },
+    { label: 'Qty', x: 140, width: 28, align: 'center' as const, numeric: true },
+    { label: 'Part Number', x: 168, width: 116, align: 'left' as const, wrap: true, breakWords: true },
+    { label: 'Description', x: 284, width: 114, align: 'left' as const, wrap: true },
     { label: 'Unit Cost', x: 398, width: 58, align: 'right' as const, numeric: true },
     { label: 'Extended Cost', x: 456, width: 62, align: 'right' as const, numeric: true },
     { label: 'Lead Time', x: 518, width: 54, align: 'left' as const, wrap: true },
