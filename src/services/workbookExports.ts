@@ -400,15 +400,14 @@ function buildTrackingSummarySheet(project: Project, lines: TrackingWorkbookLine
 
 function buildTrackingDetailSheet(project: Project, lines: TrackingWorkbookLine[], generatedDate: string): WorkbookSheet {
   const poc = getProjectDocumentContact(project)
-  const headers = ['PO Number', 'Vendor', 'Part Number', 'Description', 'Quantity', 'Carrier', 'Tracking Number', 'Status', 'Ship Date', 'Estimated Delivery', 'Actual Delivery', 'Notes']
+  const headers = ['Line Item', 'PO Number', 'Vendor', 'Part Number', 'Description', 'Quantity', 'Carrier', 'Tracking Number', 'Status', 'Ship Date', 'Estimated Delivery', 'Actual Delivery', 'Notes']
   const tableHeaderRow = 11
   const rowsByPo = groupTrackingLinesByPo(lines)
-  const dataRows: WorkbookCell[][] = []
-  rowsByPo.forEach(group => {
-    dataRows.push([{ value: `PO: ${group.poNumber}    Vendor: ${group.vendor}${group.poStatus ? `    Status: ${group.poStatus}` : ''}`, style: 23 }])
-    group.lines.forEach(line => {
+  const dataRows: WorkbookCell[][] = rowsByPo.flatMap(group =>
+    group.lines.map((line, lineIndex) => {
       const trackingStatus = getTrackingWorkbookStatus(line)
-      dataRows.push([
+      return [
+        { value: line.itemNumber || lineIndex + 1, style: 19 },
         { value: group.poNumber, style: 19 },
         { value: group.vendor, style: 19 },
         { value: line.partNumber, style: 19 },
@@ -421,9 +420,9 @@ function buildTrackingDetailSheet(project: Project, lines: TrackingWorkbookLine[
         { value: formatDateForWorkbook(line.estimatedDeliveryDate), style: 19 },
         { value: formatDateForWorkbook(line.receivedDate), style: 19 },
         { value: line.notes ?? '', style: 22 },
-      ])
-    })
-  })
+      ]
+    }),
+  )
 
   const totalPurchaseOrders = rowsByPo.length
   const delivered = lines.filter(line => getTrackingWorkbookStatus(line) === 'Delivered').length
@@ -466,10 +465,10 @@ function buildTrackingDetailSheet(project: Project, lines: TrackingWorkbookLine[
     name: 'Material Tracking',
     image: 'cronosLogo',
     rows,
-    columnWidths: [22, 24, 24, 42, 10, 18, 30, 20, 14, 18, 16, 38],
-    merges: ['D1:H1', 'D2:H2', 'C4:D4', 'F4:H4', 'C5:D5', 'F5:H5', 'C6:D6', 'F6:H6', ...trackingPoSectionMerges(dataRows, tableHeaderRow + 1)],
+    columnWidths: [12, 22, 24, 24, 42, 10, 18, 30, 20, 14, 18, 16, 38],
+    merges: ['D1:H1', 'D2:H2', 'C4:D4', 'F4:H4', 'C5:D5', 'F5:H5', 'C6:D6', 'F6:H6'],
     freezePane: 'A12',
-    autoFilter: `A${tableHeaderRow}:L${Math.max(tableHeaderRow, rows.length)}`,
+    autoFilter: `A${tableHeaderRow}:M${Math.max(tableHeaderRow, rows.length)}`,
     printTitleRows: '1:11',
     landscape: true,
   }
@@ -502,12 +501,6 @@ function groupTrackingLinesByPo(lines: TrackingWorkbookLine[]) {
     groups.set(key, current)
   })
   return Array.from(groups.values())
-}
-
-function trackingPoSectionMerges(rows: WorkbookCell[][], firstRow: number) {
-  return rows
-    .map((row, index) => (row.length === 1 && typeof row[0] === 'object' && row[0]?.style === 23 ? `A${firstRow + index}:L${firstRow + index}` : ''))
-    .filter(Boolean)
 }
 
 function conciseTrackingDescription(value: string | undefined) {
