@@ -464,7 +464,6 @@ function buildTrackingDetailSheet(project: Project, lines: TrackingWorkbookLine[
 
   return {
     name: 'Material Tracking',
-    image: 'cronosLogo',
     rows,
     columnWidths: [12, 22, 24, 24, 42, 10, 18, 30, 20, 14, 18, 16, 38],
     merges: ['D1:H1', 'D2:H2', 'C4:D4', 'F4:H4', 'C5:D5', 'F5:H5', 'C6:D6', 'F6:H6'],
