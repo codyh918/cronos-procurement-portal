@@ -403,11 +403,12 @@ function buildTrackingDetailSheet(project: Project, lines: TrackingWorkbookLine[
   const headers = ['Line Item', 'PO Number', 'Vendor', 'Part Number', 'Description', 'Quantity', 'Carrier', 'Tracking Number', 'Status', 'Ship Date', 'Estimated Delivery', 'Actual Delivery', 'Notes']
   const tableHeaderRow = 11
   const rowsByPo = groupTrackingLinesByPo(lines)
+  let lineItemNumber = 1
   const dataRows: WorkbookCell[][] = rowsByPo.flatMap(group =>
-    group.lines.map((line, lineIndex) => {
+    group.lines.map(line => {
       const trackingStatus = getTrackingWorkbookStatus(line)
       return [
-        { value: line.itemNumber || lineIndex + 1, style: 19 },
+        { value: lineItemNumber++, style: 19 },
         { value: group.poNumber, style: 19 },
         { value: group.vendor, style: 19 },
         { value: line.partNumber, style: 19 },
