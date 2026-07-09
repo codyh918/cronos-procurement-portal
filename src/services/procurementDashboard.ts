@@ -463,9 +463,9 @@ function vendorUpdate(po: FlatPurchaseOrder, issueType: string, days: number, ne
 
 function riskReasons(po: FlatPurchaseOrder, line: PurchaseOrderLine) {
   const reasons: Array<{ reason: string; severity: RiskSeverity }> = []
-  const eta = line.estimatedShipDate || po.estimatedShipDate || po.expectedDeliveryDate
+  const eta = line.estimatedShipDate || line.estimatedDeliveryDate
   if (line.status === 'Backordered') reasons.push({ reason: 'Backordered item', severity: eta ? 'High' : 'Critical' })
-  if (!line.trackingNumber && !po.trackingNumber && !['PO Generated', 'Received', 'Delivered', 'Cancelled'].includes(line.status)) reasons.push({ reason: 'Missing tracking', severity: 'Medium' })
+  if (!line.trackingNumber && !['PO Generated', 'Received', 'Delivered', 'Cancelled'].includes(line.status)) reasons.push({ reason: 'Missing tracking', severity: 'Medium' })
   if (eta && po.requiredByDate && new Date(eta).getTime() > new Date(po.requiredByDate).getTime()) reasons.push({ reason: 'ETA later than required-by date', severity: 'Critical' })
   if (line.quantityReceived > 0 && line.quantityReceived < line.quantityOrdered) reasons.push({ reason: 'Partial shipment', severity: 'High' })
   if (['RMA', 'RMA / Issue'].includes(line.status)) reasons.push({ reason: 'Damaged/RMA item', severity: 'Critical' })
@@ -486,7 +486,7 @@ function createRisk(po: FlatPurchaseOrder, line: PurchaseOrderLine, risk: { reas
     description: line.description,
     quantity: line.quantityOrdered,
     requiredByDate: po.requiredByDate,
-    currentEta: line.estimatedShipDate || po.estimatedShipDate || po.expectedDeliveryDate || '',
+    currentEta: line.estimatedShipDate || line.estimatedDeliveryDate || '',
     riskReason: risk.reason,
     severity: risk.severity,
     status: 'Open',

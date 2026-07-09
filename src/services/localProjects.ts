@@ -427,6 +427,7 @@ export function importCheckbookPurchaseOrders(projectId: string, rows: Checkbook
             status: 'Ordered',
             vendorOrderNumber: '',
             estimatedShipDate: '',
+            estimatedDeliveryDate: '',
             receivedDate: '',
             carrier: '',
             trackingNumber: '',
@@ -552,7 +553,16 @@ export function updatePurchaseOrderLineTracking(
   updates: Partial<
     Pick<
       PurchaseOrderLine,
-      'status' | 'vendorOrderNumber' | 'estimatedShipDate' | 'receivedDate' | 'carrier' | 'trackingNumber' | 'trackingUrl' | 'notes' | 'quantityReceived'
+      | 'status'
+      | 'vendorOrderNumber'
+      | 'estimatedShipDate'
+      | 'estimatedDeliveryDate'
+      | 'receivedDate'
+      | 'carrier'
+      | 'trackingNumber'
+      | 'trackingUrl'
+      | 'notes'
+      | 'quantityReceived'
     >
   >,
 ) {
@@ -572,6 +582,7 @@ export function updatePurchaseOrderLineTracking(
               ...line,
               ...updates,
               estimatedShipDate: normalizeOptionalDateString(updates.estimatedShipDate) || updates.estimatedShipDate,
+              estimatedDeliveryDate: normalizeOptionalDateString(updates.estimatedDeliveryDate) || updates.estimatedDeliveryDate,
               receivedDate: normalizeOptionalDateString(updates.receivedDate) || updates.receivedDate,
               quantityReceived:
                 typeof updates.quantityReceived === 'number'
@@ -581,21 +592,7 @@ export function updatePurchaseOrderLineTracking(
           : line,
       )
 
-      const carriers = uniqueValues(lines.map(line => line.carrier || po.carrier))
-      const trackingNumbers = uniqueValues(lines.map(line => line.trackingNumber || po.trackingNumber))
-      const estimatedShipDate = earliestDate(lines.map(line => line.estimatedShipDate || po.estimatedShipDate))
-      const receivedDate = latestDate(lines.map(line => line.receivedDate || po.expectedDeliveryDate))
-
-      return {
-        ...po,
-        carrier: carriers.join(', ') || po.carrier || '',
-        trackingNumber: trackingNumbers.join(', ') || po.trackingNumber || '',
-        trackingUrl: trackingNumbers.length === 1 ? buildTrackingUrl(carriers[0], trackingNumbers[0]) : po.trackingUrl || '',
-        estimatedShipDate: estimatedShipDate || po.estimatedShipDate || '',
-        expectedDeliveryDate: receivedDate || po.expectedDeliveryDate || '',
-        status: getTrackingAwarePoStatus(lines, po.status),
-        lines,
-      }
+      return summarizePurchaseOrderTracking(po, lines)
     }),
   })
 
@@ -621,6 +618,7 @@ export function updatePurchaseOrderLineDetails(
       | 'status'
       | 'vendorOrderNumber'
       | 'estimatedShipDate'
+      | 'estimatedDeliveryDate'
       | 'receivedDate'
       | 'carrier'
       | 'trackingNumber'
@@ -659,14 +657,14 @@ export function updatePurchaseOrderLineDetails(
                   : line.quantityReceived,
               unitCost: typeof updates.unitCost === 'number' ? normalizeMoney(updates.unitCost) : line.unitCost,
               estimatedShipDate: normalizeOptionalDateString(updates.estimatedShipDate) || updates.estimatedShipDate,
+              estimatedDeliveryDate: normalizeOptionalDateString(updates.estimatedDeliveryDate) || updates.estimatedDeliveryDate,
               receivedDate: normalizeOptionalDateString(updates.receivedDate) || updates.receivedDate,
             }
           : line,
       )
 
       return {
-        ...po,
-        lines,
+        ...summarizePurchaseOrderTracking(po, lines),
         totalCost: getPurchaseOrderComputedTotal(lines),
       }
     }),
@@ -695,6 +693,7 @@ export function importPurchaseOrderTracking(projectId: string, rows: TrackingImp
     const trackingNumbers = uniqueValues(trackingRows.map(row => row.trackingNumber))
     const vendorOrderNumbers = uniqueValues(trackingRows.map(row => row.vendorOrderNumber))
     const estimatedShipDate = earliestDate(trackingRows.map(row => row.estimatedShipDate))
+    const estimatedDeliveryDate = earliestDate(trackingRows.map(row => row.estimatedDeliveryDate))
     const receivedDate = latestDate(trackingRows.map(row => row.receivedDate))
     const allRowsReceived = trackingRows.every(row => row.receivedDate)
     const anyRowsReceived = trackingRows.some(row => row.receivedDate)
@@ -709,7 +708,7 @@ export function importPurchaseOrderTracking(projectId: string, rows: TrackingImp
       trackingNumber: trackingNumbers.join(', ') || po.trackingNumber || '',
       trackingUrl: trackingNumbers.length === 1 ? buildTrackingUrl(carriers[0], trackingNumbers[0]) : po.trackingUrl || '',
       estimatedShipDate: estimatedShipDate || po.estimatedShipDate || '',
-      expectedDeliveryDate: receivedDate || po.expectedDeliveryDate || '',
+      expectedDeliveryDate: estimatedDeliveryDate || receivedDate || po.expectedDeliveryDate || '',
       customerUpdateNotes: buildTrackingUpdateNote(trackingRows, vendorOrderNumbers),
       lines,
     }
@@ -916,6 +915,7 @@ function syncPurchaseOrderLineFromQuoteLine(existingLine: PurchaseOrderLine | un
     status: existingLine?.status ?? 'Ordered',
     vendorOrderNumber: existingLine?.vendorOrderNumber ?? '',
     estimatedShipDate: existingLine?.estimatedShipDate ?? '',
+    estimatedDeliveryDate: existingLine?.estimatedDeliveryDate ?? '',
     receivedDate: existingLine?.receivedDate ?? '',
     carrier: existingLine?.carrier ?? '',
     trackingNumber: existingLine?.trackingNumber ?? '',
@@ -1066,6 +1066,25 @@ function getTrackingAwarePoStatus(lines: PurchaseOrderLine[], previousStatus: St
   return previousStatus
 }
 
+function summarizePurchaseOrderTracking(po: PurchaseOrder, lines: PurchaseOrderLine[]): PurchaseOrder {
+  const carriers = uniqueValues(lines.map(line => line.carrier))
+  const trackingNumbers = uniqueValues(lines.map(line => line.trackingNumber))
+  const estimatedShipDate = earliestDate(lines.map(line => line.estimatedShipDate))
+  const estimatedDeliveryDate = earliestDate(lines.map(line => line.estimatedDeliveryDate))
+  const receivedDate = latestDate(lines.map(line => line.receivedDate))
+
+  return {
+    ...po,
+    carrier: carriers.join(', '),
+    trackingNumber: trackingNumbers.join(', '),
+    trackingUrl: trackingNumbers.length === 1 ? buildTrackingUrl(carriers[0], trackingNumbers[0]) : '',
+    estimatedShipDate,
+    expectedDeliveryDate: estimatedDeliveryDate || receivedDate,
+    status: getTrackingAwarePoStatus(lines, po.status),
+    lines,
+  }
+}
+
 function buildTrackingUpdateNote(rows: TrackingImportInput[], vendorOrderNumbers: string[]) {
   const receivedCount = rows.filter(row => row.receivedDate).length
   const trackingCount = rows.filter(row => row.trackingNumber).length
@@ -1081,8 +1100,11 @@ function normalizePurchaseOrderLine(line: PurchaseOrderLine, po?: PurchaseOrder)
     ...line,
     itemNumber: line.itemNumber ?? '',
     vendorOrderNumber: line.vendorOrderNumber ?? '',
-    estimatedShipDate: normalizeOptionalDateString(line.estimatedShipDate) || normalizeOptionalDateString(po?.estimatedShipDate),
-    receivedDate: normalizeOptionalDateString(line.receivedDate) || normalizeOptionalDateString(po?.expectedDeliveryDate),
+    estimatedShipDate:
+      line.estimatedShipDate === undefined ? normalizeOptionalDateString(po?.estimatedShipDate) : normalizeOptionalDateString(line.estimatedShipDate),
+    estimatedDeliveryDate:
+      line.estimatedDeliveryDate === undefined ? normalizeOptionalDateString(po?.expectedDeliveryDate) : normalizeOptionalDateString(line.estimatedDeliveryDate),
+    receivedDate: normalizeOptionalDateString(line.receivedDate),
     carrier: line.carrier ?? po?.carrier ?? '',
     trackingNumber: line.trackingNumber ?? po?.trackingNumber ?? '',
     trackingUrl: line.trackingUrl ?? po?.trackingUrl ?? '',
@@ -1111,6 +1133,7 @@ function mergeTrackingRowsIntoPoLines(po: PurchaseOrder, trackingRows: TrackingI
       status,
       vendorOrderNumber: row.vendorOrderNumber ?? match?.vendorOrderNumber ?? '',
       estimatedShipDate: normalizeOptionalDateString(row.estimatedShipDate) || match?.estimatedShipDate || '',
+      estimatedDeliveryDate: normalizeOptionalDateString(row.estimatedDeliveryDate) || match?.estimatedDeliveryDate || '',
       receivedDate: normalizeOptionalDateString(row.receivedDate) || match?.receivedDate || '',
       carrier: row.carrier ?? match?.carrier ?? po.carrier ?? '',
       trackingNumber: row.trackingNumber ?? match?.trackingNumber ?? '',

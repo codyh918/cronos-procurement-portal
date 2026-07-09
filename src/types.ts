@@ -168,6 +168,7 @@ export type PurchaseOrderLine = {
   status: Status
   vendorOrderNumber?: string
   estimatedShipDate?: string
+  estimatedDeliveryDate?: string
   receivedDate?: string
   carrier?: string
   trackingNumber?: string

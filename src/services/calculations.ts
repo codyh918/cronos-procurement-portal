@@ -133,6 +133,7 @@ export function generateVendorPurchaseOrders(lines: QuoteLine[], projectNumber: 
       status: 'Ordered',
       vendorOrderNumber: '',
       estimatedShipDate: '',
+      estimatedDeliveryDate: '',
       receivedDate: '',
       carrier: '',
       trackingNumber: '',

@@ -48,12 +48,15 @@ export async function exportProjectTrackingWorkbook(project: Project) {
   validatePurchaseOrderLines(audit, lines)
   const generatedDate = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).format(new Date())
   const isCheckbook = project.projectType === 'Checkbook'
+  const sheets = project.projectType === 'Design & Install'
+    ? [buildDesignInstallTrackingDetailSheet(project, lines)]
+    : [
+        buildTrackingSummarySheet(project, lines, generatedDate, isCheckbook),
+        buildTrackingDetailSheet(project, lines),
+      ]
 
   await downloadWorkbook(
-    [
-      buildTrackingSummarySheet(project, lines, generatedDate, isCheckbook),
-      buildTrackingDetailSheet(project, lines),
-    ],
+    sheets,
     `Cronos-${sanitizeFileName(project.projectNumber)}-Tracking-Report.xlsx`,
   )
   finishDocumentAudit(audit)
@@ -393,6 +396,55 @@ function buildTrackingSummarySheet(project: Project, lines: TrackingWorkbookLine
   }
 }
 
+function buildDesignInstallTrackingDetailSheet(project: Project, lines: TrackingWorkbookLine[]): WorkbookSheet {
+  const headers = [
+    'Project number',
+    'Project name',
+    'Customer',
+    'PO number',
+    'Vendor',
+    'Manufacturer',
+    'Description',
+    'Part number',
+    'Quantity',
+    'Ship date',
+    'Carrier',
+    'Tracking number',
+    'Delivery status',
+    'Estimated delivery date',
+    'Actual delivery date',
+    'Notes',
+  ]
+  const lastRow = Math.max(1, lines.length + 1)
+  return {
+    name: 'Line Item Tracking',
+    rows: [
+      headers.map(value => ({ value, style: 18 })),
+      ...lines.map(line => [
+        { value: documentValue(project.projectNumber), style: 19 },
+        { value: documentValue(project.projectName), style: 19 },
+        { value: documentValue(project.customer), style: 19 },
+        { value: line.poNumber, style: 19 },
+        { value: line.vendor, style: 19 },
+        { value: line.manufacturer ?? '', style: 19 },
+        { value: line.description, style: 22 },
+        { value: line.partNumber, style: 19 },
+        { value: line.quantityOrdered, style: 19 },
+        { value: formatDateForWorkbook(line.estimatedShipDate), style: 19 },
+        { value: line.carrier ?? '', style: 19 },
+        { value: line.trackingNumber ?? '', style: 19 },
+        { value: line.status, style: 19 },
+        { value: formatDateForWorkbook(line.estimatedDeliveryDate), style: 19 },
+        { value: formatDateForWorkbook(line.receivedDate), style: 19 },
+        { value: line.notes ?? '', style: 22 },
+      ]),
+    ],
+    columnWidths: [18, 30, 26, 24, 22, 22, 54, 24, 10, 14, 18, 30, 20, 22, 18, 42],
+    freezePane: 'A2',
+    autoFilter: `A1:P${lastRow}`,
+  }
+}
+
 function buildTrackingDetailSheet(project: Project, lines: TrackingWorkbookLine[]): WorkbookSheet {
   const startRow = 6
   const rows: WorkbookCell[][] = [
@@ -443,6 +495,7 @@ function buildTrackingDetailSheet(project: Project, lines: TrackingWorkbookLine[
     columnWidths: [9, 18, 18, 48, 10, 24, 18, 20, 30, 14, 15, 15, 16],
     merges: ['A1:M1', 'A2:M2'],
     freezePane: 'A6',
+    autoFilter: `A5:M${Math.max(5, lines.length + 5)}`,
   }
 }
 
@@ -454,10 +507,12 @@ function getTrackingWorkbookLines(project: Project): TrackingWorkbookLine[] {
       poStatus: po.status,
       vendor: po.vendor,
       vendorOrderNumber: line.vendorOrderNumber,
-      carrier: line.carrier || po.carrier,
-      trackingNumber: line.trackingNumber || po.trackingNumber,
-      estimatedShipDate: line.estimatedShipDate || po.estimatedShipDate,
-      receivedDate: line.receivedDate || po.expectedDeliveryDate,
+      carrier: line.carrier ?? '',
+      trackingNumber: line.trackingNumber ?? '',
+      estimatedShipDate: line.estimatedShipDate ?? '',
+      estimatedDeliveryDate: line.estimatedDeliveryDate ?? '',
+      receivedDate: line.receivedDate ?? '',
+      notes: line.notes ?? '',
     })),
   )
 }

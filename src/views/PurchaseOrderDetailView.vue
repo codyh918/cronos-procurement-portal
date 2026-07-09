@@ -108,6 +108,8 @@
               <td><input class="cell-input w-44" :value="line.trackingNumber ?? ''" @input="updateLine(line.id, { trackingNumber: inputValue($event) })" /></td>
               <td><input class="cell-input w-28" :value="line.carrier ?? ''" @input="updateLine(line.id, { carrier: inputValue($event) })" /></td>
               <td><input class="cell-input w-36" type="date" :value="line.estimatedShipDate ?? ''" @input="updateLine(line.id, { estimatedShipDate: inputValue($event) })" /></td>
+              <td><input class="cell-input w-36" type="date" :value="line.estimatedDeliveryDate ?? ''" @input="updateLine(line.id, { estimatedDeliveryDate: inputValue($event) })" /></td>
+              <td><input class="cell-input w-36" type="date" :value="line.receivedDate ?? ''" @input="updateLine(line.id, { receivedDate: inputValue($event) })" /></td>
               <td><input class="cell-input w-52" :value="line.notes ?? ''" @input="updateLine(line.id, { notes: inputValue($event) })" /></td>
             </tr>
           </tbody>
@@ -144,7 +146,7 @@ const loaded = ref(false)
 
 const poStatuses: Status[] = ['PO Generated', 'PO Issued', 'Ordered', 'Partially Received', 'Received', 'Backordered', 'Cancelled']
 const lineStatuses: Status[] = ['Ordered', 'Backordered', 'Partially Received', 'Received', 'Shipped', 'Delivered', 'Cancelled']
-const lineHeadings = ['CLIN', 'Part / Manufacturer', 'Description', 'Qty', 'Unit Cost', 'Status', 'Vendor Order', 'Tracking', 'Carrier', 'ESD', 'Notes']
+const lineHeadings = ['CLIN', 'Part / Manufacturer', 'Description', 'Qty', 'Unit Cost', 'Status', 'Vendor Order', 'Tracking', 'Carrier', 'Ship Date', 'Est Delivery', 'Actual Delivery', 'Notes']
 
 onMounted(() => {
   syncCheckbookTrackingRows()
@@ -197,6 +199,8 @@ function updateLine(
       | 'status'
       | 'vendorOrderNumber'
       | 'estimatedShipDate'
+      | 'estimatedDeliveryDate'
+      | 'receivedDate'
       | 'carrier'
       | 'trackingNumber'
       | 'trackingUrl'

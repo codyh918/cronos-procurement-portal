@@ -302,9 +302,9 @@
                   <td>{{ line.quantityOrdered }}</td>
                   <td>{{ line.status }}</td>
                   <td>{{ line.vendorOrderNumber || 'Pending' }}</td>
-                  <td>{{ line.carrier || selectedProjectPo.carrier || 'Pending' }}</td>
-                  <td>{{ line.trackingNumber || selectedProjectPo.trackingNumber || 'Pending' }}</td>
-                  <td>{{ formatDateOrPending(line.estimatedShipDate || selectedProjectPo.estimatedShipDate) }}</td>
+                  <td>{{ line.carrier || 'Pending' }}</td>
+                  <td>{{ line.trackingNumber || 'Pending' }}</td>
+                  <td>{{ formatDateOrPending(line.estimatedShipDate) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -319,6 +319,10 @@
         description="Line-item procurement status, expected ship dates, carriers, and tracking."
       >
         <div class="page-actions">
+          <button class="secondary-action icon-action" type="button" @click="exportTrackingWorkbook">
+            <Download :size="17" />
+            <span>Export Tracking Report</span>
+          </button>
           <button class="secondary-action icon-action" type="button" @click="trackingFileInput?.click()">
             <Upload :size="17" />
             <span>Import Tracking</span>
@@ -337,33 +341,37 @@
           <table class="data-table editable-equipment-table">
             <thead>
               <tr>
-                <th>Project</th>
+                <th>Project Number</th>
+                <th>Project Name</th>
+                <th>Customer</th>
                 <th>PO #</th>
                 <th>Vendor</th>
-                <th>Part Number</th>
+                <th>Manufacturer</th>
                 <th>Description</th>
+                <th>Part Number</th>
                 <th>Quantity</th>
-                <th>Status</th>
-                <th>Expected Ship Date</th>
+                <th>Ship Date</th>
                 <th>Carrier</th>
-                <th>Tracking</th>
+                <th>Tracking Number</th>
+                <th>Delivery Status</th>
+                <th>Estimated Delivery Date</th>
+                <th>Actual Delivery Date</th>
+                <th>Notes</th>
               </tr>
             </thead>
             <tbody>
               <tr v-for="line in purchasedEquipmentLines" :key="`${line.poId}-${line.id}`">
                 <td class="nowrap">{{ project.projectNumber }}</td>
+                <td>{{ project.projectName }}</td>
+                <td>{{ project.customer }}</td>
                 <td class="nowrap">
                   <button class="table-link inline-link-button" type="button" @click="openProjectPo(line.poId)">{{ line.poNumber }}</button>
                 </td>
                 <td>{{ line.vendor }}</td>
-                <td>{{ line.partNumber }}</td>
+                <td>{{ line.manufacturer || 'Pending' }}</td>
                 <td>{{ line.description }}</td>
+                <td>{{ line.partNumber }}</td>
                 <td>{{ line.quantityOrdered }}</td>
-                <td>
-                  <select class="cell-input w-40" :value="line.status" @change="updateLineTracking(line.poId, line.id, { status: inputValue($event) as Status })">
-                    <option v-for="status in trackingStatusOptions" :key="status" :value="status">{{ status }}</option>
-                  </select>
-                </td>
                 <td>
                   <input
                     class="cell-input w-36"
@@ -386,6 +394,35 @@
                     :value="line.trackingNumber ?? ''"
                     placeholder="Tracking #"
                     @change="updateLineTracking(line.poId, line.id, { trackingNumber: inputValue($event) })"
+                  />
+                </td>
+                <td>
+                  <select class="cell-input w-40" :value="line.status" @change="updateLineTracking(line.poId, line.id, { status: inputValue($event) as Status })">
+                    <option v-for="status in trackingStatusOptions" :key="status" :value="status">{{ status }}</option>
+                  </select>
+                </td>
+                <td>
+                  <input
+                    class="cell-input w-36"
+                    type="date"
+                    :value="line.estimatedDeliveryDate ?? ''"
+                    @change="updateLineTracking(line.poId, line.id, { estimatedDeliveryDate: inputValue($event) })"
+                  />
+                </td>
+                <td>
+                  <input
+                    class="cell-input w-36"
+                    type="date"
+                    :value="line.receivedDate ?? ''"
+                    @change="updateLineTracking(line.poId, line.id, { receivedDate: inputValue($event) })"
+                  />
+                </td>
+                <td>
+                  <input
+                    class="cell-input w-52"
+                    :value="line.notes ?? ''"
+                    placeholder="Notes"
+                    @change="updateLineTracking(line.poId, line.id, { notes: inputValue($event) })"
                   />
                 </td>
               </tr>
@@ -622,9 +659,12 @@ const purchasedEquipmentLines = computed<PurchasedEquipmentLine[]>(() =>
       poNumber: po.poNumber,
       poStatus: po.status,
       vendor: po.vendor,
-      carrier: line.carrier || po.carrier,
-      trackingNumber: line.trackingNumber || po.trackingNumber,
-      estimatedShipDate: line.estimatedShipDate || po.estimatedShipDate,
+      carrier: line.carrier ?? '',
+      trackingNumber: line.trackingNumber ?? '',
+      estimatedShipDate: line.estimatedShipDate ?? '',
+      estimatedDeliveryDate: line.estimatedDeliveryDate ?? '',
+      receivedDate: line.receivedDate ?? '',
+      notes: line.notes ?? '',
     })),
   ),
 )

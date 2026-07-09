@@ -142,11 +142,6 @@ async function drawCronosLetterhead(doc: JsPdf, title: string) {
   doc.rect(0, 0, 612, 792, 'F')
   await drawLogo(doc, 42, 28, 110, 74)
 
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(9)
-  doc.setTextColor(...TEXT)
-  doc.text(CRONOS_ADDRESS, 42, 108)
-
   if (title) {
     doc.setFont('helvetica', 'bold')
     doc.setFontSize(24)
@@ -554,10 +549,10 @@ export async function exportCustomerConsolidatedTrackingReportPdf(project: Proje
       partNumber: line.partNumber,
       description: line.description,
       quantity: line.quantityOrdered,
-      carrier: line.carrier || po.carrier || '',
-      trackingNumber: line.trackingNumber || po.trackingNumber || '',
-      estimatedShipDate: line.estimatedShipDate || po.estimatedShipDate || '',
-      deliveryDate: line.receivedDate || po.expectedDeliveryDate || '',
+      carrier: line.carrier ?? '',
+      trackingNumber: line.trackingNumber ?? '',
+      estimatedShipDate: line.estimatedShipDate ?? '',
+      deliveryDate: line.receivedDate || line.estimatedDeliveryDate || '',
       status: line.status,
     })),
   )
@@ -760,7 +755,7 @@ function drawPoLines(doc: JsPdf, startY: number, po: PurchaseOrder | ProjectPurc
     const partLines = AtlasWrappedText(doc, line.partNumber || '-', 72)
     const descriptionLines = AtlasWrappedText(doc, line.description || '-', 188)
     const statusLines = trackingOnly ? AtlasWrappedText(doc, line.status || '-', 72) : []
-    const trackingLines = trackingOnly ? AtlasWrappedText(doc, line.trackingNumber || po.trackingNumber || '-', 80) : []
+    const trackingLines = trackingOnly ? AtlasWrappedText(doc, line.trackingNumber || '-', 80) : []
     const rowHeight = getPdfRowHeight(partLines, descriptionLines, statusLines, trackingLines)
     y = AtlasPageBreakHandler(doc, y, rowHeight)
     drawTableRow(doc, y, rowHeight)

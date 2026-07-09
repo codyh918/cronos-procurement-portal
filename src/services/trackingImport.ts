@@ -10,6 +10,7 @@ export type TrackingImportInput = {
   quantity: number
   trackingNumber?: string
   estimatedShipDate?: string
+  estimatedDeliveryDate?: string
   receivedDate?: string
   carrier?: string
   notes?: string
@@ -27,6 +28,7 @@ const headerAliases = {
   quantity: ['qty', 'quantity', 'quantity ordered', 'ordered'],
   trackingNumber: ['tracking', 'tracking #', 'tracking number', 'tracking no'],
   estimatedShipDate: ['estimated ship date', 'esd', 'ship date', 'expected ship date'],
+  estimatedDeliveryDate: ['estimated delivery date', 'eta', 'delivery eta', 'expected delivery date'],
   receivedDate: ['received date', 'date received', 'delivery date', 'delivered date'],
   carrier: ['carrier', 'shipper', 'freight carrier'],
   notes: ['notes', 'comment', 'comments'],
@@ -58,6 +60,7 @@ function rowsToTrackingRows(rows: string[][]) {
       quantity: numberValue(readAlias(row, header, headerAliases.quantity)),
       trackingNumber: stringValue(readAlias(row, header, headerAliases.trackingNumber)),
       estimatedShipDate: dateValue(readAlias(row, header, headerAliases.estimatedShipDate)),
+      estimatedDeliveryDate: dateValue(readAlias(row, header, headerAliases.estimatedDeliveryDate)),
       receivedDate: dateValue(readAlias(row, header, headerAliases.receivedDate)),
       carrier: stringValue(readAlias(row, header, headerAliases.carrier)),
       notes: stringValue(readAlias(row, header, headerAliases.notes)),
