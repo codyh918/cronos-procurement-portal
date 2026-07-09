@@ -32,6 +32,8 @@ type WorkbookSheet = {
   merges?: string[]
   freezePane?: string
   autoFilter?: string
+  printTitleRows?: string
+  landscape?: boolean
   image?: 'cronosLogo'
 }
 
@@ -49,10 +51,10 @@ export async function exportProjectTrackingWorkbook(project: Project) {
   const generatedDate = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).format(new Date())
   const isCheckbook = project.projectType === 'Checkbook'
   const sheets = project.projectType === 'Design & Install'
-    ? [buildDesignInstallTrackingDetailSheet(project, lines)]
+    ? [buildTrackingDetailSheet(project, lines, generatedDate)]
     : [
+        buildTrackingDetailSheet(project, lines, generatedDate),
         buildTrackingSummarySheet(project, lines, generatedDate, isCheckbook),
-        buildTrackingDetailSheet(project, lines),
       ]
 
   await downloadWorkbook(
@@ -333,7 +335,7 @@ function buildTrackingSummarySheet(project: Project, lines: TrackingWorkbookLine
     ? ['Project Tab', 'Line Items', 'Received', 'Tracking Provided', 'Scheduled', 'Pending Update', 'Project Cost']
     : ['Project Tab', 'Line Items', 'Received', 'Tracking Provided', 'Scheduled', 'Pending Update']
   const summaryRow: WorkbookCell[] = [
-    sanitizeSheetName(project.projectNumber),
+    'Material Tracking',
     lines.length,
     countReceived(lines),
     countTracking(lines),
@@ -396,106 +398,80 @@ function buildTrackingSummarySheet(project: Project, lines: TrackingWorkbookLine
   }
 }
 
-function buildDesignInstallTrackingDetailSheet(project: Project, lines: TrackingWorkbookLine[]): WorkbookSheet {
-  const headers = [
-    'Project number',
-    'Project name',
-    'Customer',
-    'PO number',
-    'Vendor',
-    'Manufacturer',
-    'Description',
-    'Part number',
-    'Quantity',
-    'Ship date',
-    'Carrier',
-    'Tracking number',
-    'Delivery status',
-    'Estimated delivery date',
-    'Actual delivery date',
-    'Notes',
-  ]
-  const lastRow = Math.max(1, lines.length + 1)
-  return {
-    name: 'Line Item Tracking',
-    rows: [
-      headers.map(value => ({ value, style: 18 })),
-      ...lines.map(line => [
-        { value: documentValue(project.projectNumber), style: 19 },
-        { value: documentValue(project.projectName), style: 19 },
-        { value: documentValue(project.customer), style: 19 },
-        { value: line.poNumber, style: 19 },
-        { value: line.vendor, style: 19 },
-        { value: line.manufacturer ?? '', style: 19 },
-        { value: line.description, style: 22 },
+function buildTrackingDetailSheet(project: Project, lines: TrackingWorkbookLine[], generatedDate: string): WorkbookSheet {
+  const poc = getProjectDocumentContact(project)
+  const headers = ['PO Number', 'Vendor', 'Part Number', 'Description', 'Quantity', 'Carrier', 'Tracking Number', 'Status', 'Ship Date', 'Estimated Delivery', 'Actual Delivery', 'Notes']
+  const tableHeaderRow = 11
+  const rowsByPo = groupTrackingLinesByPo(lines)
+  const dataRows: WorkbookCell[][] = []
+  rowsByPo.forEach(group => {
+    dataRows.push([{ value: `PO: ${group.poNumber}    Vendor: ${group.vendor}${group.poStatus ? `    Status: ${group.poStatus}` : ''}`, style: 23 }])
+    group.lines.forEach(line => {
+      const trackingStatus = getTrackingWorkbookStatus(line)
+      dataRows.push([
+        { value: group.poNumber, style: 19 },
+        { value: group.vendor, style: 19 },
         { value: line.partNumber, style: 19 },
+        { value: conciseTrackingDescription(line.description), style: 22 },
         { value: line.quantityOrdered, style: 19 },
+        { value: line.carrier || 'Pending', style: 19 },
+        { value: line.trackingNumber || 'Pending', style: 19 },
+        { value: trackingStatus, style: trackingStatusStyle(trackingStatus) },
         { value: formatDateForWorkbook(line.estimatedShipDate), style: 19 },
-        { value: line.carrier ?? '', style: 19 },
-        { value: line.trackingNumber ?? '', style: 19 },
-        { value: line.status, style: 19 },
         { value: formatDateForWorkbook(line.estimatedDeliveryDate), style: 19 },
         { value: formatDateForWorkbook(line.receivedDate), style: 19 },
         { value: line.notes ?? '', style: 22 },
-      ]),
-    ],
-    columnWidths: [18, 30, 26, 24, 22, 22, 54, 24, 10, 14, 18, 30, 20, 22, 18, 42],
-    freezePane: 'A2',
-    autoFilter: `A1:P${lastRow}`,
-  }
-}
+      ])
+    })
+  })
 
-function buildTrackingDetailSheet(project: Project, lines: TrackingWorkbookLine[]): WorkbookSheet {
-  const startRow = 6
+  const totalPurchaseOrders = rowsByPo.length
+  const delivered = lines.filter(line => getTrackingWorkbookStatus(line) === 'Delivered').length
+  const partiallyShipped = lines.filter(line => getTrackingWorkbookStatus(line) === 'Partially Shipped').length
+  const inTransit = lines.filter(line => getTrackingWorkbookStatus(line) === 'In Transit').length
+  const delayed = lines.filter(line => getTrackingWorkbookStatus(line) === 'Delayed').length
+  const pending = lines.filter(line => getTrackingWorkbookStatus(line) === 'Pending').length
   const rows: WorkbookCell[][] = [
-    [{ value: project.projectNumber, style: 14 }],
-    [{ value: 'Customer procurement line-item update', style: 15 }],
+    ['', '', '', { value: 'Material Tracking Report', style: 14 }],
+    ['', '', '', { value: `Generated ${generatedDate}`, style: 15 }],
     [],
+    ['', { value: 'Project Number', style: 3 }, { value: documentValue(project.projectNumber), style: 4 }, '', { value: 'Project Manager', style: 3 }, { value: documentValue(project.projectManager), style: 4 }],
+    ['', { value: 'Project Name', style: 3 }, { value: documentValue(project.projectName), style: 4 }, '', { value: 'Generated By', style: 3 }, { value: documentValue(poc.name), style: 4 }],
+    ['', { value: 'Customer', style: 3 }, { value: documentValue(project.customer), style: 4 }, '', { value: 'Date Generated', style: 3 }, { value: generatedDate, style: 4 }],
     [],
     [
-      'Item No',
-      'Part Number',
-      'Manufacturer',
-      'Description',
-      'Quantity',
-      'PO Number',
-      'Vendor',
-      'Vendor Order Number',
-      'Tracking Number',
-      'ESD',
-      'Received Date',
-      'Shipping Co',
-      'Status',
-    ].map(value => ({ value, style: 18 })),
-    ...lines.map((line, index) => {
-      const rowNumber = startRow + index
-      const estimatedShipDate = formatDateForWorkbook(line.estimatedShipDate)
-      const receivedDate = formatDateForWorkbook(line.receivedDate)
-      return [
-        { value: line.itemNumber || index + 1, style: 19 },
-        { value: line.partNumber, style: 19 },
-        { value: line.manufacturer ?? '', style: 19 },
-        { value: line.description, style: 22 },
-        { value: line.quantityOrdered, style: 19 },
-        { value: line.poNumber, style: 19 },
-        { value: line.vendor, style: 19 },
-        { value: line.vendorOrderNumber ?? '', style: 19 },
-        { value: line.trackingNumber ?? '', style: 19 },
-        { value: estimatedShipDate, style: 19 },
-        { value: receivedDate, style: 19 },
-        { value: line.carrier ?? '', style: 19 },
-        { formula: `IF(K${rowNumber}<>"","Received",IF(I${rowNumber}<>"","Tracking Provided",IF(J${rowNumber}<>"","Scheduled","Pending Update")))`, value: getTrackingWorkbookStatus(line), style: 19 },
-      ]
-    }),
+      { value: totalPurchaseOrders, style: 16 },
+      { value: lines.length, style: 16 },
+      { value: delivered, style: 16 },
+      { value: partiallyShipped, style: 16 },
+      { value: inTransit, style: 16 },
+      { value: pending, style: 16 },
+      { value: delayed, style: 16 },
+    ],
+    [
+      { value: 'Total POs', style: 17 },
+      { value: 'Line Items', style: 17 },
+      { value: 'Delivered', style: 17 },
+      { value: 'Partially Shipped', style: 17 },
+      { value: 'In Transit', style: 17 },
+      { value: 'Pending', style: 17 },
+      { value: 'Delayed', style: 17 },
+    ],
+    [],
+    headers.map(value => ({ value, style: 18 })),
+    ...dataRows,
   ]
 
   return {
-    name: sanitizeSheetName(project.projectNumber),
+    name: 'Material Tracking',
+    image: 'cronosLogo',
     rows,
-    columnWidths: [9, 18, 18, 48, 10, 24, 18, 20, 30, 14, 15, 15, 16],
-    merges: ['A1:M1', 'A2:M2'],
-    freezePane: 'A6',
-    autoFilter: `A5:M${Math.max(5, lines.length + 5)}`,
+    columnWidths: [22, 24, 24, 42, 10, 18, 30, 20, 14, 18, 16, 38],
+    merges: ['D1:H1', 'D2:H2', 'C4:D4', 'F4:H4', 'C5:D5', 'F5:H5', 'C6:D6', 'F6:H6', ...trackingPoSectionMerges(dataRows, tableHeaderRow + 1)],
+    freezePane: 'A12',
+    autoFilter: `A${tableHeaderRow}:L${Math.max(tableHeaderRow, rows.length)}`,
+    printTitleRows: '1:11',
+    landscape: true,
   }
 }
 
@@ -517,6 +493,38 @@ function getTrackingWorkbookLines(project: Project): TrackingWorkbookLine[] {
   )
 }
 
+function groupTrackingLinesByPo(lines: TrackingWorkbookLine[]) {
+  const groups = new Map<string, { poNumber: string; vendor: string; poStatus: Status; lines: TrackingWorkbookLine[] }>()
+  lines.forEach(line => {
+    const key = `${line.poNumber}||${line.vendor}`
+    const current = groups.get(key) ?? { poNumber: line.poNumber, vendor: line.vendor, poStatus: line.poStatus, lines: [] }
+    current.lines.push(line)
+    groups.set(key, current)
+  })
+  return Array.from(groups.values())
+}
+
+function trackingPoSectionMerges(rows: WorkbookCell[][], firstRow: number) {
+  return rows
+    .map((row, index) => (row.length === 1 && typeof row[0] === 'object' && row[0]?.style === 23 ? `A${firstRow + index}:L${firstRow + index}` : ''))
+    .filter(Boolean)
+}
+
+function conciseTrackingDescription(value: string | undefined) {
+  const normalized = String(value ?? '').replace(/\s+/g, ' ').trim()
+  if (normalized.length <= 140) return normalized
+  return `${normalized.slice(0, 137).trim()}...`
+}
+
+function trackingStatusStyle(status: string) {
+  if (status === 'Delivered') return 24
+  if (status === 'In Transit') return 25
+  if (status === 'Partially Shipped') return 26
+  if (status === 'Processing') return 27
+  if (status === 'Delayed') return 28
+  return 29
+}
+
 function worksheetXml(sheet: WorkbookSheet, sheetIndex: number, hasLogo: boolean) {
   const columnXml = sheet.columnWidths?.length
     ? `<cols>${sheet.columnWidths.map((width, index) => `<col min="${index + 1}" max="${index + 1}" width="${width}" customWidth="1"/>`).join('')}</cols>`
@@ -527,6 +535,9 @@ function worksheetXml(sheet: WorkbookSheet, sheetIndex: number, hasLogo: boolean
     : ''
   const autoFilterXml = sheet.autoFilter ? `<autoFilter ref="${escapeXml(sheet.autoFilter)}"/>` : ''
   const drawingXml = sheetIndex === 0 && sheet.image === 'cronosLogo' && hasLogo ? '<drawing r:id="rId1"/>' : ''
+  const pageSetupXml = sheet.landscape
+    ? '<printOptions horizontalCentered="1"/><pageMargins left="0.25" right="0.25" top="0.5" bottom="0.5" header="0.25" footer="0.25"/><pageSetup orientation="landscape" fitToWidth="1" fitToHeight="0"/><headerFooter><oddHeader>&amp;CMaterial Tracking Report</oddHeader><oddFooter>&amp;LAtlas Material Tracking&amp;RPage &amp;P of &amp;N</oddFooter></headerFooter>'
+    : ''
   const body = sheet.rows
     .map((row, rowIndex) => {
       const cells = row
@@ -537,7 +548,7 @@ function worksheetXml(sheet: WorkbookSheet, sheetIndex: number, hasLogo: boolean
     })
     .join('')
 
-  return xmlHeader(`<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${sheetViewsXml}${columnXml}<sheetData>${body}</sheetData>${autoFilterXml}${mergeXml}${drawingXml}</worksheet>`)
+  return xmlHeader(`<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">${sheetViewsXml}${columnXml}<sheetData>${body}</sheetData>${autoFilterXml}${mergeXml}${pageSetupXml}${drawingXml}</worksheet>`)
 }
 
 function worksheetRowHeight(row: WorkbookCell[]) {
@@ -575,8 +586,13 @@ function workbookXml(sheets: WorkbookSheet[]) {
   const sheetEntries = sheets
     .map((sheet, index) => `<sheet name="${escapeXml(sheet.name)}" sheetId="${index + 1}" r:id="rId${index + 1}"/>`)
     .join('')
+  const definedNames = sheets
+    .map((sheet, index) =>
+      sheet.printTitleRows ? `<definedName name="_xlnm.Print_Titles" localSheetId="${index}">${quoteSheetName(sheet.name)}!$${sheet.printTitleRows.replace(':', ':$')}</definedName>` : '',
+    )
+    .join('')
 
-  return xmlHeader(`<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheetEntries}</sheets></workbook>`)
+  return xmlHeader(`<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><sheets>${sheetEntries}</sheets>${definedNames ? `<definedNames>${definedNames}</definedNames>` : ''}</workbook>`)
 }
 
 function workbookRelsXml(sheets: WorkbookSheet[]) {
@@ -614,11 +630,17 @@ function stylesXml() {
     <font><b/><sz val="18"/><color rgb="FF06163D"/><name val="Arial"/></font>
     <font><sz val="11"/><color rgb="FF566779"/><name val="Arial"/></font>
   </fonts>
-  <fills count="4">
+  <fills count="10">
     <fill><patternFill patternType="none"/></fill>
     <fill><patternFill patternType="gray125"/></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FF06163D"/><bgColor indexed="64"/></patternFill></fill>
     <fill><patternFill patternType="solid"><fgColor rgb="FFF8FBFF"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFDFF5E7"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFDDEBFF"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFFFF1C7"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFFFE3C2"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFFFD6D6"/><bgColor indexed="64"/></patternFill></fill>
+    <fill><patternFill patternType="solid"><fgColor rgb="FFE9EEF5"/><bgColor indexed="64"/></patternFill></fill>
   </fills>
   <borders count="3">
     <border/>
@@ -626,7 +648,7 @@ function stylesXml() {
     <border><left style="medium"><color rgb="FF06163D"/></left><right style="medium"><color rgb="FF06163D"/></right><top style="medium"><color rgb="FF06163D"/></top><bottom style="medium"><color rgb="FF06163D"/></bottom></border>
   </borders>
   <cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>
-  <cellXfs count="23">
+  <cellXfs count="30">
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
     <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0"/>
     <xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>
@@ -650,6 +672,13 @@ function stylesXml() {
     <xf numFmtId="164" fontId="0" fillId="0" borderId="1" xfId="0" applyNumberFormat="1" applyBorder="1" applyAlignment="1"><alignment vertical="top"/></xf>
     <xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment horizontal="right"/></xf>
     <xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf>
+    <xf numFmtId="0" fontId="4" fillId="3" borderId="2" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>
+    <xf numFmtId="0" fontId="1" fillId="4" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="1" fillId="5" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="1" fillId="6" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="1" fillId="7" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="1" fillId="8" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
+    <xf numFmtId="0" fontId="1" fillId="9" borderId="1" xfId="0" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>
   </cellXfs>
 </styleSheet>`.replace(/\n\s*/g, ''))
 }
@@ -666,8 +695,8 @@ function drawingXml() {
   return xmlHeader(`
 <xdr:wsDr xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
   <xdr:twoCellAnchor editAs="oneCell">
-    <xdr:from><xdr:col>1</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>1</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>
-    <xdr:to><xdr:col>4</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>7</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>
+    <xdr:from><xdr:col>0</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>1</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from>
+    <xdr:to><xdr:col>1</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>6</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to>
     <xdr:pic>
       <xdr:nvPicPr><xdr:cNvPr id="2" name="Cronos Logo"/><xdr:cNvPicPr/></xdr:nvPicPr>
       <xdr:blipFill><a:blip xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" r:embed="rId1"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill>
@@ -717,10 +746,12 @@ function countPending(lines: TrackingWorkbookLine[]) {
 }
 
 function getTrackingWorkbookStatus(line: TrackingWorkbookLine) {
-  if (line.receivedDate || line.status === 'Received') return 'Received'
-  if (line.trackingNumber) return 'Tracking Provided'
-  if (line.estimatedShipDate) return 'Scheduled'
-  return 'Pending Update'
+  if (line.receivedDate || ['Received', 'Delivered'].includes(line.status)) return 'Delivered'
+  if (line.status === 'Partially Shipped' || line.status === 'Partially Received') return 'Partially Shipped'
+  if (line.status === 'Backordered' || line.status === 'RMA' || line.status === 'RMA / Issue') return 'Delayed'
+  if (line.trackingNumber || line.status === 'Shipped' || line.status === 'In Transit to Cronos') return 'In Transit'
+  if (line.estimatedShipDate || ['Ordered', 'PO Issued', 'Awaiting Vendor Shipment'].includes(line.status)) return 'Processing'
+  return 'Pending'
 }
 
 function formatDateForWorkbook(value: string | undefined) {
@@ -755,6 +786,10 @@ function sanitizeSheetName(value: string) {
 
 function sanitizeFileName(value: string) {
   return value.replace(/[^a-z0-9-_]+/gi, '-')
+}
+
+function quoteSheetName(value: string) {
+  return `'${String(value).replace(/'/g, "''")}'`
 }
 
 function columnName(index: number): string {
