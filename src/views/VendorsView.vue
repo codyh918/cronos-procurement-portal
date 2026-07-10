@@ -5,13 +5,63 @@
         <h1>Vendors</h1>
         <p>Cronos vendor directory with contact details, OEM coverage, and product categories.</p>
       </div>
-      <button class="primary-action" type="button" @click="saveDirectory">
-        <Save :size="17" />
-        <span>Save Directory</span>
-      </button>
+      <div class="page-actions">
+        <button class="secondary-action" type="button" @click="downloadTemplate">
+          <FileSpreadsheet :size="17" />
+          <span>Download Vendor Template</span>
+        </button>
+        <button class="secondary-action" type="button" @click="exportVendors">
+          <Download :size="17" />
+          <span>Export Vendors</span>
+        </button>
+        <button v-if="canImport" class="secondary-action" type="button" @click="vendorImportInput?.click()">
+          <Upload :size="17" />
+          <span>Import Vendors</span>
+        </button>
+        <input ref="vendorImportInput" class="hidden-file-input" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" @change="handleVendorImport" />
+        <button class="primary-action" type="button" @click="saveDirectory">
+          <Save :size="17" />
+          <span>Save Directory</span>
+        </button>
+      </div>
     </header>
 
     <div v-if="saveMessage" class="save-message">{{ saveMessage }}</div>
+
+    <section v-if="importPreview" class="vendor-import-preview">
+      <div>
+        <h2>Vendor Import Preview</h2>
+        <p>{{ importPreview.filename }}</p>
+      </div>
+      <div class="summary-grid">
+        <div class="summary-card"><p>Vendors Updated</p><strong>{{ importPreview.updated.length }}</strong></div>
+        <div class="summary-card"><p>New Vendors</p><strong>{{ importPreview.added.length }}</strong></div>
+        <div class="summary-card"><p>Duplicate Records</p><strong>{{ importPreview.duplicates.length }}</strong></div>
+        <div class="summary-card"><p>Validation Errors</p><strong>{{ importPreview.errors.length }}</strong></div>
+      </div>
+      <label class="toggle-line">
+        <input v-model="allowBlankOverwrite" type="checkbox" />
+        <span>Allow blanks to overwrite existing data</span>
+      </label>
+      <div class="page-actions">
+        <button class="primary-action" type="button" :disabled="importPreview.errors.length > 0" @click="confirmImport">Confirm Import</button>
+        <button v-if="importPreview.errors.length" class="secondary-action" type="button" @click="downloadErrors">Download Error Report</button>
+        <button class="secondary-action" type="button" @click="cancelImport">Cancel Import</button>
+      </div>
+      <details v-if="importPreview.errors.length">
+        <summary>Validation Errors</summary>
+        <ul>
+          <li v-for="error in importPreview.errors" :key="`${error.rowNumber}-${error.column}-${error.problem}`">
+            Row {{ error.rowNumber }} - {{ error.column }}: {{ error.problem }}
+          </li>
+        </ul>
+      </details>
+    </section>
+
+    <section v-if="lastImportLog" class="save-message">
+      Import Complete: {{ lastImportLog.updated }} vendors updated, {{ lastImportLog.added }} added, {{ lastImportLog.failed }} errors.
+      <button class="inline-link-button table-link" type="button" @click="downloadImportLog">Download Import Log</button>
+    </section>
 
     <section class="summary-grid">
       <div class="summary-card">
@@ -150,8 +200,19 @@
 
 <script setup lang="ts">
 import { computed, reactive, ref } from 'vue'
-import { ExternalLink, Mail, Phone, Plus, Save, Search } from '@lucide/vue'
+import { Download, ExternalLink, FileSpreadsheet, Mail, Phone, Plus, Save, Search, Upload } from '@lucide/vue'
 import VendorField from '../components/VendorField.vue'
+import { fetchSession, normalizeRole } from '../services/auth'
+import {
+  confirmVendorImport,
+  exportVendorImportErrors,
+  exportVendorImportLog,
+  exportVendorWorkbook,
+  loadVendorImportLogs,
+  previewVendorImport,
+  type VendorImportLog,
+  type VendorImportPreview,
+} from '../services/vendorBulk'
 import {
   createEmptyVendorRecord,
   loadVendorDirectory,
@@ -176,6 +237,12 @@ const vendors = ref<VendorDirectoryRecord[]>(loadVendorDirectory())
 const search = ref('')
 const saveMessage = ref('')
 const newVendor = reactive({ ...emptyNewVendor })
+const vendorImportInput = ref<HTMLInputElement | null>(null)
+const importPreview = ref<VendorImportPreview | null>(null)
+const allowBlankOverwrite = ref(false)
+const lastImportLog = ref<VendorImportLog | null>(null)
+const session = computed(() => fetchSession())
+const canImport = computed(() => ['admin', 'procurement'].includes(normalizeRole(session.value?.role)))
 
 const filteredVendors = computed(() => {
   const term = search.value.trim().toLowerCase()
@@ -239,6 +306,49 @@ function addVendor() {
   vendors.value = saveVendorDirectory([...vendors.value, record])
   Object.assign(newVendor, emptyNewVendor)
   saveMessage.value = `${vendorName} added to the vendor directory.`
+}
+
+async function exportVendors() {
+  await exportVendorWorkbook(session.value ?? undefined)
+}
+
+async function downloadTemplate() {
+  await exportVendorWorkbook(session.value ?? undefined, true)
+}
+
+async function handleVendorImport(event: Event) {
+  const file = (event.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  try {
+    importPreview.value = await previewVendorImport(file)
+    saveMessage.value = 'Review the import preview before confirming.'
+  } catch (error) {
+    window.alert(error instanceof Error ? error.message : 'Unable to import this vendor workbook.')
+  } finally {
+    if (vendorImportInput.value) vendorImportInput.value.value = ''
+  }
+}
+
+function confirmImport() {
+  if (!importPreview.value) return
+  lastImportLog.value = confirmVendorImport(importPreview.value, { allowBlankOverwrite: allowBlankOverwrite.value, user: session.value ?? undefined })
+  vendors.value = loadVendorDirectory()
+  importPreview.value = null
+  saveMessage.value = 'Vendor import complete.'
+}
+
+function cancelImport() {
+  importPreview.value = null
+  saveMessage.value = 'Vendor import cancelled. No changes were saved.'
+}
+
+async function downloadErrors() {
+  if (!importPreview.value) return
+  await exportVendorImportErrors(importPreview.value.errors)
+}
+
+async function downloadImportLog() {
+  await exportVendorImportLog(loadVendorImportLogs())
 }
 
 function inputValue(event: Event) {

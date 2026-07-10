@@ -4072,7 +4072,8 @@ table {
 
 .vendor-search-card,
 .vendor-add-card,
-.vendor-table-card {
+.vendor-table-card,
+.vendor-import-preview {
   min-width: 0;
   border: 1px solid var(--app-border);
   border-radius: 8px;
@@ -4138,6 +4139,20 @@ table {
 .vendor-add-card {
   display: grid;
   gap: 16px;
+}
+
+.vendor-import-preview {
+  display: grid;
+  gap: 16px;
+}
+
+.toggle-line {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--app-text);
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .vendor-add-grid {

@@ -5,16 +5,37 @@ const STORAGE_KEY = 'cronos.vendorDirectory'
 export type VendorStatus = 'Active' | 'Inactive' | 'Preferred'
 
 export type VendorDirectoryRecord = {
+  vendorId: string
   vendor: string
+  dbaName: string
   status: VendorStatus
   website: string
   primaryContact: string
+  secondaryContact: string
   email: string
   phone: string
+  addressLine1: string
+  addressLine2: string
+  city: string
+  state: string
+  zipCode: string
+  country: string
+  cageCode: string
+  uei: string
+  duns: string
+  taxId: string
+  paymentTerms: string
+  leadTime: string
+  preferredVendor: boolean
+  manufacturerAuthorization: string
+  smallBusinessType: string
   accountNumber: string
   notes: string
   oems: string[]
   products: string[]
+  createdDate: string
+  lastUpdated: string
+  createdBy: string
 }
 
 const WEBSITE_BY_VENDOR: Record<string, string> = {
@@ -141,17 +162,39 @@ export function loadVendorDirectory() {
 }
 
 export function createEmptyVendorRecord(vendor: string): VendorDirectoryRecord {
+  const now = new Date().toISOString()
   return normalizeRecord({
+    vendorId: nextVendorId(),
     vendor,
+    dbaName: '',
     status: 'Active',
     website: '',
     primaryContact: '',
+    secondaryContact: '',
     email: '',
     phone: '',
+    addressLine1: '',
+    addressLine2: '',
+    city: '',
+    state: '',
+    zipCode: '',
+    country: '',
+    cageCode: '',
+    uei: '',
+    duns: '',
+    taxId: '',
+    paymentTerms: '',
+    leadTime: '',
+    preferredVendor: false,
+    manufacturerAuthorization: '',
+    smallBusinessType: '',
     accountNumber: '',
     notes: '',
     oems: [],
     products: [],
+    createdDate: now,
+    lastUpdated: now,
+    createdBy: '',
   })
 }
 
@@ -169,19 +212,45 @@ function loadStoredRecords() {
   }
 }
 
-function normalizeRecord(record: VendorDirectoryRecord): VendorDirectoryRecord {
+function normalizeRecord(record: Partial<VendorDirectoryRecord> & { vendor: string }): VendorDirectoryRecord {
+  const now = new Date().toISOString()
   return {
+    vendorId: record.vendorId || nextVendorId(),
     vendor: record.vendor,
+    dbaName: record.dbaName ?? '',
     status: record.status ?? 'Active',
     website: record.website ?? '',
     primaryContact: record.primaryContact ?? '',
+    secondaryContact: record.secondaryContact ?? '',
     email: record.email ?? '',
     phone: record.phone ?? '',
+    addressLine1: record.addressLine1 ?? '',
+    addressLine2: record.addressLine2 ?? '',
+    city: record.city ?? '',
+    state: record.state ?? '',
+    zipCode: record.zipCode ?? '',
+    country: record.country ?? '',
+    cageCode: record.cageCode ?? '',
+    uei: record.uei ?? '',
+    duns: record.duns ?? '',
+    taxId: record.taxId ?? '',
+    paymentTerms: record.paymentTerms ?? '',
+    leadTime: record.leadTime ?? '',
+    preferredVendor: Boolean(record.preferredVendor || record.status === 'Preferred'),
+    manufacturerAuthorization: record.manufacturerAuthorization ?? '',
+    smallBusinessType: record.smallBusinessType ?? '',
     accountNumber: record.accountNumber ?? '',
     notes: record.notes ?? '',
     oems: record.oems ?? [],
     products: record.products ?? [],
+    createdDate: record.createdDate ?? now,
+    lastUpdated: record.lastUpdated ?? now,
+    createdBy: record.createdBy ?? '',
   }
+}
+
+function nextVendorId() {
+  return `V-${String(Date.now()).slice(-8)}-${Math.random().toString(36).slice(2, 6).toUpperCase()}`
 }
 
 function normalize(value: string) {
