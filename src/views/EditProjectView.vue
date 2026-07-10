@@ -82,7 +82,15 @@
       <div class="form-section">
         <h2>Customer Information</h2>
       </div>
-      <FormField v-model="form.customer" label="Company Name" placeholder="Customer company or agency" required />
+      <div class="customer-lookup-panel">
+        <FormField v-model="form.customer" label="Company Name" placeholder="Search or enter customer company" required @focus="showCustomerSuggestions = true" />
+        <div v-if="showCustomerSuggestions && customerSuggestions.length" class="customer-suggestion-list">
+          <button v-for="suggestion in customerSuggestions" :key="suggestion.customer.id" class="customer-suggestion" type="button" @click="selectCustomer(suggestion)">
+            <strong>{{ suggestion.label }}</strong>
+            <small>{{ suggestion.detail || 'Active customer' }}</small>
+          </button>
+        </div>
+      </div>
       <FormField v-model="form.customerContactName" label="Attention / Contact" placeholder="Primary customer POC" />
       <FormField v-model="form.customerAddress1" label="Street Address 1" placeholder="123 Main Street" required />
       <FormField v-model="form.customerAddress2" label="Street Address 2" placeholder="Suite, floor, building, or mail stop" />
@@ -100,6 +108,13 @@
       <FormField v-model="form.customerPhone" label="Phone" placeholder="(555) 555-5555" type="tel" />
       <FormField v-model="form.customerNumber" label="Customer Number" placeholder="Optional customer ID" />
       <FormField v-model="form.customerWebsite" label="Website" placeholder="https://example.com" />
+      <div v-if="addressSuggestions.length" class="span-2 address-suggestion-list">
+        <button v-for="address in addressSuggestions" :key="address.id" class="address-suggestion" type="button" @click="selectAddress(address)">
+          <strong>{{ address.label || address.type }}</strong>
+          <small>{{ [address.streetAddress1, `${address.city}, ${address.state} ${address.zipCode}`.trim()].filter(Boolean).join(' | ') }}</small>
+          <small v-if="address.contactName">Contact: {{ address.contactName }}</small>
+        </button>
+      </div>
 
       <div class="form-section">
         <h2>Shipping Information</h2>
@@ -158,11 +173,13 @@ import { useRoute, useRouter } from 'vue-router'
 import { Save, Trash2 } from '@lucide/vue'
 import FormField from '../components/FormField.vue'
 import { fetchSession, loadUsers } from '../services/auth'
-import { deleteProject, loadProject, updateProjectFromInput } from '../services/localProjects'
-import type { Project, ProjectFormInput, Status } from '../types'
+import { applyCustomerAddressToProjectInput, findCustomerById, rankAddressSuggestions, searchCustomerSuggestions, syncCustomersFromProjects } from '../services/customerRecords'
+import { deleteProject, loadProject, loadProjects, updateProjectFromInput } from '../services/localProjects'
+import type { CustomerAddressRecord, Project, ProjectFormInput, Status } from '../types'
 
 const route = useRoute()
 const router = useRouter()
+syncCustomersFromProjects(loadProjects())
 const project = ref<Project>()
 const loaded = ref(false)
 const isAdmin = ref(false)
@@ -183,6 +200,8 @@ const form = reactive<ProjectFormInput>({
   checkbookStartingBalance: 0,
   materialBudget: 0,
   assignedUserIds: [],
+  customerId: '',
+  customerAddressId: '',
   projectNumber: '',
   projectName: '',
   customer: '',
@@ -214,6 +233,9 @@ const form = reactive<ProjectFormInput>({
 
 const assignableUsers = computed(() => loadUsers().filter(user => user.active))
 const states = ['AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'IA', 'ID', 'IL', 'IN', 'KS', 'KY', 'LA', 'MA', 'MD', 'ME', 'MI', 'MN', 'MO', 'MS', 'MT', 'NC', 'ND', 'NE', 'NH', 'NJ', 'NM', 'NV', 'NY', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VA', 'VT', 'WA', 'WI', 'WV', 'WY', 'DC']
+const showCustomerSuggestions = ref(false)
+const customerSuggestions = computed(() => searchCustomerSuggestions(form.customer, 8))
+const addressSuggestions = computed(() => (form.customerId ? rankAddressSuggestions(form.customerId, 6) : []))
 
 onMounted(() => {
   refreshSession()
@@ -233,6 +255,8 @@ function populateForm(loadedProject: Project) {
   form.checkbookStartingBalance = Number(loadedProject.checkbookStartingBalance || 0)
   form.materialBudget = Number(loadedProject.materialBudget || 0)
   form.assignedUserIds = [...(loadedProject.assignedUserIds ?? [])]
+  form.customerId = loadedProject.customerId ?? ''
+  form.customerAddressId = loadedProject.customerAddressId ?? ''
   form.projectNumber = loadedProject.projectNumber
   form.projectName = loadedProject.projectName
   form.customer = loadedProject.customer
@@ -304,6 +328,8 @@ function normalizeForm(): ProjectFormInput {
     checkbookStartingBalance: Number(form.checkbookStartingBalance || 0),
     materialBudget: Number(form.materialBudget || 0),
     assignedUserIds: [...new Set(form.assignedUserIds)],
+    customerId: form.customerId,
+    customerAddressId: form.customerAddressId,
     projectNumber: form.projectNumber.trim(),
     projectName: form.projectName.trim(),
     customer: form.customer.trim(),
@@ -330,5 +356,16 @@ function normalizeForm(): ProjectFormInput {
     deliveryAddress: form.deliveryAddress.trim(),
     notes: form.notes.trim(),
   }
+}
+
+function selectCustomer(suggestion: ReturnType<typeof searchCustomerSuggestions>[number]) {
+  Object.assign(form, applyCustomerAddressToProjectInput(form, suggestion.customer, suggestion.primaryAddress))
+  showCustomerSuggestions.value = false
+}
+
+function selectAddress(address: CustomerAddressRecord) {
+  const customer = findCustomerById(address.customerId)
+  if (!customer) return
+  Object.assign(form, applyCustomerAddressToProjectInput(form, customer, address))
 }
 </script>

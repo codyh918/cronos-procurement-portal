@@ -8,6 +8,7 @@ import { hydrateLocalCollection, readLocalCollection, saveLocalAndRemoteCollecti
 import type { TrackingImportInput } from './trackingImport'
 import { loadVendorDirectory } from './vendorDirectory'
 import { normalizeCustomerFields } from './customerFormatting'
+import { createCustomerFromProject, findAddressById, findCustomerById, rememberCustomerUse, snapshotFromCustomerAddress, upsertAddressForProject } from './customerRecords'
 
 const STORAGE_KEY = 'cronos.projects'
 const REMOTE_TYPE = 'projects'
@@ -42,8 +43,9 @@ export function saveProject(input: ProjectFormInput): Project {
     shipmentStatus: 'Quoted',
   }
 
-  saveProjects([project, ...loadProjects()])
-  return project
+  const linkedProject = linkProjectCustomer(project)
+  saveProjects([linkedProject, ...loadProjects()])
+  return linkedProject
 }
 
 export function loadProject(id: string): Project | undefined {
@@ -59,7 +61,7 @@ export function updateProjectFromInput(id: string, input: ProjectFormInput): Pro
     const projectNumber = input.projectNumber.trim()
     const projectName = input.projectName.trim()
     const customer = input.customer.trim()
-    updatedProject = normalizeProject({
+    updatedProject = linkProjectCustomer(normalizeProject({
       ...project,
       ...input,
       projectNumber,
@@ -78,7 +80,7 @@ export function updateProjectFromInput(id: string, input: ProjectFormInput): Pro
         ...po,
         poNumber: replaceProjectPrefix(po.poNumber, oldProjectNumber, projectNumber),
       })),
-    })
+    }))
     return updatedProject
   })
 
@@ -742,6 +744,8 @@ function normalizeProject(project: Project): Project {
   const normalizedCustomer = normalizeCustomerFields(project)
   return {
     ...normalizedCustomer,
+    customerId: normalizedCustomer.customerId ?? '',
+    customerAddressId: normalizedCustomer.customerAddressId ?? '',
     projectType: project.projectType ?? 'Design & Install',
     checkbookStartingBalance: Number(project.checkbookStartingBalance || 0),
     materialBudget: Number(project.materialBudget || 0),
@@ -759,6 +763,30 @@ function normalizeProject(project: Project): Project {
     inventory: project.inventory ?? [],
     kitStatus: project.kitStatus ?? 'Quoted',
     shipmentStatus: project.shipmentStatus ?? 'Quoted',
+  }
+}
+
+function linkProjectCustomer(project: Project): Project {
+  const customer = findCustomerById(project.customerId)
+  const selectedAddress = findAddressById(project.customerAddressId)
+  if (customer) {
+    const address = selectedAddress ?? upsertAddressForProject(customer.id, project, 'Project Site')
+    rememberCustomerUse(customer.id, address.id)
+    return {
+      ...project,
+      customerId: customer.id,
+      customerAddressId: address.id,
+      customerSnapshot: snapshotFromCustomerAddress(customer, address, project),
+    }
+  }
+
+  const created = createCustomerFromProject(project, 'Main Office')
+  rememberCustomerUse(created.customer.id, created.address.id)
+  return {
+    ...project,
+    customerId: created.customer.id,
+    customerAddressId: created.address.id,
+    customerSnapshot: snapshotFromCustomerAddress(created.customer, created.address, project),
   }
 }
 

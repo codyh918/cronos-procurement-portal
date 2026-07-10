@@ -91,6 +91,9 @@ export type ProjectFormInput = {
   checkbookStartingBalance: number
   materialBudget: number
   assignedUserIds: string[]
+  customerId: string
+  customerAddressId: string
+  customerSnapshot?: CustomerAddressSnapshot
   projectNumber: string
   projectName: string
   customer: string
@@ -118,6 +121,62 @@ export type ProjectFormInput = {
   status: Status
   deliveryAddress: string
   notes: string
+}
+
+export type CustomerRecord = {
+  id: string
+  legalCompanyName: string
+  displayName: string
+  customerNumber: string
+  primaryContact: string
+  primaryEmail: string
+  primaryPhone: string
+  website: string
+  active: boolean
+  createdAt: string
+  updatedAt: string
+  useCount: number
+  lastUsedAt: string
+}
+
+export type CustomerAddressType = 'Main Office' | 'Billing' | 'Shipping' | 'Project Site' | 'Government Site' | 'Other'
+
+export type CustomerAddressRecord = {
+  id: string
+  customerId: string
+  label: string
+  type: CustomerAddressType
+  contactName: string
+  streetAddress1: string
+  streetAddress2: string
+  city: string
+  state: string
+  zipCode: string
+  country: string
+  email: string
+  phone: string
+  isPrimary: boolean
+  active: boolean
+  createdAt: string
+  updatedAt: string
+  useCount: number
+  lastUsedAt: string
+}
+
+export type CustomerAddressSnapshot = {
+  companyName: string
+  contactName: string
+  streetAddress1: string
+  streetAddress2: string
+  city: string
+  state: string
+  zipCode: string
+  country: string
+  email: string
+  phone: string
+  customerNumber: string
+  website: string
+  capturedAt: string
 }
 
 export type QuoteLine = {

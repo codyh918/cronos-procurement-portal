@@ -2370,6 +2370,51 @@ table {
   border-color: #3b82f6;
 }
 
+.customer-lookup-panel {
+  min-width: 0;
+}
+
+.customer-suggestion-list,
+.address-suggestion-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.customer-suggestion,
+.address-suggestion {
+  width: 100%;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: var(--app-panel);
+  color: var(--app-text);
+  cursor: pointer;
+  padding: 10px 12px;
+  text-align: left;
+}
+
+.customer-suggestion strong,
+.address-suggestion strong,
+.customer-address-block strong {
+  display: block;
+}
+
+.customer-suggestion small,
+.address-suggestion small,
+.customer-address-block small {
+  display: block;
+  margin-top: 2px;
+  color: var(--app-muted);
+  font-size: 12px;
+}
+
+.customer-address-block {
+  display: grid;
+  gap: 2px;
+  font-style: normal;
+  line-height: 1.35;
+}
+
 .assignment-field {
   border: 1px solid var(--app-border);
   border-radius: 8px;

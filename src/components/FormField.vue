@@ -9,6 +9,7 @@
       :step="step"
       :min="min"
       @input="emitValue"
+      @focus="emit('focus')"
     />
   </label>
 </template>
@@ -34,6 +35,7 @@ const props = withDefaults(
 
 const emit = defineEmits<{
   'update:modelValue': [value: string | number]
+  focus: []
 }>()
 
 function emitValue(event: Event) {

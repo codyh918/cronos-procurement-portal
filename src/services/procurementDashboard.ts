@@ -541,6 +541,8 @@ function fallbackSeedProject(): Project {
     checkbookStartingBalance: 0,
     materialBudget: 0,
     assignedUserIds: [],
+    customerId: '',
+    customerAddressId: '',
     projectNumber: 'CRONOS-SEED',
     projectName: 'Seed Procurement Project',
     customer: 'Cronos Customer',
