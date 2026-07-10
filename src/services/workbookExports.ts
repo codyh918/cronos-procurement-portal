@@ -2,6 +2,7 @@ import type { CustomerQuote, Project, PurchaseOrderLine, QuoteLine, Status } fro
 import { calculateLineTotals, calculateQuoteSummary } from './calculations'
 import { getCheckbookSummary } from './checkbook'
 import { getProjectDocumentContact } from './documentContacts'
+import { formatCustomerAddressLines, structuredCustomerFromProject } from './customerFormatting'
 import {
   createDocumentAudit,
   documentValue,
@@ -106,6 +107,8 @@ export async function exportCustomerQuoteWorkbook(quote: CustomerQuote, project?
   validateQuoteDocument(audit, quote, project)
   const summary = calculateQuoteSummary(quote.lines, quote.contractFeeEnabled, quote.shippingCost ?? 0)
   const poc = getProjectDocumentContact(project)
+  const customer = structuredCustomerFromProject(project, quote.customer)
+  const customerAddress = formatCustomerAddressLines(customer).join('\n')
   const startRow = 18
   const lineRows = quote.lines.map(normalizeQuoteLineForDocument).map((line, index) => {
     const rowNumber = startRow + index
@@ -140,9 +143,9 @@ export async function exportCustomerQuoteWorkbook(quote: CustomerQuote, project?
           [],
           ['', '', '', '', { value: `Project: ${documentValue(quote.projectNumber)} - ${documentValue(quote.projectName)}`, style: 5 }],
           [],
-          ['', { value: 'Customer:', style: 3 }, '', { value: documentValue(quote.customer || project?.customer), style: 4 }, '', '', { value: 'Cronos POC:', style: 3 }, { value: documentValue(poc.name), style: 4 }],
-          ['', { value: 'Customer Name:', style: 3 }, '', { value: documentValue(project?.customerContactName), style: 4 }, '', '', { value: 'Email:', style: 3 }, { value: documentValue(poc.email), style: 4 }],
-          ['', { value: 'Customer Email:', style: 3 }, '', { value: documentValue(project?.customerEmail), style: 4 }, '', '', { value: 'Direct Phone:', style: 3 }, { value: documentValue(poc.phone), style: 4 }],
+          ['', { value: 'Customer:', style: 3 }, '', { value: documentValue(customer.companyName), style: 4 }, '', '', { value: 'Cronos POC:', style: 3 }, { value: documentValue(poc.name), style: 4 }],
+          ['', { value: 'Attention:', style: 3 }, '', { value: documentValue(customer.attention), style: 4 }, '', '', { value: 'Email:', style: 3 }, { value: documentValue(poc.email), style: 4 }],
+          ['', { value: 'Address:', style: 3 }, '', { value: documentValue(customerAddress), style: 22 }, '', '', { value: 'Direct Phone:', style: 3 }, { value: documentValue(poc.phone), style: 4 }],
           [],
           [],
           ['', { value: 'Line', style: 9 }, { value: 'Manufacturer', style: 9 }, { value: 'QTY', style: 9 }, { value: 'Part #', style: 9 }, { value: 'Description', style: 9 }, { value: 'Unit Cost', style: 9 }, { value: 'Extended Cost', style: 9 }],
@@ -227,6 +230,7 @@ function groupQuoteLinesByVendor(lines: QuoteLine[]) {
 
 function buildVendorRfqSheet(project: Project, vendor: string, lines: QuoteLine[]): WorkbookSheet {
   const poc = getProjectDocumentContact(project)
+  const customer = structuredCustomerFromProject(project)
   const vendorRecord = findVendorRecord(vendor)
   const vendorContact = [vendorRecord?.primaryContact, vendorRecord?.email, vendorRecord?.phone].filter(Boolean).join(' | ')
   const rfqNumber = `${project.projectNumber}-${sanitizeFileName(vendor)}-RFQ`
@@ -242,7 +246,7 @@ function buildVendorRfqSheet(project: Project, vendor: string, lines: QuoteLine[
     ['', { value: 'RFQ Number', style: 3 }, { value: documentValue(rfqNumber), style: 4 }, '', { value: 'Vendor Name', style: 3 }, { value: documentValue(vendor), style: 4 }],
     ['', { value: 'Project Number', style: 3 }, { value: documentValue(project.projectNumber), style: 4 }, '', { value: 'Vendor Contact', style: 3 }, { value: documentValue(vendorContact), style: 4 }],
     ['', { value: 'Project Name', style: 3 }, { value: documentValue(project.projectName), style: 4 }, '', { value: 'Requested Date', style: 3 }, { value: formatDateForWorkbook(new Date().toISOString()), style: 4 }],
-    ['', { value: 'Customer', style: 3 }, { value: documentValue(project.customer), style: 4 }, '', { value: 'Due Date', style: 3 }, { value: dueDate, style: 4 }],
+    ['', { value: 'Customer', style: 3 }, { value: documentValue(customer.companyName), style: 4 }, '', { value: 'Due Date', style: 3 }, { value: dueDate, style: 4 }],
     ['', { value: 'Requested By', style: 3 }, { value: documentValue(poc.name), style: 4 }, '', { value: 'Email', style: 3 }, { value: documentValue(poc.email), style: 4 }],
     ['', { value: 'Phone', style: 3 }, { value: documentValue(poc.phone), style: 4 }, '', { value: 'Cage Code', style: 3 }, { value: documentValue(poc.cageCode), style: 4 }],
     [],
@@ -400,6 +404,7 @@ function buildTrackingSummarySheet(project: Project, lines: TrackingWorkbookLine
 
 function buildTrackingDetailSheet(project: Project, lines: TrackingWorkbookLine[], generatedDate: string): WorkbookSheet {
   const poc = getProjectDocumentContact(project)
+  const customer = structuredCustomerFromProject(project)
   const headers = ['Line Item', 'PO Number', 'Vendor', 'Part Number', 'Description', 'Quantity', 'Carrier', 'Tracking Number', 'Status', 'Ship Date', 'Estimated Delivery', 'Actual Delivery', 'Notes']
   const tableHeaderRow = 11
   const rowsByPo = groupTrackingLinesByPo(lines)
@@ -437,7 +442,7 @@ function buildTrackingDetailSheet(project: Project, lines: TrackingWorkbookLine[
     [],
     ['', { value: 'Project Number', style: 1 }, { value: documentValue(project.projectNumber), style: 4 }, '', { value: 'Project Manager', style: 1 }, { value: documentValue(project.projectManager), style: 4 }],
     ['', { value: 'Project Name', style: 1 }, { value: documentValue(project.projectName), style: 4 }, '', { value: 'Generated By', style: 1 }, { value: documentValue(poc.name), style: 4 }],
-    ['', { value: 'Customer', style: 1 }, { value: documentValue(project.customer), style: 4 }, '', { value: 'Date Generated', style: 1 }, { value: generatedDate, style: 4 }],
+    ['', { value: 'Customer', style: 1 }, { value: documentValue(customer.companyName), style: 4 }, '', { value: 'Date Generated', style: 1 }, { value: generatedDate, style: 4 }],
     [],
     [
       { value: totalPurchaseOrders, style: 16 },

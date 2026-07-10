@@ -7,6 +7,7 @@ import { recordPurchaseOrdersInCatalog } from './partCatalog'
 import { hydrateLocalCollection, readLocalCollection, saveLocalAndRemoteCollection } from './remoteRecords'
 import type { TrackingImportInput } from './trackingImport'
 import { loadVendorDirectory } from './vendorDirectory'
+import { normalizeCustomerFields } from './customerFormatting'
 
 const STORAGE_KEY = 'cronos.projects'
 const REMOTE_TYPE = 'projects'
@@ -738,8 +739,9 @@ export function importPurchaseOrderTracking(projectId: string, rows: TrackingImp
 }
 
 function normalizeProject(project: Project): Project {
+  const normalizedCustomer = normalizeCustomerFields(project)
   return {
-    ...project,
+    ...normalizedCustomer,
     projectType: project.projectType ?? 'Design & Install',
     checkbookStartingBalance: Number(project.checkbookStartingBalance || 0),
     materialBudget: Number(project.materialBudget || 0),

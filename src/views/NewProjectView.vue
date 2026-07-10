@@ -20,7 +20,6 @@
 
       <FormField v-model="form.projectNumber" label="Project Number" placeholder="Enter project number" required />
       <FormField v-model="form.projectName" label="Project Name" placeholder="Enter project name" required />
-      <FormField v-model="form.customer" label="Customer" placeholder="Enter customer name" required />
 
       <template v-if="form.projectType !== 'Resale'">
         <FormField v-model="form.contractNumber" label="Contract Number" placeholder="Enter contract number" />
@@ -83,9 +82,24 @@
       <div class="form-section">
         <h2>Customer Information</h2>
       </div>
-      <FormField v-model="form.customerContactName" label="Customer Contact" placeholder="Primary customer POC" />
-      <FormField v-model="form.customerEmail" label="Customer Email" placeholder="customer@example.com" type="email" />
-      <FormField v-model="form.customerPhone" label="Customer Phone" placeholder="(555) 555-5555" type="tel" />
+      <FormField v-model="form.customer" label="Company Name" placeholder="Customer company or agency" required />
+      <FormField v-model="form.customerContactName" label="Attention / Contact" placeholder="Primary customer POC" />
+      <FormField v-model="form.customerAddress1" label="Street Address 1" placeholder="123 Main Street" required />
+      <FormField v-model="form.customerAddress2" label="Street Address 2" placeholder="Suite, floor, building, or mail stop" />
+      <FormField v-model="form.customerCity" label="City" placeholder="Lexington Park" required />
+      <label class="form-field">
+        <span>State</span>
+        <select v-model="form.customerState" required>
+          <option value="">Select state</option>
+          <option v-for="state in states" :key="state" :value="state">{{ state }}</option>
+        </select>
+      </label>
+      <FormField v-model="form.customerZip" label="ZIP Code" placeholder="20653" required />
+      <FormField v-model="form.customerCountry" label="Country" placeholder="United States" />
+      <FormField v-model="form.customerEmail" label="Email" placeholder="customer@example.com" type="email" />
+      <FormField v-model="form.customerPhone" label="Phone" placeholder="(555) 555-5555" type="tel" />
+      <FormField v-model="form.customerNumber" label="Customer Number" placeholder="Optional customer ID" />
+      <FormField v-model="form.customerWebsite" label="Website" placeholder="https://example.com" />
 
       <div class="form-section">
         <h2>Shipping Information</h2>
@@ -153,8 +167,16 @@ const form = reactive<ProjectFormInput>({
   projectName: '',
   customer: '',
   customerContactName: '',
+  customerAddress1: '',
+  customerAddress2: '',
+  customerCity: '',
+  customerState: '',
+  customerZip: '',
+  customerCountry: '',
   customerEmail: '',
   customerPhone: '',
+  customerNumber: '',
+  customerWebsite: '',
   shippingContactName: '',
   shippingEmail: '',
   shippingPhone: '',
@@ -171,12 +193,13 @@ const form = reactive<ProjectFormInput>({
 })
 
 const assignableUsers = computed(() => loadUsers().filter(user => user.active))
+const states = ['AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'IA', 'ID', 'IL', 'IN', 'KS', 'KY', 'LA', 'MA', 'MD', 'ME', 'MI', 'MN', 'MO', 'MS', 'MT', 'NC', 'ND', 'NE', 'NH', 'NJ', 'NM', 'NV', 'NY', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VA', 'VT', 'WA', 'WI', 'WV', 'WY', 'DC']
 
 function handleSubmit() {
   const input = normalizeForm()
 
-  if (!input.projectNumber || !input.projectName || !input.customer) {
-    window.alert('Project number, project name, and customer are required.')
+  if (!input.projectNumber || !input.projectName || !input.customer || !input.customerAddress1 || !input.customerCity || !input.customerState || !input.customerZip) {
+    window.alert('Project number, project name, company name, street address, city, state, and ZIP code are required.')
     return
   }
 
@@ -199,8 +222,16 @@ function normalizeForm(): ProjectFormInput {
     projectName: form.projectName.trim(),
     customer: form.customer.trim(),
     customerContactName: form.customerContactName.trim(),
+    customerAddress1: form.customerAddress1.trim(),
+    customerAddress2: form.customerAddress2.trim(),
+    customerCity: form.customerCity.trim(),
+    customerState: form.customerState.trim(),
+    customerZip: form.customerZip.trim(),
+    customerCountry: form.customerCountry?.trim() ?? '',
     customerEmail: form.customerEmail.trim(),
     customerPhone: form.customerPhone.trim(),
+    customerNumber: form.customerNumber?.trim() ?? '',
+    customerWebsite: form.customerWebsite?.trim() ?? '',
     shippingContactName: form.shippingContactName.trim(),
     shippingEmail: form.shippingEmail.trim(),
     shippingPhone: form.shippingPhone.trim(),

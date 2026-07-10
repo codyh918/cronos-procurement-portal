@@ -2,6 +2,7 @@ import type { CustomerQuote, Project, ProjectPurchaseOrder, PurchaseOrder } from
 import { calculateLineTotals, calculateQuoteSummary, currency } from './calculations'
 import { getCheckbookSummary } from './checkbook'
 import { documentContactLines, getProjectDocumentContact } from './documentContacts'
+import { formatCustomerAddressLines, structuredCustomerFromProject } from './customerFormatting'
 import {
   createDocumentAudit,
   documentValue,
@@ -74,12 +75,12 @@ export async function exportCustomerQuotePdf(quote: CustomerQuote, project?: Pro
   ])
 
   const infoBoxY = Math.max(150, metadataBottom + 16)
-  let y = infoBoxY + 140
+  let y = infoBoxY + 170
 
-  drawInfoBox(doc, 40, infoBoxY, 248, 120, 'Customer', getCustomerBoxLines(quote, project, shippingLines))
-  drawInfoBox(doc, 324, infoBoxY, 248, 120, 'Cronos POC', getQuotePocBoxLines(poc))
+  drawCustomerInfoBox(doc, 40, infoBoxY, 248, 150, 'Customer', project, quote.customer)
+  drawInfoBox(doc, 324, infoBoxY, 248, 150, 'Cronos POC', getQuotePocBoxLines(poc))
 
-  y = drawQuoteTemplateTable(doc, Math.max(270, y), quote)
+  y = drawQuoteTemplateTable(doc, Math.max(320, y), quote)
   const summary = calculateQuoteSummary(quote.lines, quote.contractFeeEnabled, quote.shippingCost ?? 0)
 
   const totalRows = [
@@ -120,13 +121,9 @@ export async function exportPurchaseOrderPdf(po: PurchaseOrder | ProjectPurchase
   ])
 
   const firstInfoY = Math.max(150, metadataBottom + 16)
-  drawInfoBox(doc, 40, firstInfoY, 248, 100, 'Vendor', [po.vendor])
-  drawInfoBox(doc, 324, firstInfoY, 248, 100, 'Ship To', [
-    ...(project?.deliveryAddress ? splitAddress(project.deliveryAddress) : []),
-    project?.shippingContactName || '',
-    project?.shippingPhone || '',
-  ])
-  const secondInfoY = firstInfoY + 120
+  drawInfoBox(doc, 40, firstInfoY, 248, 130, 'Vendor', [po.vendor])
+  drawCustomerInfoBox(doc, 324, firstInfoY, 248, 130, 'Ship To', project, project?.customer)
+  const secondInfoY = firstInfoY + 150
   drawInfoBox(doc, 40, secondInfoY, 248, 100, 'Bill To', CRONOS_BILL_TO)
   drawInfoBox(doc, 324, secondInfoY, 248, 100, 'Cronos POC', documentContactLines(poc))
 
@@ -198,6 +195,66 @@ function drawInfoBox(doc: JsPdf, x: number, y: number, width: number, height: nu
     doc.text(wrapped, x + 10, textY)
     textY += Math.max(12, wrapped.length * 10)
   })
+}
+
+function drawCustomerInfoBox(doc: JsPdf, x: number, y: number, width: number, height: number, title: string, project: Project | undefined, fallbackCompany = '') {
+  const customer = structuredCustomerFromProject(project, fallbackCompany)
+  const addressLines = formatCustomerAddressLines(customer)
+  doc.setDrawColor(...LINE)
+  doc.setLineWidth(0.7)
+  doc.rect(x, y, width, height)
+  doc.setFillColor(...NAVY)
+  doc.rect(x, y, width, 22, 'F')
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(9)
+  doc.setTextColor(255, 255, 255)
+  doc.text(title, x + 10, y + 15)
+
+  let textY = y + 38
+  doc.setTextColor(...TEXT)
+  if (customer.companyName) {
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(8.5)
+    const companyLines = AtlasWrappedText(doc, customer.companyName, width - 20)
+    doc.text(companyLines, x + 10, textY)
+    textY += Math.max(12, companyLines.length * 10)
+  }
+  if (customer.attention && customer.attention.toLowerCase() !== customer.companyName.toLowerCase()) {
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(8)
+    doc.text('Attention:', x + 10, textY)
+    textY += 10
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8.5)
+    doc.text(AtlasWrappedText(doc, customer.attention, width - 20), x + 10, textY)
+    textY += 13
+  }
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8.5)
+  addressLines.forEach(line => {
+    doc.text(AtlasWrappedText(doc, line, width - 20), x + 10, textY)
+    textY += 11
+  })
+
+  if (customer.email) {
+    textY += 4
+    doc.setFontSize(7.8)
+    doc.setFont('helvetica', 'bold')
+    doc.text('Email:', x + 10, textY)
+    textY += 9
+    doc.setFont('helvetica', 'normal')
+    doc.text(AtlasWrappedText(doc, customer.email, width - 20), x + 10, textY)
+    textY += 10
+  }
+  if (customer.phone) {
+    doc.setFontSize(7.8)
+    doc.setFont('helvetica', 'bold')
+    doc.text('Phone:', x + 10, textY)
+    textY += 9
+    doc.setFont('helvetica', 'normal')
+    doc.text(customer.phone, x + 10, textY)
+  }
 }
 
 function drawPurchaseOrderTemplateTable(doc: JsPdf, startY: number, po: PurchaseOrder | ProjectPurchaseOrder) {
@@ -423,16 +480,6 @@ function getQuoteExpirationDate(quote: CustomerQuote) {
   const date = new Date(quote.createdAt || Date.now())
   date.setDate(date.getDate() + (quote.expirationDays ?? 30))
   return formatPdfDate(date.toISOString())
-}
-
-function getCustomerBoxLines(quote: CustomerQuote, project: Project | undefined, shippingLines: string[]) {
-  return [
-    documentValue(quote.customer || project?.customer),
-    project?.customerContactName || '',
-    ...shippingLines,
-    project?.customerEmail || '',
-    project?.customerPhone || '',
-  ].filter(Boolean)
 }
 
 function getQuotePocBoxLines(poc: ReturnType<typeof getProjectDocumentContact>) {

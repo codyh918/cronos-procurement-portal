@@ -95,8 +95,16 @@ export type ProjectFormInput = {
   projectName: string
   customer: string
   customerContactName: string
+  customerAddress1: string
+  customerAddress2: string
+  customerCity: string
+  customerState: string
+  customerZip: string
+  customerCountry: string
   customerEmail: string
   customerPhone: string
+  customerNumber: string
+  customerWebsite: string
   shippingContactName: string
   shippingEmail: string
   shippingPhone: string
