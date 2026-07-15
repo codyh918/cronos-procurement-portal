@@ -62,6 +62,7 @@
 
       <template v-if="form.projectType !== 'Resale'">
         <FormField v-model="form.projectManager" label="Project Manager" placeholder="Cody Hibbard" />
+        <FormField v-model="form.governmentProjectLead" label="Government Project Lead" placeholder="Government lead name" />
         <FormField v-model="form.engineer" label="Engineer" placeholder="Engineer name" />
       </template>
 
@@ -203,6 +204,7 @@ const form = reactive<ProjectFormInput>({
   contractNumber: '',
   primeOrSub: 'Prime',
   projectManager: '',
+  governmentProjectLead: '',
   engineer: '',
   startDate: '',
   endDate: '',
@@ -262,6 +264,7 @@ function normalizeForm(): ProjectFormInput {
     shippingInstructions: form.shippingInstructions.trim(),
     contractNumber: form.contractNumber.trim(),
     projectManager: form.projectManager.trim(),
+    governmentProjectLead: form.governmentProjectLead.trim(),
     engineer: form.engineer.trim(),
     startDate: form.startDate.trim(),
     endDate: form.endDate.trim(),

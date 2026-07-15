@@ -31,6 +31,7 @@
         <InfoTile label="Project Name" :value="project.projectName || '-'" />
         <InfoTile label="Customer" :value="project.customer || '-'" />
         <InfoTile label="Assigned User" :value="assignedUserNames || '-'" />
+        <InfoTile label="Government Lead" :value="project.governmentProjectLead || '-'" />
         <InfoTile label="Project Type" :value="project.projectType" />
         <InfoTile label="Status" :value="project.status" />
         <InfoTile label="Contract / Quote Value" :value="currency(quoteSummary.customerTotal)" />

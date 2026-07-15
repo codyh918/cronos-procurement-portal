@@ -752,6 +752,7 @@ function normalizeProject(project: Project): Project {
     checkbookStartingBalance: Number(project.checkbookStartingBalance || 0),
     materialBudget: Number(project.materialBudget || 0),
     assignedUserIds: Array.isArray(project.assignedUserIds) ? project.assignedUserIds : [],
+    governmentProjectLead: project.governmentProjectLead ?? '',
     quotes: (project.quotes ?? []).map(quote => ({
       ...quote,
       quoteName: quote.quoteName ?? '',

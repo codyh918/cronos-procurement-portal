@@ -564,6 +564,7 @@ function fallbackSeedProject(): Project {
     contractNumber: '',
     primeOrSub: 'Prime',
     projectManager: '',
+    governmentProjectLead: '',
     engineer: '',
     startDate: offsetDate(-7).slice(0, 10),
     endDate: offsetDate(21).slice(0, 10),
