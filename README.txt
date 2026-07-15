@@ -1,19 +1,16 @@
-Atlas Government Project Lead Upload Folder
+Atlas Checkbook Quote Excel Budget Upload Folder
 
-Copy these files into the matching paths in the GitHub repository:
+Copy this file into the matching path in the GitHub repository:
 
-- src/types.ts
-- src/views/NewProjectView.vue
-- src/views/EditProjectView.vue
-- src/views/ProjectDetailView.vue
-- src/services/localProjects.ts
-- src/services/procurementDashboard.ts
+- src/services/workbookExports.ts
 
 Change summary:
-- Adds Government Project Lead to the project data model.
-- Adds the field on New Project and Edit Project screens.
-- Preserves older projects by defaulting missing Government Project Lead values to blank.
-- Shows Government Lead on the Project Detail summary tiles.
+- Checkbook project quote Excel exports now show:
+  - Total Material Budget
+  - Total Material Quoted
+  - Balance Remaining
+- The rows are added under the quote totals and only appear for Checkbook type projects.
+- Non-checkbook quote Excel exports keep their existing layout.
 
 Verification run locally:
 - npm run type-check

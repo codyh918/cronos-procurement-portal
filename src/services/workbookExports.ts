@@ -106,6 +106,7 @@ export async function exportCustomerQuoteWorkbook(quote: CustomerQuote, project?
   const audit = createDocumentAudit('Customer Quote Workbook', quote.quoteNumber)
   validateQuoteDocument(audit, quote, project)
   const summary = calculateQuoteSummary(quote.lines, quote.contractFeeEnabled, quote.shippingCost ?? 0)
+  const checkbookBudgetRows = buildCheckbookQuoteBudgetRows(project, summary.customerTotal)
   const poc = getProjectDocumentContact(project)
   const customer = structuredCustomerFromProject(project, quote.customer)
   const customerAddress = formatCustomerAddressLines(customer).join('\n')
@@ -156,12 +157,27 @@ export async function exportCustomerQuoteWorkbook(quote: CustomerQuote, project?
           ['', '', '', '', '', { value: 'Contract Fee', style: 10 }, '', { value: summary.contractFee, style: 11 }],
           ['', '', '', '', '', { value: 'Shipping', style: 10 }, '', { value: summary.shippingCost, style: 11 }],
           ['', '', '', '', '', { value: 'Quote Total', style: 12 }, '', { formula: `H${totalRow}+H${totalRow + 1}+H${totalRow + 2}`, value: summary.customerTotal, style: 13 }],
+          ...checkbookBudgetRows,
         ],
       },
     ],
     `Cronos-${sanitizeFileName(quote.quoteNumber)}-Quote.xlsx`,
   )
   finishDocumentAudit(audit)
+}
+
+function buildCheckbookQuoteBudgetRows(project: Project | undefined, materialQuoted: number): WorkbookCell[][] {
+  if (project?.projectType !== 'Checkbook') return []
+
+  const materialBudget = project.checkbookStartingBalance || 0
+  const remainingBalance = materialBudget - materialQuoted
+
+  return [
+    [],
+    ['', '', '', '', '', { value: 'Total Material Budget', style: 10 }, '', { value: materialBudget, style: 11 }],
+    ['', '', '', '', '', { value: 'Total Material Quoted', style: 10 }, '', { value: materialQuoted, style: 11 }],
+    ['', '', '', '', '', { value: 'Balance Remaining', style: 12 }, '', { value: remainingBalance, style: 13 }],
+  ]
 }
 
 export async function exportVendorRfqPackage(project: Project, lines: QuoteLine[]) {
