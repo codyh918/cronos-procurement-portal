@@ -33,6 +33,8 @@ export function saveProject(input: ProjectFormInput): Project {
   const project: Project = {
     ...input,
     id: crypto.randomUUID(),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
     checkbookStartingBalance: Number(input.checkbookStartingBalance || 0),
     materialBudget: Number(input.materialBudget || 0),
     quotes: [],
@@ -44,7 +46,7 @@ export function saveProject(input: ProjectFormInput): Project {
   }
 
   const linkedProject = linkProjectCustomer(project)
-  saveProjects([linkedProject, ...loadProjects()])
+  saveProjects([linkedProject, ...loadProjects()], linkedProject.id)
   return linkedProject
 }
 
@@ -86,7 +88,7 @@ export function updateProjectFromInput(id: string, input: ProjectFormInput): Pro
 
   if (!updatedProject) return undefined
 
-  saveProjects(projects)
+  saveProjects(projects, updatedProject.id)
   return updatedProject
 }
 
@@ -139,7 +141,7 @@ export function createQuoteForProject(
       : current,
   )
 
-  saveProjects(projects)
+  saveProjects(projects, project.id)
   return quote
 }
 
@@ -181,7 +183,7 @@ export function updateQuoteForProject(
   const updatedProject = syncResult.project
   const projects = loadProjects().map(current => (current.id === project.id ? updatedProject : current))
 
-  saveProjects(projects)
+  saveProjects(projects, updatedProject.id)
   if (syncResult.touchedPurchaseOrders.length) {
     recordPurchaseOrdersInCatalog(updatedProject, syncResult.touchedPurchaseOrders)
     syncCustomerOrdersFromApprovedProjects([updatedProject])
@@ -215,7 +217,7 @@ export function updateQuoteName(projectId: string, quoteId: string, quoteName: s
     quoteLines: quotes.flatMap(quote => quote.lines),
   })
 
-  saveProjects(loadProjects().map(current => (current.id === project.id ? updatedProject : current)))
+  saveProjects(loadProjects().map(current => (current.id === project.id ? updatedProject : current)), updatedProject.id)
   return updatedProject
 }
 
@@ -250,7 +252,7 @@ export function setQuoteApprovalStatus(projectId: string, quoteId: string, appro
     purchaseOrders,
   })
 
-  saveProjects(loadProjects().map(current => (current.id === project.id ? updatedProject : current)))
+  saveProjects(loadProjects().map(current => (current.id === project.id ? updatedProject : current)), updatedProject.id)
   recordPurchaseOrdersInCatalog(updatedProject, purchaseOrders)
   if (approved) {
     syncCustomerOrdersFromApprovedProjects([updatedProject])
@@ -282,7 +284,7 @@ export function generatePurchaseOrdersForQuote(projectId: string, quoteId: strin
   if (existing.length) {
     const syncResult = syncPurchaseOrdersForQuote(project, quote)
     if (syncResult.touchedPurchaseOrders.length) {
-      saveProjects(loadProjects().map(current => (current.id === project.id ? syncResult.project : current)))
+      saveProjects(loadProjects().map(current => (current.id === project.id ? syncResult.project : current)), syncResult.project.id)
       recordPurchaseOrdersInCatalog(syncResult.project, syncResult.touchedPurchaseOrders)
       syncCustomerOrdersFromApprovedProjects([syncResult.project])
     }
@@ -303,7 +305,7 @@ export function generatePurchaseOrdersForQuote(projectId: string, quoteId: strin
     purchaseOrders: [...project.purchaseOrders, ...purchaseOrders],
   })
 
-  saveProjects(loadProjects().map(current => (current.id === project.id ? updatedProject : current)))
+  saveProjects(loadProjects().map(current => (current.id === project.id ? updatedProject : current)), updatedProject.id)
   recordPurchaseOrdersInCatalog(updatedProject, purchaseOrders)
   syncCustomerOrdersFromApprovedProjects([updatedProject])
 
@@ -345,7 +347,7 @@ export function generatePurchaseOrdersForApprovedQuotes(projectId?: string) {
 
     if (!touchedPurchaseOrders.length) return project
 
-    saveProjects(loadProjects().map(current => (current.id === project.id ? nextProject : current)))
+    saveProjects(loadProjects().map(current => (current.id === project.id ? nextProject : current)), nextProject.id)
     recordPurchaseOrdersInCatalog(nextProject, touchedPurchaseOrders)
     syncCustomerOrdersFromApprovedProjects([nextProject])
     return nextProject
@@ -456,7 +458,7 @@ export function importCheckbookPurchaseOrders(projectId: string, rows: Checkbook
     purchaseOrders: [...project.purchaseOrders, ...newPurchaseOrders],
   })
 
-  saveProjects(loadProjects().map(current => (current.id === project.id ? updatedProject : current)))
+  saveProjects(loadProjects().map(current => (current.id === project.id ? updatedProject : current)), updatedProject.id)
   recordPurchaseOrdersInCatalog(updatedProject, newPurchaseOrders)
 
   return {
@@ -486,7 +488,7 @@ export function updatePurchaseOrderTracking(
     purchaseOrders: project.purchaseOrders.map(po => (po.id === poId ? { ...po, ...updates } : po)),
   })
 
-  saveProjects(loadProjects().map(current => (current.id === project.id ? updatedProject : current)))
+  saveProjects(loadProjects().map(current => (current.id === project.id ? updatedProject : current)), updatedProject.id)
   return updatedProject
 }
 
@@ -545,7 +547,7 @@ export function updatePurchaseOrderDetails(
     }),
   })
 
-  saveProjects(loadProjects().map(current => (current.id === project.id ? updatedProject : current)))
+  saveProjects(loadProjects().map(current => (current.id === project.id ? updatedProject : current)), updatedProject.id)
   return updatedProject
 }
 
@@ -599,7 +601,7 @@ export function updatePurchaseOrderLineTracking(
     }),
   })
 
-  saveProjects(loadProjects().map(current => (current.id === project.id ? updatedProject : current)))
+  saveProjects(loadProjects().map(current => (current.id === project.id ? updatedProject : current)), updatedProject.id)
   return updatedProject
 }
 
@@ -673,7 +675,7 @@ export function updatePurchaseOrderLineDetails(
     }),
   })
 
-  saveProjects(loadProjects().map(current => (current.id === project.id ? updatedProject : current)))
+  saveProjects(loadProjects().map(current => (current.id === project.id ? updatedProject : current)), updatedProject.id)
   return updatedProject
 }
 
@@ -731,7 +733,7 @@ export function importPurchaseOrderTracking(projectId: string, rows: TrackingImp
     }),
   })
 
-  saveProjects(loadProjects().map(current => (current.id === project.id ? updatedProject : current)))
+  saveProjects(loadProjects().map(current => (current.id === project.id ? updatedProject : current)), updatedProject.id)
 
   return {
     project: updatedProject,
@@ -790,8 +792,23 @@ function linkProjectCustomer(project: Project): Project {
   }
 }
 
-function saveProjects(projects: Project[]) {
-  saveLocalAndRemoteCollection(STORAGE_KEY, REMOTE_TYPE, REMOTE_KEY, projects.map(normalizeProject), 'cronos:projects-changed')
+function saveProjects(projects: Project[], changedProjectId?: string) {
+  const now = new Date().toISOString()
+  const changedIds = changedProjectId ? [changedProjectId] : []
+  const normalizedProjects = projects.map(project => {
+    const normalized = normalizeProject(project)
+    if (project.id !== changedProjectId) return normalized
+    return {
+      ...normalized,
+      createdAt: normalized.createdAt || now,
+      updatedAt: now,
+    }
+  })
+
+  saveLocalAndRemoteCollection(STORAGE_KEY, REMOTE_TYPE, REMOTE_KEY, normalizedProjects, 'cronos:projects-changed', {
+    mergeById: changedIds.length > 0,
+    changedIds,
+  })
 }
 
 type QuotePoSyncResult = {

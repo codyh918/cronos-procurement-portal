@@ -214,6 +214,8 @@ export type CustomerQuote = {
 
 export type Project = ProjectFormInput & {
   id: string
+  createdAt?: string
+  updatedAt?: string
   quotes: CustomerQuote[]
   quoteLines: QuoteLine[]
   purchaseOrders: PurchaseOrder[]

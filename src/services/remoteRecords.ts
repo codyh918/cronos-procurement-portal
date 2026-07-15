@@ -97,8 +97,23 @@ export async function hydrateLocalCollection<T>(
     normalize?: (items: T[]) => T[]
   } = {},
 ) {
+  const localRawAtStart = window.localStorage.getItem(storageKey) ?? '[]'
   const local = readLocalCollection<T>(storageKey)
   const remote = await loadRemoteRecord<T[]>(recordType, recordKey)
+  const localRawAfterRemoteLoad = window.localStorage.getItem(storageKey) ?? '[]'
+
+  if (localRawAfterRemoteLoad !== localRawAtStart) {
+    const currentLocal = readLocalCollection<T>(storageKey)
+    if (currentLocal.length) {
+      try {
+        await saveRemoteRecord(recordType, recordKey, currentLocal)
+      } catch {
+        // Keep the local cache usable even if the remote write is temporarily unavailable.
+      }
+    }
+    return currentLocal
+  }
+
   if (Array.isArray(remote)) {
     const normalized = options.normalize ? options.normalize(remote) : remote
     if (!normalized.length && local.length) {
@@ -127,13 +142,67 @@ export async function hydrateLocalCollection<T>(
   return local
 }
 
-export function saveLocalAndRemoteCollection<T>(storageKey: string, recordType: string, recordKey: string, items: T[], eventName?: string) {
+type CollectionSyncOptions = {
+  mergeById?: boolean
+  changedIds?: string[]
+}
+
+export function saveLocalAndRemoteCollection<T>(
+  storageKey: string,
+  recordType: string,
+  recordKey: string,
+  items: T[],
+  eventName?: string,
+  options: CollectionSyncOptions = {},
+) {
   backupLocalCollection(storageKey, `before-save-${recordType}`)
   window.localStorage.setItem(storageKey, JSON.stringify(items))
   if (eventName) window.dispatchEvent(new Event(eventName))
-  void saveRemoteRecord(recordType, recordKey, items).catch(error => {
+  void saveRemoteCollection(recordType, recordKey, items, options).catch(error => {
     window.dispatchEvent(new CustomEvent('cronos:remote-sync-error', { detail: error instanceof Error ? error.message : 'Supabase sync failed.' }))
   })
+}
+
+async function saveRemoteCollection<T>(recordType: string, recordKey: string, items: T[], options: CollectionSyncOptions) {
+  if (!options.mergeById || !options.changedIds?.length) {
+    await saveRemoteRecord(recordType, recordKey, items)
+    return
+  }
+
+  const remote = await loadRemoteRecord<T[]>(recordType, recordKey)
+  const merged = Array.isArray(remote) ? mergeCollectionByChangedIds(remote, items, options.changedIds) : items
+  await saveRemoteRecord(recordType, recordKey, merged)
+}
+
+function mergeCollectionByChangedIds<T>(remoteItems: T[], localItems: T[], changedIds: string[]) {
+  const changed = new Set(changedIds)
+  const localById = new Map(
+    localItems
+      .map(item => [recordId(item), item] as const)
+      .filter((entry): entry is readonly [string, T] => Boolean(entry[0])),
+  )
+  const seen = new Set<string>()
+  const merged = remoteItems.map(item => {
+    const id = recordId(item)
+    if (!id || !changed.has(id)) return item
+    seen.add(id)
+    return localById.get(id) ?? item
+  })
+
+  localItems.forEach(item => {
+    const id = recordId(item)
+    if (id && changed.has(id) && !seen.has(id)) {
+      merged.push(item)
+    }
+  })
+
+  return merged
+}
+
+function recordId(item: unknown) {
+  if (!item || typeof item !== 'object' || !('id' in item)) return ''
+  const id = (item as { id?: unknown }).id
+  return typeof id === 'string' ? id : ''
 }
 
 export function readLocalCollection<T>(storageKey: string) {
