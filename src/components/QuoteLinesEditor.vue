@@ -3,90 +3,96 @@
     <p>{{ emptyMessage }}</p>
   </div>
 
-  <div v-else class="quote-lines-scroll">
-    <table class="quote-lines-table">
-      <thead>
-        <tr>
-          <th v-for="heading in headings" :key="heading">{{ heading }}</th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr v-for="line in lines" :key="line.id">
-          <td>
-            <input
-              class="cell-input w-36"
-              :value="line.partNumber"
-              :list="`quote-line-part-suggestions-${line.id}`"
-              @input="updatePartNumber(line.id, inputValue($event))"
-            />
-            <p class="quote-line-catalog-help">
-              {{ catalogHint(line.partNumber) }}
-            </p>
-            <datalist :id="`quote-line-part-suggestions-${line.id}`">
-              <option v-for="record in findPartPriceSuggestions(line.partNumber)" :key="record.id" :value="record.partNumber">
-                {{ record.description }} - {{ record.vendor }}
-              </option>
-            </datalist>
-          </td>
-          <td><input class="cell-input w-36" :value="line.manufacturer" @input="updateLine(line.id, { manufacturer: inputValue($event) })" /></td>
-          <td>
-            <textarea class="cell-textarea" :value="line.description" @input="updateLine(line.id, { description: inputValue($event) })" />
-          </td>
-          <td><input class="cell-input w-20" type="number" min="0" :value="line.quantity" @input="updateLine(line.id, { quantity: numberValue($event) })" /></td>
-          <td>
-            <input
-              class="cell-input w-28"
-              type="number"
-              min="0"
-              step="0.01"
-              :value="line.unitCost"
-              @input="updateLine(line.id, { unitCost: numberValue($event) })"
-            />
-          </td>
-          <template v-if="showPricingControls">
+  <div v-else class="quote-lines-scroll-frame" :class="{ 'has-horizontal-overflow': hasHorizontalOverflow }">
+    <div v-show="hasHorizontalOverflow" ref="topScroller" class="quote-lines-scroll-top" aria-hidden="true" @scroll="syncHorizontalScroll('top')">
+      <div class="quote-lines-scroll-spacer" :style="{ width: `${scrollWidth}px` }" />
+    </div>
+
+    <div ref="tableScroller" class="quote-lines-scroll" @scroll="syncHorizontalScroll('table')">
+      <table ref="quoteTable" class="quote-lines-table">
+        <thead>
+          <tr>
+            <th v-for="heading in headings" :key="heading">{{ heading }}</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr v-for="line in lines" :key="line.id">
             <td>
               <input
-                class="cell-input w-24"
+                class="cell-input w-36"
+                :value="line.partNumber"
+                :list="`quote-line-part-suggestions-${line.id}`"
+                @input="updatePartNumber(line.id, inputValue($event))"
+              />
+              <p class="quote-line-catalog-help">
+                {{ catalogHint(line.partNumber) }}
+              </p>
+              <datalist :id="`quote-line-part-suggestions-${line.id}`">
+                <option v-for="record in findPartPriceSuggestions(line.partNumber)" :key="record.id" :value="record.partNumber">
+                  {{ record.description }} - {{ record.vendor }}
+                </option>
+              </datalist>
+            </td>
+            <td><input class="cell-input w-36" :value="line.manufacturer" @input="updateLine(line.id, { manufacturer: inputValue($event) })" /></td>
+            <td>
+              <textarea class="cell-textarea" :value="line.description" @input="updateLine(line.id, { description: inputValue($event) })" />
+            </td>
+            <td><input class="cell-input w-20" type="number" min="0" :value="line.quantity" @input="updateLine(line.id, { quantity: numberValue($event) })" /></td>
+            <td>
+              <input
+                class="cell-input w-28"
                 type="number"
                 min="0"
                 step="0.01"
-                :value="line.markupPercent"
-                @input="updateLine(line.id, { pricingMode: 'markup', markupPercent: numberValue($event) })"
+                :value="line.unitCost"
+                @input="updateLine(line.id, { unitCost: numberValue($event) })"
               />
             </td>
-          </template>
-          <td>
-            <select class="cell-input w-44" :value="line.vendor" @change="updateLine(line.id, { vendor: inputValue($event) })">
-              <option value="">Select vendor</option>
-              <option v-for="vendor in getVendorOptions(line.vendor)" :key="vendor" :value="vendor">{{ vendor }}</option>
-            </select>
-          </td>
-          <td><input class="cell-input w-36" :value="line.quoteNumber" @input="updateLine(line.id, { quoteNumber: inputValue($event) })" /></td>
-          <td>
-            <input
-              class="cell-input w-40"
-              :value="line.leadTime"
-              placeholder="8-10 weeks"
-              aria-label="Lead time"
-              @input="updateLine(line.id, { leadTime: inputValue($event) })"
-            />
-          </td>
-          <td>{{ currency(calculateLineTotals(line).sellPrice) }}</td>
-          <td>{{ currency(calculateLineTotals(line).extendedSellPrice) }}</td>
-          <td class="profit-cell">{{ currency(calculateLineTotals(line).grossProfit) }}</td>
-          <td class="action-cell">
-            <button class="delete-line-button" type="button" :aria-label="`Remove ${line.partNumber || 'line'}`" @click="removeLine(line.id)">
-              <Trash2 :size="16" />
-            </button>
-          </td>
-        </tr>
-      </tbody>
-    </table>
+            <template v-if="showPricingControls">
+              <td>
+                <input
+                  class="cell-input w-24"
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  :value="line.markupPercent"
+                  @input="updateLine(line.id, { pricingMode: 'markup', markupPercent: numberValue($event) })"
+                />
+              </td>
+            </template>
+            <td>
+              <select class="cell-input w-44" :value="line.vendor" @change="updateLine(line.id, { vendor: inputValue($event) })">
+                <option value="">Select vendor</option>
+                <option v-for="vendor in getVendorOptions(line.vendor)" :key="vendor" :value="vendor">{{ vendor }}</option>
+              </select>
+            </td>
+            <td><input class="cell-input w-36" :value="line.quoteNumber" @input="updateLine(line.id, { quoteNumber: inputValue($event) })" /></td>
+            <td>
+              <input
+                class="cell-input w-40"
+                :value="line.leadTime"
+                placeholder="8-10 weeks"
+                aria-label="Lead time"
+                @input="updateLine(line.id, { leadTime: inputValue($event) })"
+              />
+            </td>
+            <td>{{ currency(calculateLineTotals(line).sellPrice) }}</td>
+            <td>{{ currency(calculateLineTotals(line).extendedSellPrice) }}</td>
+            <td class="profit-cell">{{ currency(calculateLineTotals(line).grossProfit) }}</td>
+            <td class="action-cell">
+              <button class="delete-line-button" type="button" :aria-label="`Remove ${line.partNumber || 'line'}`" @click="removeLine(line.id)">
+                <Trash2 :size="16" />
+              </button>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Trash2 } from '@lucide/vue'
 import { calculateLineTotals, currency } from '../services/calculations'
 import { findLatestPartPrice, findPartPriceSuggestions } from '../services/partCatalog'
@@ -106,6 +112,14 @@ const props = withDefaults(
 const emit = defineEmits<{
   change: [lines: QuoteLine[]]
 }>()
+
+const topScroller = ref<HTMLDivElement>()
+const tableScroller = ref<HTMLDivElement>()
+const quoteTable = ref<HTMLTableElement>()
+const scrollWidth = ref(0)
+const hasHorizontalOverflow = ref(false)
+let syncingScroll = false
+let resizeObserver: ResizeObserver | undefined
 
 const headings = computed(() => [
   'Part Number',
@@ -128,6 +142,54 @@ function updateLine(id: string, updates: Partial<QuoteLine>) {
     'change',
     applySequentialClins(props.lines.map(line => (line.id === id ? { ...line, ...updates } : line))),
   )
+}
+
+onMounted(() => {
+  refreshScrollMetrics()
+  window.addEventListener('resize', refreshScrollMetrics)
+  if (typeof ResizeObserver !== 'undefined') {
+    resizeObserver = new ResizeObserver(refreshScrollMetrics)
+    if (tableScroller.value) resizeObserver.observe(tableScroller.value)
+    if (quoteTable.value) resizeObserver.observe(quoteTable.value)
+  }
+})
+
+onBeforeUnmount(() => {
+  window.removeEventListener('resize', refreshScrollMetrics)
+  resizeObserver?.disconnect()
+})
+
+watch(
+  () => [props.lines.length, props.showPricingControls],
+  () => {
+    void nextTick(refreshScrollMetrics)
+  },
+)
+
+function refreshScrollMetrics() {
+  const scroller = tableScroller.value
+  const table = quoteTable.value
+  if (!scroller || !table) return
+
+  scrollWidth.value = Math.max(table.scrollWidth, scroller.scrollWidth)
+  hasHorizontalOverflow.value = scrollWidth.value > scroller.clientWidth + 1
+  if (topScroller.value) topScroller.value.scrollLeft = scroller.scrollLeft
+}
+
+function syncHorizontalScroll(source: 'top' | 'table') {
+  if (syncingScroll) return
+
+  const top = topScroller.value
+  const table = tableScroller.value
+  if (!top || !table) return
+
+  syncingScroll = true
+  const sourceElement = source === 'top' ? top : table
+  const targetElement = source === 'top' ? table : top
+  targetElement.scrollLeft = sourceElement.scrollLeft
+  window.requestAnimationFrame(() => {
+    syncingScroll = false
+  })
 }
 
 function updatePartNumber(id: string, partNumber: string) {

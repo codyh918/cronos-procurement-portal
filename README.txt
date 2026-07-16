@@ -1,18 +1,21 @@
-Atlas Checkbook Quote Excel Budget Upload Folder
+Atlas Quote Table Top Scrollbar Upload Folder
 
-Copy this file into the matching path in the GitHub repository:
+Copy these files into the matching paths in the GitHub repository:
 
-- src/services/workbookExports.ts
+- src/components/QuoteLinesEditor.vue
+- src/style.css
 
 Change summary:
-- Checkbook project quote Excel exports now show:
-  - Total Material Budget
-  - Total Material Quoted
-  - Balance Remaining
-- The rows are added under the quote totals and only appear for Checkbook type projects.
-- Non-checkbook quote Excel exports keep their existing layout.
+- Adds a synchronized top horizontal scrollbar to the editable quote line-item table.
+- Keeps the existing bottom/table horizontal scrollbar.
+- Synchronizes top scrollbar, table scrollbar, trackpad horizontal scrolling, and keyboard/scrollbar movement.
+- Makes quote table headers sticky while scrolling vertically.
+- Preserves existing quote table column widths and quote editing behavior.
 
 Verification run locally:
 - npm run type-check
 - npm run validate:documents
 - npm run build
+
+Note:
+- npm run lint could not be run because this project does not define a lint script.

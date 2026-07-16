@@ -2837,10 +2837,38 @@ table {
   font-weight: 650;
 }
 
+.quote-lines-scroll-frame {
+  display: grid;
+  max-width: 100%;
+  min-width: 0;
+}
+
+.quote-lines-scroll-top {
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border: 1px solid var(--app-border-soft);
+  border-bottom: 0;
+  border-radius: 8px 8px 0 0;
+  background: #f9fbfd;
+}
+
+.quote-lines-scroll-spacer {
+  height: 12px;
+}
+
+.quote-lines-scroll-frame.has-horizontal-overflow .quote-lines-scroll {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+}
+
 .quote-lines-scroll {
   max-width: 100%;
   min-width: 0;
   overflow-x: auto;
+  border: 1px solid var(--app-border-soft);
+  border-radius: 8px;
 }
 
 .quote-lines-table {
@@ -2852,6 +2880,9 @@ table {
 }
 
 .quote-lines-table th {
+  position: sticky;
+  top: 0;
+  z-index: 4;
   background: #f9fbfd;
   color: var(--app-text);
   padding: 12px;
