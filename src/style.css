@@ -2381,6 +2381,12 @@ table {
   margin-top: 8px;
 }
 
+.address-suggestion-heading {
+  color: var(--text-muted);
+  font-size: 0.82rem;
+  font-weight: 600;
+}
+
 .customer-suggestion,
 .address-suggestion {
   width: 100%;

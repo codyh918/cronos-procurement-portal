@@ -109,16 +109,17 @@
       <FormField v-model="form.customerPhone" label="Phone" placeholder="(555) 555-5555" type="tel" />
       <FormField v-model="form.customerNumber" label="Customer Number" placeholder="Optional customer ID" />
       <FormField v-model="form.customerWebsite" label="Website" placeholder="https://example.com" />
+      <div class="form-section">
+        <h2>Shipping Information</h2>
+        <p>Enter the address where this project's materials should be delivered.</p>
+      </div>
       <div v-if="addressSuggestions.length" class="span-2 address-suggestion-list">
-        <button v-for="address in addressSuggestions" :key="address.id" class="address-suggestion" type="button" @click="selectAddress(address)">
+        <span class="address-suggestion-heading">Saved addresses — click one to use it as the shipping address</span>
+        <button v-for="address in addressSuggestions" :key="address.id" class="address-suggestion" type="button" @click="selectShippingAddress(address)">
           <strong>{{ address.label || address.type }}</strong>
           <small>{{ [address.streetAddress1, `${address.city}, ${address.state} ${address.zipCode}`.trim()].filter(Boolean).join(' | ') }}</small>
           <small v-if="address.contactName">Contact: {{ address.contactName }}</small>
         </button>
-      </div>
-
-      <div class="form-section">
-        <h2>Shipping Information</h2>
       </div>
       <FormField v-model="form.shippingContactName" label="Shipping Contact" placeholder="Ship-to POC" />
       <FormField v-model="form.shippingEmail" label="Shipping Email" placeholder="shipping@example.com" type="email" />
@@ -174,7 +175,7 @@ import { useRoute, useRouter } from 'vue-router'
 import { Save, Trash2 } from '@lucide/vue'
 import FormField from '../components/FormField.vue'
 import { fetchSession, loadUsers } from '../services/auth'
-import { applyCustomerAddressToProjectInput, findCustomerById, rankAddressSuggestions, searchCustomerSuggestions, syncCustomersFromProjects } from '../services/customerRecords'
+import { applyCustomerAddressToProjectInput, rankAddressSuggestions, searchCustomerSuggestions, syncCustomersFromProjects } from '../services/customerRecords'
 import { deleteProject, loadProject, loadProjects, updateProjectFromInput } from '../services/localProjects'
 import type { CustomerAddressRecord, Project, ProjectFormInput, Status } from '../types'
 
@@ -367,9 +368,16 @@ function selectCustomer(suggestion: ReturnType<typeof searchCustomerSuggestions>
   showCustomerSuggestions.value = false
 }
 
-function selectAddress(address: CustomerAddressRecord) {
-  const customer = findCustomerById(address.customerId)
-  if (!customer) return
-  Object.assign(form, applyCustomerAddressToProjectInput(form, customer, address))
+function selectShippingAddress(address: CustomerAddressRecord) {
+  form.customerAddressId = address.id
+  form.deliveryAddress = [
+    address.streetAddress1,
+    address.streetAddress2,
+    [address.city, address.state, address.zipCode].filter(Boolean).join(' '),
+    address.country,
+  ].filter(Boolean).join('\n')
+  form.shippingContactName = address.contactName
+  form.shippingEmail = address.email
+  form.shippingPhone = address.phone
 }
 </script>
