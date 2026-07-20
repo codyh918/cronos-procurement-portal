@@ -95,6 +95,7 @@ export async function hydrateLocalCollection<T>(
   options: {
     eventName?: string
     normalize?: (items: T[]) => T[]
+    mergeWithLocal?: (remoteItems: T[], localItems: T[]) => T[]
   } = {},
 ) {
   const localRawAtStart = window.localStorage.getItem(storageKey) ?? '[]'
@@ -116,6 +117,7 @@ export async function hydrateLocalCollection<T>(
 
   if (Array.isArray(remote)) {
     const normalized = options.normalize ? options.normalize(remote) : remote
+    const merged = options.mergeWithLocal ? options.mergeWithLocal(normalized, local) : normalized
     if (!normalized.length && local.length) {
       console.warn(`Remote ${recordType}:${recordKey} is empty; preserving non-empty local ${storageKey}.`)
       try {
@@ -126,9 +128,9 @@ export async function hydrateLocalCollection<T>(
       return local
     }
     backupLocalCollection(storageKey, `before-hydrate-${recordType}`)
-    window.localStorage.setItem(storageKey, JSON.stringify(normalized))
+    window.localStorage.setItem(storageKey, JSON.stringify(merged))
     if (options.eventName) window.dispatchEvent(new Event(options.eventName))
-    return normalized
+    return merged
   }
 
   if (local.length) {
@@ -145,6 +147,7 @@ export async function hydrateLocalCollection<T>(
 type CollectionSyncOptions = {
   mergeById?: boolean
   changedIds?: string[]
+  mergeItem?: (remoteItem: unknown, localItem: unknown) => unknown
 }
 
 export function saveLocalAndRemoteCollection<T>(
@@ -170,11 +173,16 @@ async function saveRemoteCollection<T>(recordType: string, recordKey: string, it
   }
 
   const remote = await loadRemoteRecord<T[]>(recordType, recordKey)
-  const merged = Array.isArray(remote) ? mergeCollectionByChangedIds(remote, items, options.changedIds) : items
+  const merged = Array.isArray(remote) ? mergeCollectionByChangedIds(remote, items, options.changedIds, options.mergeItem) : items
   await saveRemoteRecord(recordType, recordKey, merged)
 }
 
-function mergeCollectionByChangedIds<T>(remoteItems: T[], localItems: T[], changedIds: string[]) {
+function mergeCollectionByChangedIds<T>(
+  remoteItems: T[],
+  localItems: T[],
+  changedIds: string[],
+  mergeItem?: (remoteItem: unknown, localItem: unknown) => unknown,
+) {
   const changed = new Set(changedIds)
   const localById = new Map(
     localItems
@@ -186,7 +194,8 @@ function mergeCollectionByChangedIds<T>(remoteItems: T[], localItems: T[], chang
     const id = recordId(item)
     if (!id || !changed.has(id)) return item
     seen.add(id)
-    return localById.get(id) ?? item
+    const localItem = localById.get(id)
+    return localItem && mergeItem ? (mergeItem(item, localItem) as T) : localItem ?? item
   })
 
   localItems.forEach(item => {

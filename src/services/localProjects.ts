@@ -26,6 +26,7 @@ function hydrateProjects() {
   void hydrateLocalCollection<Project>(STORAGE_KEY, REMOTE_TYPE, REMOTE_KEY, {
     eventName: 'cronos:projects-changed',
     normalize: projects => projects.map(normalizeProject),
+    mergeWithLocal: mergeProjectsPreservingNestedRecords,
   })
 }
 
@@ -809,7 +810,60 @@ function saveProjects(projects: Project[], changedProjectId?: string) {
   saveLocalAndRemoteCollection(STORAGE_KEY, REMOTE_TYPE, REMOTE_KEY, normalizedProjects, 'cronos:projects-changed', {
     mergeById: changedIds.length > 0,
     changedIds,
+    mergeItem: mergeProjectPreservingNestedRecords,
   })
+}
+
+function mergeProjectsPreservingNestedRecords(remoteProjects: Project[], localProjects: Project[]) {
+  const localById = new Map(localProjects.map(project => [project.id, normalizeProject(project)]))
+  const seen = new Set<string>()
+  const merged = remoteProjects.map(remoteProject => {
+    seen.add(remoteProject.id)
+    const localProject = localById.get(remoteProject.id)
+    return localProject ? mergeProjectPreservingNestedRecords(localProject, remoteProject) : normalizeProject(remoteProject)
+  })
+
+  localProjects.forEach(localProject => {
+    if (!seen.has(localProject.id)) {
+      merged.push(normalizeProject(localProject))
+    }
+  })
+
+  return merged
+}
+
+function mergeProjectPreservingNestedRecords(remoteItem: unknown, localItem: unknown) {
+  const remoteProject = normalizeProject(remoteItem as Project)
+  const localProject = normalizeProject(localItem as Project)
+  const quotes = mergeNestedById(remoteProject.quotes, localProject.quotes)
+  const quoteLines = mergeNestedById(
+    mergeNestedById(remoteProject.quoteLines, localProject.quoteLines),
+    quotes.flatMap(quote => quote.lines),
+  )
+
+  return normalizeProject({
+    ...remoteProject,
+    ...localProject,
+    createdAt: localProject.createdAt || remoteProject.createdAt,
+    updatedAt: mostRecentDate(localProject.updatedAt, remoteProject.updatedAt),
+    quotes,
+    quoteLines,
+    purchaseOrders: mergeNestedById(remoteProject.purchaseOrders, localProject.purchaseOrders),
+    inventory: mergeNestedById(remoteProject.inventory, localProject.inventory),
+  })
+}
+
+function mergeNestedById<T extends { id: string }>(remoteItems: T[] = [], localItems: T[] = []) {
+  const merged = new Map<string, T>()
+  remoteItems.forEach(item => merged.set(item.id, item))
+  localItems.forEach(item => merged.set(item.id, item))
+  return Array.from(merged.values())
+}
+
+function mostRecentDate(a?: string, b?: string) {
+  if (!a) return b
+  if (!b) return a
+  return new Date(a).getTime() >= new Date(b).getTime() ? a : b
 }
 
 type QuotePoSyncResult = {
