@@ -113,14 +113,6 @@
         <h2>Shipping Information</h2>
         <p>Enter the address where this project's materials should be delivered.</p>
       </div>
-      <div v-if="addressSuggestions.length" class="span-2 address-suggestion-list">
-        <span class="address-suggestion-heading">Saved addresses — click one to use it as the shipping address</span>
-        <button v-for="address in addressSuggestions" :key="address.id" class="address-suggestion" type="button" @click="selectShippingAddress(address)">
-          <strong>{{ address.label || address.type }}</strong>
-          <small>{{ [address.streetAddress1, `${address.city}, ${address.state} ${address.zipCode}`.trim()].filter(Boolean).join(' | ') }}</small>
-          <small v-if="address.contactName">Contact: {{ address.contactName }}</small>
-        </button>
-      </div>
       <FormField v-model="form.shippingContactName" label="Shipping Contact" placeholder="Ship-to POC" />
       <FormField v-model="form.shippingEmail" label="Shipping Email" placeholder="shipping@example.com" type="email" />
       <FormField v-model="form.shippingPhone" label="Shipping Phone" placeholder="(555) 555-5555" type="tel" />
@@ -175,9 +167,9 @@ import { useRoute, useRouter } from 'vue-router'
 import { Save, Trash2 } from '@lucide/vue'
 import FormField from '../components/FormField.vue'
 import { fetchSession, loadUsers } from '../services/auth'
-import { applyCustomerAddressToProjectInput, rankAddressSuggestions, searchCustomerSuggestions, syncCustomersFromProjects } from '../services/customerRecords'
+import { applyCustomerAddressToProjectInput, searchCustomerSuggestions, syncCustomersFromProjects } from '../services/customerRecords'
 import { deleteProject, loadProject, loadProjects, updateProjectFromInput } from '../services/localProjects'
-import type { CustomerAddressRecord, Project, ProjectFormInput, Status } from '../types'
+import type { Project, ProjectFormInput, Status } from '../types'
 
 const route = useRoute()
 const router = useRouter()
@@ -238,7 +230,6 @@ const assignableUsers = computed(() => loadUsers().filter(user => user.active))
 const states = ['AL', 'AK', 'AZ', 'AR', 'CA', 'CO', 'CT', 'DE', 'FL', 'GA', 'HI', 'IA', 'ID', 'IL', 'IN', 'KS', 'KY', 'LA', 'MA', 'MD', 'ME', 'MI', 'MN', 'MO', 'MS', 'MT', 'NC', 'ND', 'NE', 'NH', 'NJ', 'NM', 'NV', 'NY', 'OH', 'OK', 'OR', 'PA', 'RI', 'SC', 'SD', 'TN', 'TX', 'UT', 'VA', 'VT', 'WA', 'WI', 'WV', 'WY', 'DC']
 const showCustomerSuggestions = ref(false)
 const customerSuggestions = computed(() => searchCustomerSuggestions(form.customer, 8))
-const addressSuggestions = computed(() => (form.customerId ? rankAddressSuggestions(form.customerId, 6) : []))
 
 onMounted(() => {
   refreshSession()
@@ -368,16 +359,4 @@ function selectCustomer(suggestion: ReturnType<typeof searchCustomerSuggestions>
   showCustomerSuggestions.value = false
 }
 
-function selectShippingAddress(address: CustomerAddressRecord) {
-  form.customerAddressId = address.id
-  form.deliveryAddress = [
-    address.streetAddress1,
-    address.streetAddress2,
-    [address.city, address.state, address.zipCode].filter(Boolean).join(' '),
-    address.country,
-  ].filter(Boolean).join('\n')
-  form.shippingContactName = address.contactName
-  form.shippingEmail = address.email
-  form.shippingPhone = address.phone
-}
 </script>
