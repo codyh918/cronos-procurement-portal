@@ -1,0 +1,31 @@
+{
+  "name": "cronos-procurement-app",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "type-check": "vue-tsc --noEmit -p tsconfig.json",
+    "validate:documents": "node scripts/validate-documents.mjs",
+    "preview": "vite preview --host 0.0.0.0",
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "@lucide/vue": "^1.17.0",
+    "@supabase/supabase-js": "^2.0.0",
+    "jspdf": "^4.2.1",
+    "jszip": "^3.10.1",
+    "pdfjs-dist": "^6.0.227",
+    "pinia": "^3.0.0",
+    "vue": "^3.5.0",
+    "vue-router": "^4.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.20",
+    "@vitejs/plugin-vue": "^5.2.0",
+    "typescript": "^5.6.3",
+    "vite": "^6.3.0",
+    "vue-tsc": "^2.2.12"
+  }
+}
