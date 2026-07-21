@@ -42,7 +42,7 @@ const routes = [
           { path: 'projects/:id/quotes/:quoteId/edit', name: 'edit-project-quote', component: NewQuoteView },
           { path: 'quotes', name: 'quotes', component: QuotesView },
           { path: 'purchase-orders', name: 'purchase-orders', component: PurchaseOrdersView },
-          { path: 'purchase-orders/:poNumber', name: 'purchase-order-detail', component: PurchaseOrderDetailView },
+          { path: 'purchase-orders/:poId', name: 'purchase-order-detail', component: PurchaseOrderDetailView },
           { path: 'vendors', name: 'vendors', component: VendorsView },
           { path: 'catalog', name: 'catalog', component: CatalogView },
           { path: 'customers', name: 'customers', component: CustomersView },
