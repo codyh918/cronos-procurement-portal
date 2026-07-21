@@ -125,7 +125,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { Download } from '@lucide/vue'
 import StatusBadge from '../components/StatusBadge.vue'
@@ -152,10 +152,14 @@ onMounted(() => {
   syncCheckbookTrackingRows()
   reloadPo()
   loaded.value = true
+  window.addEventListener('cronos:projects-changed', reloadPo)
 })
 
+onUnmounted(() => window.removeEventListener('cronos:projects-changed', reloadPo))
+
 function reloadPo() {
-  po.value = loadPurchaseOrder(String(route.params.poId))
+  const identifier = route.params.poId ?? route.params.poNumber
+  po.value = loadPurchaseOrder(String(identifier ?? ''))
 }
 
 function updatePo(

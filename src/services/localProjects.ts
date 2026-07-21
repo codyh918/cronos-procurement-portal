@@ -372,8 +372,11 @@ export function loadPurchaseOrders(): ProjectPurchaseOrder[] {
   )
 }
 
-export function loadPurchaseOrder(poId: string): ProjectPurchaseOrder | undefined {
-  return loadPurchaseOrders().find(po => po.id === poId)
+export function loadPurchaseOrder(identifier: string): ProjectPurchaseOrder | undefined {
+  const normalizedIdentifier = decodeURIComponent(identifier).trim().toLowerCase()
+  return loadPurchaseOrders().find(po =>
+    po.id.toLowerCase() === normalizedIdentifier || po.poNumber.trim().toLowerCase() === normalizedIdentifier,
+  )
 }
 
 export function syncCheckbookTrackingRows() {
