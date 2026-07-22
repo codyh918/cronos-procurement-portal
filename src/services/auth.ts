@@ -1,5 +1,6 @@
 import type { AppRole, UserProfile, UserSession } from '../types'
 import { hydrateLocalCollection, readLocalCollection, saveLocalAndRemoteCollection } from './remoteRecords'
+import { hasSupabaseAuth, signInWithSupabase, signOutSupabase } from './supabaseAuth'
 
 const USERS_KEY = 'cronos.users'
 const SESSION_KEY = 'cronos.session'
@@ -8,6 +9,7 @@ const CURRENT_AUTH_VERSION = 3
 const USERS_REMOTE_TYPE = 'app_users'
 const USERS_REMOTE_KEY = 'all'
 let usersHydration: Promise<UserProfile[]> | null = null
+let pendingSupabaseSession: UserSession | null = null
 
 export const appRoles: AppRole[] = ['Admin', 'Procurement Team']
 
@@ -70,12 +72,26 @@ export function loginUser(email: string, password: string) {
 }
 
 export async function beginLogin(email: string, password: string): Promise<PendingLogin> {
+  if (hasSupabaseAuth()) {
+    const secureUser = await signInWithSupabase(email, password)
+    const users = readStoredUsers()
+    const updated = sortUsers([secureUser, ...users.filter(user => user.id !== secureUser.id && user.email.toLowerCase() !== secureUser.email.toLowerCase())])
+    saveUsers(updated)
+    pendingSupabaseSession = toSession(secureUser)
+    return toPendingLogin(secureUser)
+  }
   await hydrateUsers(true)
   const user = findActiveUser(email, password)
   return toPendingLogin(user)
 }
 
 export async function completeLogin(userId: string, _code = '') {
+  if (pendingSupabaseSession?.id === userId) {
+    const session = pendingSupabaseSession
+    pendingSupabaseSession = null
+    setSession(session)
+    return session
+  }
   await hydrateUsers(true)
   const users = readStoredUsers()
   const user = users.find(item => item.id === userId)
@@ -98,6 +114,7 @@ export function setSession(session: UserSession | null) {
 }
 
 export function logoutUser() {
+  void signOutSupabase()
   setSession(null)
 }
 
