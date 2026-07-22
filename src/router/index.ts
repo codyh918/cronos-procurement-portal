@@ -23,6 +23,10 @@ import PurchaseOrderDetailView from '../views/PurchaseOrderDetailView.vue'
 import PurchaseOrdersView from '../views/PurchaseOrdersView.vue'
 import QuotesView from '../views/QuotesView.vue'
 import VendorsView from '../views/VendorsView.vue'
+import SewpDashboardView from '../views/SewpDashboardView.vue'
+import SewpWorkQueueView from '../views/SewpWorkQueueView.vue'
+import NewSewpRfqView from '../views/NewSewpRfqView.vue'
+import SewpRfqDetailView from '../views/SewpRfqDetailView.vue'
 
 const routes = [
   {
@@ -43,6 +47,11 @@ const routes = [
           { path: 'quotes', name: 'quotes', component: QuotesView },
           { path: 'purchase-orders', name: 'purchase-orders', component: PurchaseOrdersView },
           { path: 'purchase-orders/:poId', name: 'purchase-order-detail', component: PurchaseOrderDetailView },
+          { path: 'sewp-rfqs', redirect: '/sewp-rfqs/dashboard' },
+          { path: 'sewp-rfqs/dashboard', name: 'sewp-dashboard', component: SewpDashboardView },
+          { path: 'sewp-rfqs/work-queue', name: 'sewp-work-queue', component: SewpWorkQueueView },
+          { path: 'sewp-rfqs/new', name: 'new-sewp-rfq', component: NewSewpRfqView },
+          { path: 'sewp-rfqs/:rfqId', name: 'sewp-rfq-detail', component: SewpRfqDetailView },
           { path: 'vendors', name: 'vendors', component: VendorsView },
           { path: 'catalog', name: 'catalog', component: CatalogView },
           { path: 'customers', name: 'customers', component: CustomersView },

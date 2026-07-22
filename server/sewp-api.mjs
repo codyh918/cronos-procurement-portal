@@ -105,6 +105,20 @@ export async function handleSewpApi({ request, response, pathname, sendJson, rea
     return true
   }
 
+  const detailMatch = pathname.match(/^\/api\/sewp-rfqs\/([0-9a-f-]+)$/i)
+  if (request.method === 'GET' && detailMatch) {
+    const allowed = requirePermission(auth, 'sewp.rfq.view')
+    if (!allowed.ok) return deny(response, sendJson, allowed, requestId)
+    const { data, error } = await supabase.from('sewp_rfqs').select('*').eq('id', detailMatch[1]).is('deleted_at', null).maybeSingle()
+    if (error) return databaseError(response, sendJson, error, requestId)
+    if (!data) {
+      sendJson(response, 404, { error: 'SEWP RFQ not found.', requestId })
+      return true
+    }
+    sendJson(response, 200, { record: data, requestId })
+    return true
+  }
+
   const transitionMatch = pathname.match(/^\/api\/sewp-rfqs\/([0-9a-f-]+)\/stage-transitions$/i)
   if (request.method === 'POST' && transitionMatch) {
     const allowed = requirePermission(auth, 'sewp.rfq.transition')
