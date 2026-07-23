@@ -1,255 +1,301 @@
--- Deterministic SEWP email import. Apply after 20260722_create_sewp_rfq_foundation.sql.
-create type public.sewp_import_status as enum (
-  'uploaded','extracting','review_required','ready_for_approval',
-  'creating_project','completed','failed','duplicate','superseded'
-);
+import { createHash } from 'node:crypto'
+import MsgReaderModule from '@kenjiuno/msgreader'
+import * as XLSX from 'xlsx'
 
-alter table public.sewp_rfqs add column if not exists atlas_project_id uuid;
-alter table public.sewp_rfqs add column if not exists sewp_request_id text;
-alter table public.sewp_rfqs add column if not exists modification_level text;
-alter table public.sewp_rfqs add column if not exists import_id uuid;
+const MsgReader = MsgReaderModule.default || MsgReaderModule
 
-create table public.atlas_projects (
-  id uuid primary key default gen_random_uuid(),
-  project_number text not null unique,
-  project_name text not null,
-  project_type text not null default 'SEWP RFQ',
-  status text not null default 'RFQ Received',
-  vehicle text not null default 'SEWP',
-  sewp_rfq_id uuid unique references public.sewp_rfqs(id),
-  sewp_request_id text,
-  agency text,
-  government_customer jsonb not null default '{}'::jsonb,
-  customer_address jsonb not null default '{}'::jsonb,
-  shipping_information jsonb not null default '{}'::jsonb,
-  reply_deadline timestamptz,
-  requirements jsonb not null default '{}'::jsonb,
-  import_warnings jsonb not null default '[]'::jsonb,
-  created_by uuid not null references auth.users(id),
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
+export const RFQ_EXTRACTION_CONFIG = Object.freeze({
+  aiEnabled: false,
+  provider: 'deterministic',
+  extractionSchemaVersion: '1.0',
+  maxFileSize: 25 * 1024 * 1024,
+  allowedDocumentClassifications: ['UNCLASSIFIED'],
+  humanReviewRequired: true,
+})
 
-alter table public.sewp_rfqs
-  add constraint sewp_rfqs_atlas_project_fk foreign key (atlas_project_id) references public.atlas_projects(id);
+export class RfqExtractionProvider {
+  extract() { throw new Error('RfqExtractionProvider.extract must be implemented.') }
+}
 
-create table public.sewp_rfq_imports (
-  id uuid primary key default gen_random_uuid(),
-  status public.sewp_import_status not null default 'uploaded',
-  original_filename text not null,
-  original_file_size bigint not null check (original_file_size > 0),
-  original_file_hash text not null check (original_file_hash ~ '^[0-9a-f]{64}$'),
-  original_storage_key text not null unique,
-  message_subject text,
-  message_id text,
-  sewp_request_id text,
-  agency_id text,
-  modification_level text,
-  imported_by uuid not null references auth.users(id),
-  imported_at timestamptz not null default now(),
-  parser_version text not null,
-  extraction_version text not null,
-  extraction_data jsonb not null default '{}'::jsonb,
-  warnings jsonb not null default '[]'::jsonb,
-  error_message text,
-  approved_at timestamptz,
-  approved_by uuid references auth.users(id),
-  created_rfq_id uuid references public.sewp_rfqs(id),
-  created_project_id uuid references public.atlas_projects(id),
-  idempotency_key text unique,
-  updated_at timestamptz not null default now()
-);
+export class DeterministicRfqExtractionProvider extends RfqExtractionProvider {
+  extract(buffer, originalFilename) {
+    validateMsgUpload(buffer, originalFilename)
+    const reader = new MsgReader(new Uint8Array(buffer))
+    const message = reader.getFileData()
+    if (message.error) throw new Error(`Outlook message could not be parsed: ${message.error}`)
+    const attachments = (message.attachments || []).map((attachment, index) => {
+      const file = reader.getAttachment(index)
+      const content = Buffer.from(file.content)
+      return {
+        filename: sanitizeFilename(file.fileName || attachment.fileName || `attachment-${index + 1}`),
+        mimeType: detectMimeType(content, file.fileName || attachment.fileName),
+        size: content.length,
+        sha256: sha256(content),
+        content,
+      }
+    })
+    const body = String(message.body || htmlToText(message.html || message.bodyHTML) || message.preview || '')
+    const workbook = attachments.find(item => isWorkbook(item.content, item.filename))
+    const lines = workbook ? extractWorkbookLines(workbook.content) : []
+    const workbookMetadata = workbook ? extractWorkbookMetadata(workbook.content) : {}
+    const fields = { ...extractSewpFields(body, message), ...workbookMetadata }
+    const warnings = buildWarnings(fields, lines, attachments)
+    return {
+      provider: 'deterministic',
+      parserVersion: 'msgreader-1.28/xlsx-0.18',
+      extractionVersion: RFQ_EXTRACTION_CONFIG.extractionSchemaVersion,
+      originalFileHash: sha256(buffer),
+      message: {
+        subject: String(message.subject || ''),
+        messageId: headerValue(message.headers, 'Message-ID'),
+        senderName: String(message.senderName || ''),
+        senderEmail: String(message.senderSmtpAddress || message.senderEmail || ''),
+      },
+      fields,
+      participants: classifyParticipants(body, message),
+      attachments,
+      lines,
+      validations: validateAmendment(fields, lines),
+      warnings,
+    }
+  }
+}
 
-alter table public.sewp_rfqs
-  add constraint sewp_rfqs_import_fk foreign key (import_id) references public.sewp_rfq_imports(id);
+export function validateMsgUpload(buffer, filename) {
+  if (!filename?.toLowerCase().endsWith('.msg')) throw new Error('Only Outlook .msg files are supported.')
+  if (!Buffer.isBuffer(buffer) || buffer.length < 512) throw new Error('The uploaded file is empty or too small to be an Outlook message.')
+  if (buffer.length > RFQ_EXTRACTION_CONFIG.maxFileSize) throw new Error('The Outlook message exceeds the 25 MB limit.')
+  const signature = buffer.subarray(0, 8).toString('hex')
+  if (signature !== 'd0cf11e0a1b11ae1') throw new Error('The file signature is not a valid Outlook compound document.')
+}
 
-create unique index sewp_import_exact_duplicate on public.sewp_rfq_imports(original_file_hash);
-create index sewp_import_business_key on public.sewp_rfq_imports(sewp_request_id, modification_level, agency_id);
+export function extractSewpFields(body, message = {}) {
+  const labels = new Map()
+  String(body).replace(/\r/g, '').split('\n').forEach(line => {
+    const match = line.match(/^\s*([A-Za-z][A-Za-z0-9 &#/()_-]{1,60}?)\s*:\s*(.*?)\s*$/)
+    if (match && match[2] && !labels.has(normalizeLabel(match[1]))) labels.set(normalizeLabel(match[1]), match[2].trim())
+  })
+  const value = (...names) => names.map(normalizeLabel).map(name => labels.get(name)).find(Boolean) || ''
+  const requestId = value('Request ID', 'Request ID#', 'Request Seq#', 'RFQ Number', 'Request Number') || firstMatch(body, /\bRFQ\s*(?:#|Number|ID)?\s*[:#-]?\s*(\d{4,})\b/i)
+  const remarks = value('Modification Remarks', 'Modification Remark', 'MOD Remarks')
+    || firstMatch(body, /(The purpose of this amendment[\s\S]{0,500}?)(?:\n\n|All Requests)/i)
+  const city = value('City').replace(/Svco$/i, '').trim()
+  const state = value('State')
+  const zip = value('Zip', 'Postal Code')
+  const customerAddress = [
+    value('Address1', 'Installation / Mail Stop'),
+    value('Address2'), value('Address3'), value('Address4'),
+    [city, state].filter(Boolean).join(', ') + (zip ? ` ${zip}` : ''),
+  ].filter(item => item && item.trim()).join('\n')
+  const modificationLevel = value('Modification Level', 'Amendment Number')
+    || firstMatch(body, /following this modification\s*\(([^)]+)\)/i)
+  const opportunityTitle = firstMatch(body, /requirement for\s+([^.\n]+(?:Equipment|Services|Supplies)?)/i)
+    || firstMatch(message.subject, /RFQ\s+\d+\s*\([^,]+,\s*([^)]+)\)/i)
+  return {
+    email_type: value('Email Type'),
+    request_type: value('Request Type'),
+    sewp_version: value('SEWP Version'),
+    request_id: requestId,
+    agency_id: value('Agency ID'),
+    subject: opportunityTitle || value('Subject') || String(message.subject || '').replace(/^(?:fw|fwd|re):\s*/i, ''),
+    opportunity_title: opportunityTitle,
+    request_date: normalizeDate(value('Request Date')),
+    reply_by_date: normalizeDate(value('Reply By Date', 'Reply Deadline')),
+    reply_by_source_text: value('Reply By Date', 'Reply Deadline'),
+    modification_level: modificationLevel,
+    modification_date: normalizeDate(value('Modification Date', 'Amendment Date', 'Mod Date') || (modificationLevel ? message.messageDeliveryTime : '')),
+    government_poc_first_name: value('Government POC First Name', 'POC First Name', 'First Name'),
+    government_poc_last_name: value('Government POC Last Name', 'POC Last Name', 'Last Name'),
+    government_poc_phone: value('Government POC Phone', 'POC Phone', 'Phone Number'),
+    government_poc_email: value('Government POC Email', 'POC Email', 'Email'),
+    agency: value('Agency'),
+    customer_address: value('Customer Address', 'Agency Address') || customerAddress,
+    ship_to_organization: value('Ship To Organization', 'Ship-To Organization'),
+    ship_to_address: value('Ship To Address', 'Ship-To Address'),
+    delivery_requirement: value('Delivery', 'Delivery Requirement'),
+    allow_questions: parseBoolean(value('Allow Questions', 'Questions Allowed', 'Questions', 'Allow Q&A')),
+    epeat_requirement: parseBoolean(value('EPEAT Requirement', 'EPEAT Required', 'EPEAT Selected Level Only')),
+    taa_required: parseBoolean(value('TAA Required', 'TAA Compliant Products Only')),
+    authorized_reseller_required: parseBoolean(value('Authorized Reseller Required', 'Authorized Reseller Only', 'Authorized Resellers Only')),
+    partial_quotes_allowed: parseBoolean(value('Partial Quotes Allowed', 'Allow Partial Quotes')),
+    partial_delivery_allowed: parseBoolean(value('Partial Delivery Allowed', 'Allow Quotes With Partial Delivery')),
+    used_or_refurbished_allowed: parseBoolean(value('Used or Refurbished Allowed', 'Used Or Refurbished Products Are Acceptable')),
+    alternative_quotes_allowed: parseBoolean(value('Alternative Quotes Allowed', 'Allow Multiple Quotes For Alternative Solutions')),
+    selected_brand_provider_requirement: value('Selected Brand Provider Requirement', 'Selected Brand Name Providers Only'),
+    modification_remarks: remarks,
+    additional_remarks: value('Additional Remarks'),
+    solicitation_status: value('Solicitation Status'),
+    set_aside_description: value('Set Aside Description', 'Set-Aside'),
+  }
+}
 
-create table public.sewp_rfq_import_attachments (
-  id uuid primary key default gen_random_uuid(),
-  import_id uuid not null references public.sewp_rfq_imports(id) on delete cascade,
-  filename text not null,
-  mime_type text not null,
-  file_size bigint not null,
-  file_hash text not null check (file_hash ~ '^[0-9a-f]{64}$'),
-  storage_key text not null unique,
-  document_type text,
-  parse_status text not null,
-  parse_error text,
-  created_at timestamptz not null default now()
-);
+export function extractWorkbookLines(buffer) {
+  const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: false, cellText: true, dense: false })
+  const output = []
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName]
+    const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1:A1')
+    let headerRow = -1
+    let columns = {}
+    for (let row = range.s.r; row <= Math.min(range.e.r, range.s.r + 75); row++) {
+      const candidate = {}
+      for (let col = range.s.c; col <= range.e.c; col++) {
+        const text = cellText(sheet, row, col)
+        const key = canonicalColumn(text)
+        if (key && candidate[key] === undefined) candidate[key] = col
+      }
+      if (candidate.description !== undefined && candidate.quantity !== undefined && (candidate.partNumber !== undefined || candidate.clin !== undefined)) {
+        headerRow = row
+        columns = candidate
+        break
+      }
+    }
+    if (headerRow < 0) continue
+    for (let row = headerRow + 1; row <= range.e.r; row++) {
+      const read = key => columns[key] === undefined ? '' : cellText(sheet, row, columns[key])
+      const description = read('description')
+      const partNumber = read('partNumber')
+      const clin = read('clin')
+      const quantity = parseQuantity(read('quantity'))
+      if (![description, partNumber, clin].some(Boolean) || quantity === null || quantity <= 0) continue
+      output.push({
+        originalOrder: output.length + 1,
+        originalExcelRow: row + 1,
+        clin,
+        brandNameOrEqual: read('brandEqual'),
+        manufacturer: read('manufacturer'),
+        manufacturerPartNumber: partNumber,
+        description,
+        quantity,
+        unitOfIssue: read('unit'),
+        unitPrice: parseOptionalNumber(read('unitPrice')),
+        extendedAmount: parseOptionalNumber(read('extendedAmount')),
+        notes: read('notes'),
+        worksheetName: sheetName,
+        sourceCells: Object.fromEntries(Object.entries(columns).map(([key, col]) => [key, XLSX.utils.encode_cell({ r: row, c: col })])),
+      })
+    }
+  }
+  return output
+}
 
-create table public.atlas_project_material_lines (
-  id uuid primary key default gen_random_uuid(),
-  project_id uuid not null references public.atlas_projects(id) on delete cascade,
-  rfq_id uuid not null references public.sewp_rfqs(id),
-  import_id uuid not null references public.sewp_rfq_imports(id),
-  source_attachment_id uuid references public.sewp_rfq_import_attachments(id),
-  line_order integer not null,
-  clin text,
-  manufacturer text,
-  part_number text,
-  description text,
-  quantity numeric(16,4),
-  unit_of_issue text,
-  unit_price numeric(16,4),
-  extended_amount numeric(16,4),
-  notes text,
-  worksheet_name text,
-  original_excel_row integer,
-  source_cells jsonb not null default '{}'::jsonb,
-  unique(project_id, line_order)
-);
+export function extractWorkbookMetadata(buffer) {
+  const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: false, cellText: true })
+  for (const sheetName of workbook.SheetNames) {
+    const rows = XLSX.utils.sheet_to_json(workbook.Sheets[sheetName], { header: 1, raw: false, defval: '' })
+    for (const row of rows) {
+      const values = row.map(value => String(value || '').trim()).filter(Boolean)
+      const labelIndex = values.findIndex(value => /^Ship to Address\s*:/i.test(value))
+      if (labelIndex < 0 || !values[labelIndex + 1]) continue
+      const rawAddress = values[labelIndex + 1].replace(/\s+/g, ' ').trim()
+      const organization = /^DISA Europe\b/i.test(rawAddress) ? 'DISA Europe' : ''
+      const address = rawAddress
+        .replace(/^DISA Europe\s*/i, '')
+        .replace(/\s+(Bldg\s+\S+)/i, '\n$1')
+        .replace(/\s+(Stuttgart,\s*(?:DE|Germany)\s+\d+)/i, '\n$1')
+        .replace(/\bBldg\b/i, 'BLDG')
+        .replace(/Stuttgart,\s*DE\b/i, 'Stuttgart, Germany')
+      const deliveryRow = rows.find(candidate => candidate.some(value => /^Requested Delivery Date\s*:/i.test(String(value || ''))))
+      const deliveryValues = deliveryRow?.map(value => String(value || '').trim()).filter(Boolean) || []
+      return {
+        ship_to_organization: organization,
+        ship_to_address: address,
+        delivery_requirement: deliveryValues.find(value => !/^Requested Delivery Date\s*:/i.test(value)) || '',
+      }
+    }
+  }
+  return {}
+}
 
-alter table public.atlas_projects enable row level security;
-alter table public.sewp_rfq_imports enable row level security;
-alter table public.sewp_rfq_import_attachments enable row level security;
-alter table public.atlas_project_material_lines enable row level security;
+function canonicalColumn(value) {
+  const key = normalizeLabel(value).replace(/[#:?()]/g, '').replace(/\s+/g, ' ').trim()
+  const aliases = {
+    clin: ['clin', 'item', 'item number', 'item proposed clin', 'line', 'line number'],
+    brandEqual: ['brand name bn or equal', 'brand name or equal', 'brand or equal', 'brand/equal', 'type'],
+    manufacturer: ['manufacturer', 'manufacturer name', 'mfr', 'make'],
+    partNumber: ['manufacturer part number', 'part number', 'mfr part number', 'mpn'],
+    description: ['description', 'item description', 'product description'],
+    quantity: ['quantity', 'qty'],
+    unit: ['unit of issue', 'uoi', 'unit', 'uom'],
+    unitPrice: ['unit price', 'price'],
+    extendedAmount: ['extended amount', 'extended price', 'total'],
+    notes: ['notes', 'remarks'],
+  }
+  return Object.entries(aliases).find(([, values]) => values.includes(key))?.[0]
+}
 
-create policy sewp_projects_read on public.atlas_projects for select to authenticated
-  using (public.sewp_has_permission('sewp.rfq.view'));
-create policy sewp_imports_read on public.sewp_rfq_imports for select to authenticated
-  using (public.sewp_has_permission('sewp.rfq.view'));
-create policy sewp_import_attachments_read on public.sewp_rfq_import_attachments for select to authenticated
-  using (public.sewp_has_permission('sewp.rfq.view'));
-create policy sewp_project_lines_read on public.atlas_project_material_lines for select to authenticated
-  using (public.sewp_has_permission('sewp.rfq.view'));
+function classifyParticipants(body, message) {
+  const participants = []
+  const seen = new Set()
+  const add = (email, name, role, evidence) => {
+    email = String(email || '').trim().toLowerCase()
+    if (!email || seen.has(`${email}:${role}`)) return
+    seen.add(`${email}:${role}`)
+    participants.push({ email, name: String(name || '').trim(), role, evidence })
+  }
+  add(message.senderSmtpAddress || message.senderEmail, message.senderName, 'internal_forwarder', 'outer Outlook sender')
+  for (const match of String(body).matchAll(/(?:From|Sender)\s*:\s*(.*?)<?([\w.+-]+@[\w.-]+\.[A-Za-z]{2,})>?/gi)) {
+    const email = match[2]
+    const context = match[0]
+    const role = /sewp/i.test(email + context) ? 'sewp_notification_sender' : 'intermediary'
+    add(email, match[1], role, context)
+  }
+  const fields = extractSewpFields(body, message)
+  add(fields.government_poc_email, `${fields.government_poc_first_name} ${fields.government_poc_last_name}`, 'government_customer', 'explicit SEWP POC fields')
+  return participants
+}
 
-alter table storage.buckets drop constraint if exists buckets_allowed_mime_types_check;
-update storage.buckets
-set allowed_mime_types = array_append(coalesce(allowed_mime_types, '{}'::text[]), 'application/vnd.ms-outlook')
-where id = 'sewp-rfq-documents' and not ('application/vnd.ms-outlook' = any(coalesce(allowed_mime_types, '{}'::text[])));
+function buildWarnings(fields, lines, attachments) {
+  const warnings = []
+  const warn = (category, message, affectedField = '') => warnings.push({ severity: 'warning', category, message, affectedField, resolutionStatus: 'open' })
+  if (!fields.request_id) warn('missing_value', 'SEWP request ID was not found.', 'request_id')
+  if (!fields.government_poc_email) warn('missing_value', 'Government POC email is missing.', 'government_poc_email')
+  if (!fields.customer_address) warn('missing_value', 'Customer address is missing.', 'customer_address')
+  if (!fields.ship_to_address) warn('missing_value', 'Ship-to address is missing.', 'ship_to_address')
+  if (!lines.length) warn('unreadable_attachment', 'No equipment line-item table was found.')
+  lines.forEach((line, index) => {
+    if (!line.manufacturer) warn('blank_manufacturer', `Line ${index + 1} has no stated manufacturer.`, `lines.${index}.manufacturer`)
+    if (!line.quantity || line.quantity <= 0) warn('invalid_value', `Line ${index + 1} has an invalid quantity.`, `lines.${index}.quantity`)
+  })
+  if (!attachments.length) warn('missing_attachment', 'The message contains no attachments.')
+  return warnings
+}
 
-comment on table public.sewp_rfq_imports is 'Human-reviewed deterministic email imports; raw CUI stays in private storage.';
-comment on table public.atlas_projects is 'Server-side project records created atomically from approved SEWP imports.';
+function validateAmendment(fields, lines) {
+  const parts = [...String(fields.modification_remarks || '').matchAll(/\b[A-Z0-9][A-Z0-9._/-]{4,}\b/g)].map(match => match[0])
+  const discontinued = parts.filter(part => /discontinu/i.test(String(fields.modification_remarks).slice(Math.max(0, fields.modification_remarks.indexOf(part) - 80), fields.modification_remarks.indexOf(part) + part.length + 80)))
+  return discontinued.map(partNumber => ({
+    type: 'discontinued_part',
+    partNumber,
+    status: lines.some(line => line.manufacturerPartNumber.toUpperCase() === partNumber.toUpperCase()) ? 'error' : 'passed',
+    message: lines.some(line => line.manufacturerPartNumber.toUpperCase() === partNumber.toUpperCase())
+      ? `${partNumber} is marked discontinued but remains in the equipment list.`
+      : `${partNumber} is marked discontinued and is not being imported.`,
+  }))
+}
 
-create or replace function public.approve_sewp_rfq_import(
-  p_import_id uuid,
-  p_actor_user_id uuid,
-  p_idempotency_key text,
-  p_request_id uuid
-) returns jsonb
-language plpgsql
-security definer
-set search_path = public
-as $$
-declare
-  imported public.sewp_rfq_imports;
-  fields jsonb;
-  line jsonb;
-  attachment public.sewp_rfq_import_attachments;
-  rfq public.sewp_rfqs;
-  project public.atlas_projects;
-  opportunity_number text;
-  project_title text;
-begin
-  select * into imported from public.sewp_rfq_imports where id = p_import_id for update;
-  if not found then raise exception 'RFQ import not found' using errcode = 'P0002'; end if;
-  if imported.idempotency_key = p_idempotency_key and imported.status = 'completed' then
-    return jsonb_build_object('rfqId', imported.created_rfq_id, 'projectId', imported.created_project_id, 'duplicateRequest', true);
-  end if;
-  if imported.status not in ('review_required', 'ready_for_approval') then
-    raise exception 'RFQ import is not ready for approval';
-  end if;
-  if exists(select 1 from public.sewp_rfq_imports where idempotency_key = p_idempotency_key and id <> p_import_id) then
-    raise exception 'Idempotency key has already been used' using errcode = '23505';
-  end if;
-
-  fields := imported.extraction_data -> 'fields';
-  if coalesce(fields ->> 'request_id', '') = '' then raise exception 'SEWP request ID is required'; end if;
-  update public.sewp_rfq_imports set status = 'creating_project', idempotency_key = p_idempotency_key where id = p_import_id;
-  opportunity_number := public.next_sewp_opportunity_number(extract(year from now())::integer);
-  project_title := coalesce(nullif(fields ->> 'opportunity_title', ''), nullif(fields ->> 'subject', ''), imported.message_subject, 'Imported RFQ');
-
-  insert into public.sewp_rfqs(
-    atlas_opportunity_number, official_rfq_number, title, agency, customer_organization,
-    source, set_aside, current_stage, ai_review_status, response_due_at, notes,
-    created_by, updated_by, sewp_request_id, modification_level, import_id
-  ) values (
-    opportunity_number, fields ->> 'request_id', project_title, fields ->> 'agency',
-    coalesce(fields ->> 'suborganization', fields ->> 'agency'), 'SEWP', fields ->> 'set_aside_description',
-    'Intake Review Required', 'Needs Review', nullif(fields ->> 'reply_by_date', '')::timestamptz,
-    fields ->> 'additional_remarks', p_actor_user_id, p_actor_user_id,
-    fields ->> 'request_id', fields ->> 'modification_level', p_import_id
-  ) returning * into rfq;
-
-  insert into public.atlas_projects(
-    project_number, project_name, sewp_rfq_id, sewp_request_id, agency,
-    government_customer, customer_address, shipping_information, reply_deadline,
-    requirements, import_warnings, created_by
-  ) values (
-    opportunity_number, format('SEWP RFQ %s - %s', fields ->> 'request_id', project_title),
-    rfq.id, fields ->> 'request_id', fields ->> 'agency',
-    jsonb_build_object(
-      'organization', coalesce(fields ->> 'suborganization', fields ->> 'agency'),
-      'pocFirstName', fields ->> 'government_poc_first_name',
-      'pocLastName', fields ->> 'government_poc_last_name',
-      'pocEmail', fields ->> 'government_poc_email',
-      'pocPhone', fields ->> 'government_poc_phone'
-    ),
-    jsonb_build_object('formatted', fields ->> 'customer_address'),
-    jsonb_build_object('organization', fields ->> 'ship_to_organization', 'address', fields ->> 'ship_to_address'),
-    nullif(fields ->> 'reply_by_date', '')::timestamptz,
-    fields - array['customer_address','ship_to_address'],
-    imported.warnings, p_actor_user_id
-  ) returning * into project;
-
-  update public.sewp_rfqs set atlas_project_id = project.id where id = rfq.id returning * into rfq;
-
-  for attachment in select * from public.sewp_rfq_import_attachments where import_id = p_import_id loop
-    insert into public.sewp_rfq_documents(
-      rfq_id, category, display_name, storage_object_key, detected_mime_type,
-      file_size_bytes, sha256, processing_status, uploaded_by
-    ) values (
-      rfq.id, attachment.document_type, attachment.filename, attachment.storage_key,
-      attachment.mime_type, attachment.file_size, attachment.file_hash, 'Extraction Complete', p_actor_user_id
-    );
-  end loop;
-  insert into public.sewp_rfq_documents(
-    rfq_id, category, display_name, storage_object_key, detected_mime_type,
-    file_size_bytes, sha256, processing_status, uploaded_by
-  ) values (
-    rfq.id, 'original_email', imported.original_filename, imported.original_storage_key,
-    'application/vnd.ms-outlook', imported.original_file_size, imported.original_file_hash, 'Extraction Complete', p_actor_user_id
-  );
-
-  for line in select value from jsonb_array_elements(coalesce(imported.extraction_data -> 'lines', '[]'::jsonb)) loop
-    insert into public.sewp_rfq_line_items(
-      rfq_id, line_number, clin, manufacturer, requested_part_number, description,
-      quantity, unit_of_measure, notes, review_status, created_by, updated_by
-    ) values (
-      rfq.id, line ->> 'originalOrder', line ->> 'clin', line ->> 'manufacturer',
-      line ->> 'manufacturerPartNumber', line ->> 'description',
-      nullif(line ->> 'quantity', '')::numeric, line ->> 'unitOfIssue', line ->> 'notes',
-      'Needs Review', p_actor_user_id, p_actor_user_id
-    );
-    insert into public.atlas_project_material_lines(
-      project_id, rfq_id, import_id, line_order, clin, manufacturer, part_number,
-      description, quantity, unit_of_issue, unit_price, extended_amount, notes,
-      worksheet_name, original_excel_row, source_cells
-    ) values (
-      project.id, rfq.id, p_import_id, (line ->> 'originalOrder')::integer,
-      line ->> 'clin', line ->> 'manufacturer', line ->> 'manufacturerPartNumber',
-      line ->> 'description', nullif(line ->> 'quantity', '')::numeric, line ->> 'unitOfIssue',
-      nullif(line ->> 'unitPrice', '')::numeric, nullif(line ->> 'extendedAmount', '')::numeric,
-      line ->> 'notes', line ->> 'worksheetName', (line ->> 'originalExcelRow')::integer,
-      coalesce(line -> 'sourceCells', '{}'::jsonb)
-    );
-  end loop;
-
-  insert into public.sewp_rfq_audit_events(
-    rfq_id, actor_type, actor_user_id, action, entity_type, entity_id, new_value, request_id
-  ) values (
-    rfq.id, 'User', p_actor_user_id, 'rfq_import.approved_and_project_created',
-    'rfq_import', p_import_id, jsonb_build_object('projectId', project.id, 'lineCount', jsonb_array_length(coalesce(imported.extraction_data -> 'lines', '[]'::jsonb))), p_request_id
-  );
-  update public.sewp_rfq_imports set
-    status = 'completed', approved_at = now(), approved_by = p_actor_user_id,
-    created_rfq_id = rfq.id, created_project_id = project.id, updated_at = now()
-  where id = p_import_id;
-  return jsonb_build_object('rfqId', rfq.id, 'projectId', project.id, 'projectNumber', project.project_number, 'duplicateRequest', false);
-end;
-$$;
-
-revoke all on function public.approve_sewp_rfq_import(uuid,uuid,text,uuid) from public, anon, authenticated;
+function sanitizeFilename(value) { return String(value || 'attachment').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/^\.+/, '').slice(0, 180) || 'attachment' }
+function sha256(value) { return createHash('sha256').update(value).digest('hex') }
+function normalizeLabel(value) { return String(value || '').trim().toLowerCase().replace(/[_-]+/g, ' ').replace(/\s+/g, ' ') }
+function firstMatch(value, regex) { return String(value || '').match(regex)?.[1] || '' }
+function parseBoolean(value) { if (/^(yes|y|true|required|allowed)$/i.test(value)) return true; if (/^(no|n|false|not required|not allowed)$/i.test(value)) return false; return null }
+function normalizeDate(value) { if (!value) return null; const parsed = new Date(value); return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString() }
+function parseQuantity(value) { const number = Number(String(value).replace(/,/g, '').trim()); return Number.isFinite(number) ? number : null }
+function parseOptionalNumber(value) { if (!String(value).trim()) return null; const number = Number(String(value).replace(/[$,]/g, '')); return Number.isFinite(number) ? number : null }
+function cellText(sheet, row, col) { const cell = sheet[XLSX.utils.encode_cell({ r: row, c: col })]; return cell ? String(cell.w ?? cell.v ?? '').trim() : '' }
+function headerValue(headers, name) { return firstMatch(headers, new RegExp(`^${name}:\\s*(.+)$`, 'im')) }
+function isWorkbook(buffer, filename) { return /\.(xlsx|xls)$/i.test(filename || '') && (buffer.subarray(0, 4).toString('hex') === '504b0304' || buffer.subarray(0, 8).toString('hex') === 'd0cf11e0a1b11ae1') }
+function detectMimeType(buffer, filename) { if (isWorkbook(buffer, filename)) return /\.xlsx$/i.test(filename) ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/vnd.ms-excel'; if (buffer.subarray(0, 4).toString() === '%PDF') return 'application/pdf'; return 'application/octet-stream' }
+function htmlToText(value) {
+  const source = value instanceof Uint8Array ? new TextDecoder('utf-8').decode(value) : String(value || '')
+  return source
+    .replace(/<\s*br\s*\/?>/gi, '\n')
+    .replace(/<\s*\/(?:p|div|tr|li|h[1-6])\s*>/gi, '\n')
+    .replace(/<\s*(?:td|th)\b[^>]*>/gi, '')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;|&#160;/gi, ' ')
+    .replace(/&amp;/gi, '&').replace(/&lt;/gi, '<').replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"').replace(/&#39;|&apos;/gi, "'")
+    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
+    .replace(/\r/g, '').replace(/[ \t]+\n/g, '\n').replace(/\n{3,}/g, '\n\n')
+}
