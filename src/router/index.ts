@@ -27,6 +27,7 @@ import SewpDashboardView from '../views/SewpDashboardView.vue'
 import SewpWorkQueueView from '../views/SewpWorkQueueView.vue'
 import NewSewpRfqView from '../views/NewSewpRfqView.vue'
 import SewpRfqDetailView from '../views/SewpRfqDetailView.vue'
+import SewpRfqImportView from '../views/SewpRfqImportView.vue'
 
 const routes = [
   {
@@ -51,6 +52,7 @@ const routes = [
           { path: 'sewp-rfqs/dashboard', name: 'sewp-dashboard', component: SewpDashboardView },
           { path: 'sewp-rfqs/work-queue', name: 'sewp-work-queue', component: SewpWorkQueueView },
           { path: 'sewp-rfqs/new', name: 'new-sewp-rfq', component: NewSewpRfqView },
+          { path: 'sewp-rfqs/import', name: 'import-sewp-rfq', component: SewpRfqImportView },
           { path: 'sewp-rfqs/:rfqId', name: 'sewp-rfq-detail', component: SewpRfqDetailView },
           { path: 'vendors', name: 'vendors', component: VendorsView },
           { path: 'catalog', name: 'catalog', component: CatalogView },

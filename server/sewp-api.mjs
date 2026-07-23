@@ -3,8 +3,9 @@ import { authenticateSewpRequest, requirePermission } from './sewp-auth.mjs'
 import { loadSewpConfig, sewpConfigStatus } from './sewp-config.mjs'
 import { getSewpSupabase } from './sewp-supabase.mjs'
 import { validateCreateRfq, validatePagination, validateStageTransition } from './sewp-validation.mjs'
+import { handleSewpImportApi } from './sewp-import-api.mjs'
 
-export async function handleSewpApi({ request, response, pathname, sendJson, readJsonBody }) {
+export async function handleSewpApi({ request, response, pathname, sendJson, readJsonBody, readBufferBody }) {
   if (!pathname.startsWith('/api/sewp-rfqs')) return false
 
   const requestId = randomUUID()
@@ -32,6 +33,8 @@ export async function handleSewpApi({ request, response, pathname, sendJson, rea
     sendJson(response, 503, { error: 'SEWP database service is not configured.', requestId })
     return true
   }
+
+  if (await handleSewpImportApi({ request, response, pathname, sendJson, readJsonBody, readBufferBody, supabase, auth, requestId })) return true
 
   if (request.method === 'GET' && pathname === '/api/sewp-rfqs') {
     const allowed = requirePermission(auth, 'sewp.rfq.view')

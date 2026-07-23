@@ -50,13 +50,26 @@
             </td>
             <template v-if="showPricingControls">
               <td>
+                <select
+                  class="cell-input w-28"
+                  :value="line.pricingMode ?? 'markup'"
+                  :aria-label="`Pricing method for ${line.partNumber || 'line'}`"
+                  @change="updatePricingMode(line.id, inputValue($event))"
+                >
+                  <option value="markup">Markup</option>
+                  <option value="margin">Margin</option>
+                </select>
+              </td>
+              <td>
                 <input
                   class="cell-input w-24"
                   type="number"
                   min="0"
+                  :max="line.pricingMode === 'margin' ? 99.99 : undefined"
                   step="0.01"
-                  :value="line.markupPercent"
-                  @input="updateLine(line.id, { pricingMode: 'markup', markupPercent: numberValue($event) })"
+                  :value="line.pricingMode === 'margin' ? line.marginPercent : line.markupPercent"
+                  :aria-label="`${line.pricingMode === 'margin' ? 'Margin' : 'Markup'} percentage for ${line.partNumber || 'line'}`"
+                  @input="updatePricingPercent(line, numberValue($event))"
                 />
               </td>
             </template>
@@ -127,7 +140,7 @@ const headings = computed(() => [
   'Description',
   'Qty',
   'Unit Cost',
-  ...(props.showPricingControls ? ['Markup %'] : []),
+  ...(props.showPricingControls ? ['Pricing Method', 'Percent %'] : []),
   'Vendor',
   'Vendor Quote #',
   'Lead Time',
@@ -142,6 +155,14 @@ function updateLine(id: string, updates: Partial<QuoteLine>) {
     'change',
     applySequentialClins(props.lines.map(line => (line.id === id ? { ...line, ...updates } : line))),
   )
+}
+
+function updatePricingMode(id: string, value: string) {
+  updateLine(id, { pricingMode: value === 'margin' ? 'margin' : 'markup' })
+}
+
+function updatePricingPercent(line: QuoteLine, value: number) {
+  updateLine(line.id, line.pricingMode === 'margin' ? { marginPercent: value } : { markupPercent: value })
 }
 
 onMounted(() => {
