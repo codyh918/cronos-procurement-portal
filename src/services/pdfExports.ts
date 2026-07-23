@@ -233,8 +233,9 @@ function drawCustomerInfoBox(doc: JsPdf, x: number, y: number, width: number, he
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8.5)
   addressLines.forEach(line => {
-    doc.text(AtlasWrappedText(doc, line, width - 20), x + 10, textY)
-    textY += 11
+    const wrapped = AtlasWrappedText(doc, line, width - 20)
+    doc.text(wrapped, x + 10, textY)
+    textY += Math.max(11, wrapped.length * 10)
   })
 
   if (customer.email) {
