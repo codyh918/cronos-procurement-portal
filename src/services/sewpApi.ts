@@ -35,6 +35,33 @@ export function deleteSewpRfq(id: string) {
   )
 }
 
+export interface DeletedSewpRfq {
+  id: string
+  atlas_opportunity_number: string
+  official_rfq_number: string
+  title: string
+  agency: string | null
+  current_stage: SewpStage
+  deleted_at: string
+  atlas_project_id: string | null
+  import_id: string | null
+}
+
+export function listDeletedSewpRfqs() {
+  return sewpApiRequest<{ records: DeletedSewpRfq[] }>('/api/sewp-rfqs/deleted')
+}
+
+export function restoreSewpRfq(id: string) {
+  return sewpApiRequest<{ record: SewpRfq }>(`/api/sewp-rfqs/${encodeURIComponent(id)}/restore`, { method: 'POST' })
+}
+
+export function permanentlyDeleteSewpRfq(id: string) {
+  return sewpApiRequest<{ result: { rfqId: string; officialRfqNumber: string; projectId: string | null; importId: string | null }; storageWarnings: string[] }>(
+    `/api/sewp-rfqs/${encodeURIComponent(id)}/permanent`,
+    { method: 'DELETE' },
+  )
+}
+
 export function createSewpRfq(input: SewpCreateInput) {
   return sewpApiRequest<{ record: SewpRfq }>('/api/sewp-rfqs', {
     method: 'POST',

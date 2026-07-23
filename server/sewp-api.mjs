@@ -55,6 +55,19 @@ export async function handleSewpApi({ request, response, pathname, sendJson, rea
     return true
   }
 
+  if (request.method === 'GET' && pathname === '/api/sewp-rfqs/deleted') {
+    const allowed = requirePermission(auth, 'sewp.rfq.edit')
+    if (!allowed.ok) return deny(response, sendJson, allowed, requestId)
+    const { data, error } = await supabase
+      .from('sewp_rfqs')
+      .select('id,atlas_opportunity_number,official_rfq_number,title,agency,current_stage,deleted_at,atlas_project_id,import_id')
+      .not('deleted_at', 'is', null)
+      .order('deleted_at', { ascending: false })
+    if (error) return databaseError(response, sendJson, error, requestId)
+    sendJson(response, 200, { records: data || [], requestId })
+    return true
+  }
+
   if (request.method === 'POST' && pathname === '/api/sewp-rfqs') {
     const allowed = requirePermission(auth, 'sewp.rfq.create')
     if (!allowed.ok) return deny(response, sendJson, allowed, requestId)
@@ -236,6 +249,84 @@ export async function handleSewpApi({ request, response, pathname, sendJson, rea
     return true
   }
 
+  const restoreMatch = pathname.match(/^\/api\/sewp-rfqs\/([0-9a-f-]+)\/restore$/i)
+  if (request.method === 'POST' && restoreMatch) {
+    const allowed = requirePermission(auth, 'sewp.rfq.edit')
+    if (!allowed.ok) return deny(response, sendJson, allowed, requestId)
+    const { data: existing, error: findError } = await supabase.from('sewp_rfqs').select('*').eq('id', restoreMatch[1]).not('deleted_at', 'is', null).maybeSingle()
+    if (findError) return databaseError(response, sendJson, findError, requestId)
+    if (!existing) {
+      sendJson(response, 404, { error: 'Deleted SEWP RFQ not found.', requestId })
+      return true
+    }
+    const restoredAt = new Date().toISOString()
+    const { data, error } = await supabase.from('sewp_rfqs').update({
+      deleted_at: null,
+      current_stage: 'Intake Review Required',
+      version: existing.version + 1,
+      updated_by: auth.user.id,
+      updated_at: restoredAt,
+    }).eq('id', existing.id).not('deleted_at', 'is', null).select('*').single()
+    if (error) return databaseError(response, sendJson, error, requestId)
+    await writeAudit(supabase, {
+      rfqId: existing.id,
+      actorUserId: auth.user.id,
+      action: 'rfq.restored',
+      entityType: 'sewp_rfq',
+      entityId: existing.id,
+      previousValue: { deleted_at: existing.deleted_at, current_stage: existing.current_stage, version: existing.version },
+      newValue: { deleted_at: null, current_stage: data.current_stage, version: data.version },
+      requestId,
+    })
+    sendJson(response, 200, { record: data, requestId })
+    return true
+  }
+
+  const purgeMatch = pathname.match(/^\/api\/sewp-rfqs\/([0-9a-f-]+)\/permanent$/i)
+  if (request.method === 'DELETE' && purgeMatch) {
+    if (auth.user.role !== 'admin') {
+      sendJson(response, 403, { error: 'Administrator access is required to permanently delete test data.', requestId })
+      return true
+    }
+    const { data: target, error: targetError } = await supabase
+      .from('sewp_rfqs')
+      .select('id,import_id')
+      .eq('id', purgeMatch[1])
+      .not('deleted_at', 'is', null)
+      .maybeSingle()
+    if (targetError) return databaseError(response, sendJson, targetError, requestId)
+    if (!target) {
+      sendJson(response, 404, { error: 'Deleted SEWP RFQ not found.', requestId })
+      return true
+    }
+    const storageKeys = []
+    const documents = await supabase.from('sewp_rfq_documents').select('storage_bucket,storage_object_key').eq('rfq_id', target.id)
+    if (documents.error) return databaseError(response, sendJson, documents.error, requestId)
+    for (const document of documents.data || []) storageKeys.push({ bucket: document.storage_bucket, key: document.storage_object_key })
+    if (target.import_id) {
+      const [imported, attachments] = await Promise.all([
+        supabase.from('sewp_rfq_imports').select('original_storage_key').eq('id', target.import_id).maybeSingle(),
+        supabase.from('sewp_rfq_import_attachments').select('storage_key').eq('import_id', target.import_id),
+      ])
+      if (imported.error) return databaseError(response, sendJson, imported.error, requestId)
+      if (attachments.error) return databaseError(response, sendJson, attachments.error, requestId)
+      if (imported.data?.original_storage_key) storageKeys.push({ bucket: 'sewp-rfq-documents', key: imported.data.original_storage_key })
+      for (const attachment of attachments.data || []) storageKeys.push({ bucket: 'sewp-rfq-documents', key: attachment.storage_key })
+    }
+    const { data, error } = await supabase.rpc('purge_deleted_sewp_rfq_test_data', { p_rfq_id: target.id })
+    if (error) return databaseError(response, sendJson, error, requestId)
+    const storageWarnings = []
+    for (const [bucket, objects] of groupStorageKeys(storageKeys)) {
+      const removal = await supabase.storage.from(bucket).remove([...new Set(objects)])
+      if (removal.error) storageWarnings.push(`Unable to remove ${objects.length} object(s) from ${bucket}.`)
+    }
+    console.warn('[SEWP API] administrator permanently purged RFQ test data', {
+      requestId, actorUserId: auth.user.id, rfqId: target.id, storageWarnings,
+    })
+    sendJson(response, 200, { result: data, storageWarnings, requestId })
+    return true
+  }
+
   const transitionMatch = pathname.match(/^\/api\/sewp-rfqs\/([0-9a-f-]+)\/stage-transitions$/i)
   if (request.method === 'POST' && transitionMatch) {
     const allowed = requirePermission(auth, 'sewp.rfq.transition')
@@ -297,4 +388,10 @@ function databaseError(response, sendJson, error, requestId) {
 
 function escapeFilter(value) {
   return value.replace(/[%_,()]/g, '')
+}
+
+function groupStorageKeys(items) {
+  const groups = new Map()
+  for (const item of items) groups.set(item.bucket, [...(groups.get(item.bucket) || []), item.key])
+  return groups
 }
