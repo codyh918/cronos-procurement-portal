@@ -28,6 +28,13 @@ export function getSewpRfq(id: string) {
   return sewpApiRequest<{ record: SewpRfq }>(`/api/sewp-rfqs/${encodeURIComponent(id)}`)
 }
 
+export function deleteSewpRfq(id: string) {
+  return sewpApiRequest<{ record: Pick<SewpRfq, 'id' | 'official_rfq_number' | 'atlas_opportunity_number' | 'current_stage' | 'version'> & { deleted_at: string } }>(
+    `/api/sewp-rfqs/${encodeURIComponent(id)}`,
+    { method: 'DELETE' },
+  )
+}
+
 export function createSewpRfq(input: SewpCreateInput) {
   return sewpApiRequest<{ record: SewpRfq }>('/api/sewp-rfqs', {
     method: 'POST',

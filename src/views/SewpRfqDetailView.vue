@@ -1,6 +1,6 @@
 <template>
   <main class="sewp-page">
-    <div class="sewp-heading-row"><div><RouterLink class="sewp-back" to="/sewp-rfqs/work-queue">Back to work queue</RouterLink><h1>{{ rfq?.atlas_opportunity_number || 'RFQ Workspace' }}</h1><p>{{ rfq ? `${rfq.official_rfq_number} - ${rfq.title}` : 'Loading opportunity...' }}</p></div><SewpPortalNav /></div>
+    <div class="sewp-heading-row"><div><RouterLink class="sewp-back" to="/sewp-rfqs/work-queue">Back to work queue</RouterLink><h1>{{ rfq?.atlas_opportunity_number || 'RFQ Workspace' }}</h1><p>{{ rfq ? `${rfq.official_rfq_number} - ${rfq.title}` : 'Loading opportunity...' }}</p></div><div class="heading-tools"><button v-if="rfq" class="danger-action" :disabled="deleting" @click="deleteOpportunity"><Trash2 :size="16"/>{{ deleting ? 'Deleting…' : 'Delete Opportunity' }}</button><SewpPortalNav /></div></div>
     <div v-if="error" class="sewp-alert error">{{ error }}</div><div v-else-if="!rfq || !workspace" class="sewp-panel sewp-empty">Loading secure RFQ workspace...</div>
     <template v-else>
       <section class="sewp-stage-card"><div><span>Current stage</span><strong>{{ rfq.current_stage }}</strong><small>Record version {{ rfq.version }}</small></div><div class="sewp-transition"><select v-model="target"><option v-for="s in sewpStages" :key="s">{{ s }}</option></select><input v-model.trim="note" placeholder="Transition note" /><button class="primary-action" :disabled="busy || target === rfq.current_stage" @click="changeStage">{{ busy ? 'Updating...' : 'Update Stage' }}</button></div></section>
@@ -49,17 +49,18 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRoute } from 'vue-router'
-import { Download } from '@lucide/vue'
+import { useRoute, useRouter } from 'vue-router'
+import { Download, Trash2 } from '@lucide/vue'
 import SewpPortalNav from '../components/SewpPortalNav.vue'
-import { getSewpDocumentDownload, getSewpRfq, getSewpWorkspace, transitionSewpRfq, type SewpWorkspace } from '../services/sewpApi'
+import { deleteSewpRfq, getSewpDocumentDownload, getSewpRfq, getSewpWorkspace, transitionSewpRfq, type SewpWorkspace } from '../services/sewpApi'
 import { sewpStages, type SewpRfq, type SewpStage } from '../types/sewp'
-const route=useRoute(),rfq=ref<SewpRfq|null>(null),workspace=ref<SewpWorkspace|null>(null),error=ref(''),busy=ref(false),downloading=ref(''),note=ref(''),target=ref<SewpStage>('New'),tab=ref('Overview')
+const route=useRoute(),router=useRouter(),rfq=ref<SewpRfq|null>(null),workspace=ref<SewpWorkspace|null>(null),error=ref(''),busy=ref(false),deleting=ref(false),downloading=ref(''),note=ref(''),target=ref<SewpStage>('New'),tab=ref('Overview')
 const tabs=['Overview','Documents','BOM','Requirements','Tasks','Audit']
 const requirementFields=[{key:'taa_required',label:'TAA required'},{key:'authorized_reseller_required',label:'Authorized reseller required'},{key:'partial_quotes_allowed',label:'Partial quotes allowed'},{key:'partial_delivery_allowed',label:'Partial delivery allowed'},{key:'used_or_refurbished_allowed',label:'Used/refurbished allowed'},{key:'allow_questions',label:'Questions allowed'}]
 onMounted(async()=>{try{const id=String(route.params.rfqId);const [record,data]=await Promise.all([getSewpRfq(id),getSewpWorkspace(id)]);rfq.value=record.record;workspace.value=data;target.value=record.record.current_stage}catch(e){error.value=e instanceof Error?e.message:'Unable to load RFQ workspace.'}})
 async function changeStage(){if(!rfq.value)return;busy.value=true;try{rfq.value=(await transitionSewpRfq(rfq.value.id,target.value,rfq.value.version,note.value)).record;note.value='';workspace.value=await getSewpWorkspace(rfq.value.id)}catch(e){error.value=e instanceof Error?e.message:'Unable to update stage.'}finally{busy.value=false}}
 async function download(documentId:string){if(!rfq.value)return;downloading.value=documentId;error.value='';try{const result=await getSewpDocumentDownload(rfq.value.id,documentId);window.location.assign(result.url)}catch(e){error.value=e instanceof Error?e.message:'Unable to download document.'}finally{downloading.value=''}}
+async function deleteOpportunity(){if(!rfq.value)return;const confirmation=window.prompt(`Delete ${rfq.value.atlas_opportunity_number}?\\n\\nThis removes it from the SEWP Portal but preserves its audit history and documents. Type the official RFQ number ${rfq.value.official_rfq_number} to confirm.`);if(confirmation?.trim()!==rfq.value.official_rfq_number){if(confirmation!==null)error.value='The RFQ number did not match. Nothing was deleted.';return}deleting.value=true;error.value='';try{await deleteSewpRfq(rfq.value.id);await router.push('/sewp-rfqs/work-queue')}catch(e){error.value=e instanceof Error?e.message:'Unable to delete the opportunity.'}finally{deleting.value=false}}
 const totalQuantity=computed(()=>workspace.value?.lines.reduce((sum,line)=>sum+Number(line.quantity||0),0)||0)
 const blankManufacturers=computed(()=>workspace.value?.lines.filter(line=>!line.manufacturer).length||0)
 const governmentPoc=computed(()=>{const project=workspace.value?.project?.government_customer;return project?[project.pocFirstName,project.pocLastName,project.pocEmail].filter(Boolean).join(' · '):'Not set'})
@@ -76,4 +77,5 @@ const fileSize=(value:number)=>value<1024?`${value} B`:value<1048576?`${(value/1
 
 <style scoped>
 .tab-count{margin-left:6px;padding:1px 6px;border-radius:999px;background:#e8eef7;font-size:.7rem}.hash{display:block;color:#6b7785;font-family:monospace;margin-top:3px}.compact{display:inline-flex;align-items:center;gap:5px;padding:7px 10px}.bom-scroll{max-height:620px}.bom-metrics{display:flex;gap:14px;flex-wrap:wrap;font-size:.84rem}.review{background:#fff6df;color:#8a5200}.pre{white-space:pre-line}.warning-list{margin:0;padding-left:20px}.audit-list{display:grid}.audit-list article{display:flex;justify-content:space-between;gap:20px;padding:13px 0;border-bottom:1px solid #e3e8ee}.audit-list article:last-child{border-bottom:0}.audit-list p{margin:4px 0 0;color:#667383}.audit-list time{white-space:nowrap;color:#667383;font-size:.82rem}
+.heading-tools{display:flex;align-items:center;gap:12px}.danger-action{display:inline-flex;align-items:center;gap:7px;padding:9px 12px;border:1px solid #c83d3d;border-radius:7px;background:#fff;color:#a52222;font-weight:700;cursor:pointer}.danger-action:hover{background:#fff1f1}.danger-action:disabled{opacity:.55;cursor:not-allowed}
 </style>

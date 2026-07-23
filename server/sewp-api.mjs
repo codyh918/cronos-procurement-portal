@@ -193,6 +193,49 @@ export async function handleSewpApi({ request, response, pathname, sendJson, rea
     return true
   }
 
+  if (request.method === 'DELETE' && detailMatch) {
+    const allowed = requirePermission(auth, 'sewp.rfq.edit')
+    if (!allowed.ok) return deny(response, sendJson, allowed, requestId)
+    const { data: existing, error: findError } = await supabase
+      .from('sewp_rfqs')
+      .select('*')
+      .eq('id', detailMatch[1])
+      .is('deleted_at', null)
+      .maybeSingle()
+    if (findError) return databaseError(response, sendJson, findError, requestId)
+    if (!existing) {
+      sendJson(response, 404, { error: 'SEWP RFQ not found or already deleted.', requestId })
+      return true
+    }
+    const deletedAt = new Date().toISOString()
+    const { data, error } = await supabase
+      .from('sewp_rfqs')
+      .update({
+        deleted_at: deletedAt,
+        current_stage: 'Cancelled',
+        version: existing.version + 1,
+        updated_by: auth.user.id,
+        updated_at: deletedAt,
+      })
+      .eq('id', existing.id)
+      .is('deleted_at', null)
+      .select('id,official_rfq_number,atlas_opportunity_number,deleted_at,current_stage,version')
+      .single()
+    if (error) return databaseError(response, sendJson, error, requestId)
+    await writeAudit(supabase, {
+      rfqId: existing.id,
+      actorUserId: auth.user.id,
+      action: 'rfq.deleted',
+      entityType: 'sewp_rfq',
+      entityId: existing.id,
+      previousValue: { deleted_at: null, current_stage: existing.current_stage, version: existing.version },
+      newValue: { deleted_at: deletedAt, current_stage: 'Cancelled', version: data.version },
+      requestId,
+    })
+    sendJson(response, 200, { record: data, requestId })
+    return true
+  }
+
   const transitionMatch = pathname.match(/^\/api\/sewp-rfqs\/([0-9a-f-]+)\/stage-transitions$/i)
   if (request.method === 'POST' && transitionMatch) {
     const allowed = requirePermission(auth, 'sewp.rfq.transition')
