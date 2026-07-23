@@ -2,9 +2,9 @@
   <main class="sewp-page">
     <div class="sewp-heading-row">
       <div><p class="sewp-kicker">ATLAS OPERATIONS</p><h1>SEWP RFQ Portal</h1><p>Track intake, pricing, reviews, and submissions.</p></div>
-      <SewpPortalNav />
+      <div class="sewp-heading-actions"><RouterLink class="primary-action" to="/sewp-rfqs/import">Import SEWP RFQ</RouterLink><SewpPortalNav /></div>
     </div>
-    <div class="sewp-cui-warning"><ShieldAlert :size="18" /> Do not upload CUI until this environment is formally approved.</div>
+    <div class="sewp-cui-warning"><ShieldAlert :size="18" /> Uploaded RFQ files are restricted to authorized Atlas users.</div>
     <div v-if="error" class="sewp-alert error">{{ error }}</div>
     <section class="sewp-metric-grid">
       <article><span>Active RFQs</span><strong>{{ active }}</strong><small>Open opportunities</small></article>

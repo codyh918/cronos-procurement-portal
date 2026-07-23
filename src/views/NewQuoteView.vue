@@ -84,6 +84,28 @@
       <QuoteSummaryTile label="Gross Profit" :value="currency(summary.totalGrossProfit)" />
     </section>
 
+    <section v-if="showPricingControls" class="settings-strip">
+      <div>
+        <h2>Apply Pricing to All Lines</h2>
+        <p>Set one margin or markup across the quote. You can still adjust any line individually afterward.</p>
+        <p v-if="bulkPricingStatus" class="status-note">{{ bulkPricingStatus }}</p>
+      </div>
+      <div class="quote-detail-controls">
+        <label class="mini-field">
+          <span>Method</span>
+          <select v-model="bulkPricingMode">
+            <option value="margin">Margin</option>
+            <option value="markup">Markup</option>
+          </select>
+        </label>
+        <label class="mini-field">
+          <span>{{ bulkPricingMode === 'margin' ? 'Margin %' : 'Markup %' }}</span>
+          <input v-model.number="bulkPricingPercent" type="number" min="0" :max="bulkPricingMode === 'margin' ? 99.99 : undefined" step="0.01" />
+        </label>
+        <button class="primary-action" type="button" :disabled="!draftLines.length" @click="applyBulkPricing">Apply to All Lines</button>
+      </div>
+    </section>
+
     <section class="settings-strip">
       <div>
         <h2>Shipping Cost</h2>
@@ -121,6 +143,19 @@
         <input type="file" @change="handleImport" />
       </label>
       <p v-if="importStatus">{{ importStatus }}</p>
+    </section>
+
+    <section class="import-panel manufacturer-import-panel">
+      <div>
+        <h2>Bulk update manufacturers</h2>
+        <p>Update the Manufacturer column in an exported Atlas quote workbook, then upload it here. Atlas matches rows by Line and Part # without changing pricing, quantities, or descriptions.</p>
+      </div>
+      <label class="upload-button">
+        <FileSpreadsheet :size="17" />
+        <span>Upload Manufacturer Updates</span>
+        <input type="file" accept=".xlsx,.xls,.csv" @change="handleManufacturerImport" />
+      </label>
+      <p v-if="manufacturerImportStatus">{{ manufacturerImportStatus }}</p>
     </section>
 
     <section class="rfq-panel">
@@ -287,7 +322,9 @@ import QuoteLinesEditor from '../components/QuoteLinesEditor.vue'
 import QuoteSummaryTile from '../components/QuoteSummaryTile.vue'
 import RfqStep from '../components/RfqStep.vue'
 import { calculateLineTotals, calculateQuoteSummaryWithContractFee, currency, type PricingMode } from '../services/calculations'
+import { applyPricingToAllLines } from '../services/bulkPricing.mjs'
 import { createQuoteForProject, loadProject, setQuoteApprovalStatus, updateQuoteForProject } from '../services/localProjects'
+import { applyManufacturerUpdateFile } from '../services/manufacturerImport'
 import { findLatestPartPrice, findPartPriceSuggestions } from '../services/partCatalog'
 import { exportCustomerQuotePdf } from '../services/pdfExports'
 import { parseQuoteImportFile } from '../services/quoteImport'
@@ -308,12 +345,16 @@ const pricingMode = ref<PricingMode>('markup')
 const quantity = ref(1)
 const unitCost = ref(0)
 const markupPercent = ref(15)
+const bulkPricingMode = ref<PricingMode>('margin')
+const bulkPricingPercent = ref(20)
+const bulkPricingStatus = ref('')
 const draftLines = ref<QuoteLine[]>([])
 const quoteName = ref('')
 const expirationDays = ref<ExpirationDays>(30)
 const contractFeeEnabled = ref(false)
 const shippingCost = ref(0)
 const importStatus = ref('')
+const manufacturerImportStatus = ref('')
 const rfqStatus = ref('')
 const routeQuoteId = computed(() => String(route.params.quoteId ?? route.params.quoteNumber ?? ''))
 const isEditMode = computed(() => Boolean(routeQuoteId.value))
@@ -401,6 +442,15 @@ function reloadQuoteDraftAfterSync() {
 function addLine() {
   draftLines.value = applySequentialClins([...draftLines.value, previewLine.value])
   resetLineForm()
+}
+
+function applyBulkPricing() {
+  try {
+    draftLines.value = applyPricingToAllLines(draftLines.value, bulkPricingMode.value, bulkPricingPercent.value)
+    bulkPricingStatus.value = `Applied ${bulkPricingPercent.value}% ${bulkPricingMode.value} to ${draftLines.value.length} line${draftLines.value.length === 1 ? '' : 's'}.`
+  } catch (error) {
+    bulkPricingStatus.value = error instanceof Error ? error.message : 'Unable to apply pricing to all lines.'
+  }
 }
 
 function applyCatalogPart(partNumber: string) {
@@ -523,6 +573,28 @@ async function handleRfqImport(event: Event) {
     rfqStatus.value = `Updated ${result.updatedCount} line${result.updatedCount === 1 ? '' : 's'} with vendor pricing. ${result.unmatchedCount} response line${result.unmatchedCount === 1 ? '' : 's'} did not match ${quote.value ? 'this quote' : 'the current draft'}.`
   } catch (error) {
     rfqStatus.value = error instanceof Error ? error.message : 'Could not import vendor RFQ response.'
+  }
+}
+
+async function handleManufacturerImport(event: Event) {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) {
+    manufacturerImportStatus.value = ''
+    return
+  }
+
+  try {
+    manufacturerImportStatus.value = `Reading ${file.name}...`
+    const result = await applyManufacturerUpdateFile(file, draftLines.value)
+    draftLines.value = result.updatedLines
+    manufacturerImportStatus.value = result.updatedCount
+      ? `Updated ${result.updatedCount} manufacturer${result.updatedCount === 1 ? '' : 's'}. ${result.unchangedCount} unchanged, ${result.skippedCount} blank or N/A, and ${result.unmatchedCount} unmatched. Review the lines, then click Save Changes.`
+      : `No manufacturers were updated. ${result.unchangedCount} unchanged, ${result.skippedCount} blank or N/A, and ${result.unmatchedCount} unmatched.`
+  } catch (error) {
+    manufacturerImportStatus.value = error instanceof Error ? error.message : 'Could not import manufacturer updates.'
+  } finally {
+    input.value = ''
   }
 }
 
