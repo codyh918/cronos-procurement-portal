@@ -42,6 +42,17 @@ export function transitionSewpRfq(id: string, targetStage: SewpStage, expectedVe
   })
 }
 
+export function getSewpWorkspace(id: string) {
+  return sewpApiRequest<SewpWorkspace>(`/api/sewp-rfqs/${encodeURIComponent(id)}/workspace`)
+}
+
+export function getSewpDocumentDownload(id: string, documentId: string) {
+  return sewpApiRequest<{ url: string; expiresIn: number }>(
+    `/api/sewp-rfqs/${encodeURIComponent(id)}/documents/${encodeURIComponent(documentId)}/download`,
+    { method: 'POST' },
+  )
+}
+
 export async function uploadSewpRfqEmail(file: File) {
   const accessToken = await getSupabaseAccessToken()
   if (!accessToken) throw new Error('Secure Atlas authentication is required to use the SEWP RFQ Portal.')
@@ -82,4 +93,15 @@ export interface SewpRfqImport {
     validations: Array<{ status: string; message: string }>
     attachments: Array<{ filename: string; size: number; sha256: string; mimeType: string }>
   }
+}
+
+export interface SewpWorkspace {
+  documents: Array<{ id: string; category: string; display_name: string; detected_mime_type: string; file_size_bytes: number; sha256: string; document_version: number; processing_status: string; uploaded_at: string }>
+  lines: Array<{ id: string; line_number: string; clin: string; manufacturer: string; requested_part_number: string; description: string; quantity: number; unit_of_measure: string; notes: string; review_status: string }>
+  requirements: Array<{ id: string; category: string; requirement_text: string; applicability: string; human_status: string; reviewed_at: string | null }>
+  tasks: Array<{ id: string; task_type: string; title: string; priority: string; due_at: string | null; status: string; notes: string; completed_at: string | null }>
+  auditEvents: Array<{ id: string; action: string; entity_type: string; reason: string | null; occurred_at: string; actor_type: string }>
+  stageHistory: Array<{ id: string; from_stage: string | null; to_stage: string; justification: string | null; occurred_at: string; rfq_version: number }>
+  project: null | { id: string; project_number: string; project_name: string; status: string; vehicle: string; government_customer: Record<string, string>; customer_address: { formatted?: string }; shipping_information: { organization?: string; address?: string }; reply_deadline: string | null; requirements: Record<string, unknown> }
+  import: null | { id: string; status: string; fields: Record<string, string | boolean | null>; warnings: Array<{ severity: string; category: string; message: string }>; approvedAt: string | null }
 }

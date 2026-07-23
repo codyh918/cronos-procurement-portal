@@ -108,6 +108,77 @@ export async function handleSewpApi({ request, response, pathname, sendJson, rea
     return true
   }
 
+  const workspaceMatch = pathname.match(/^\/api\/sewp-rfqs\/([0-9a-f-]+)\/workspace$/i)
+  if (request.method === 'GET' && workspaceMatch) {
+    const allowed = requirePermission(auth, 'sewp.rfq.view')
+    if (!allowed.ok) return deny(response, sendJson, allowed, requestId)
+    const rfqId = workspaceMatch[1]
+    const rfqResult = await supabase.from('sewp_rfqs').select('id,import_id,atlas_project_id').eq('id', rfqId).is('deleted_at', null).maybeSingle()
+    if (rfqResult.error) return databaseError(response, sendJson, rfqResult.error, requestId)
+    if (!rfqResult.data) {
+      sendJson(response, 404, { error: 'SEWP RFQ not found.', requestId })
+      return true
+    }
+    const [documents, lines, requirements, tasks, auditEvents, stageHistory, project, imported] = await Promise.all([
+      supabase.from('sewp_rfq_documents').select('id,category,display_name,detected_mime_type,file_size_bytes,sha256,document_version,processing_status,uploaded_at').eq('rfq_id', rfqId).is('deleted_at', null).order('uploaded_at'),
+      supabase.from('sewp_rfq_line_items').select('id,line_number,clin,manufacturer,requested_part_number,description,quantity,unit_of_measure,notes,review_status').eq('rfq_id', rfqId).eq('is_deleted_draft', false).order('line_number'),
+      supabase.from('sewp_rfq_requirements').select('id,category,requirement_text,applicability,human_status,reviewed_at').eq('rfq_id', rfqId).order('category'),
+      supabase.from('sewp_rfq_tasks').select('id,task_type,title,priority,due_at,status,notes,completed_at').eq('rfq_id', rfqId).order('due_at', { ascending: true, nullsFirst: false }),
+      supabase.from('sewp_rfq_audit_events').select('id,action,entity_type,reason,occurred_at,actor_type').eq('rfq_id', rfqId).order('occurred_at', { ascending: false }),
+      supabase.from('sewp_rfq_stage_history').select('id,from_stage,to_stage,justification,occurred_at,rfq_version').eq('rfq_id', rfqId).order('occurred_at', { ascending: false }),
+      rfqResult.data.atlas_project_id
+        ? supabase.from('atlas_projects').select('id,project_number,project_name,status,vehicle,government_customer,customer_address,shipping_information,reply_deadline,requirements').eq('id', rfqResult.data.atlas_project_id).maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+      rfqResult.data.import_id
+        ? supabase.from('sewp_rfq_imports').select('id,status,extraction_data,warnings,approved_at').eq('id', rfqResult.data.import_id).maybeSingle()
+        : Promise.resolve({ data: null, error: null }),
+    ])
+    const failed = [documents, lines, requirements, tasks, auditEvents, stageHistory, project, imported].find(result => result.error)
+    if (failed?.error) return databaseError(response, sendJson, failed.error, requestId)
+    sendJson(response, 200, {
+      documents: documents.data || [],
+      lines: lines.data || [],
+      requirements: requirements.data || [],
+      tasks: tasks.data || [],
+      auditEvents: auditEvents.data || [],
+      stageHistory: stageHistory.data || [],
+      project: project.data || null,
+      import: imported.data ? {
+        id: imported.data.id,
+        status: imported.data.status,
+        fields: imported.data.extraction_data?.fields || {},
+        warnings: imported.data.warnings || [],
+        approvedAt: imported.data.approved_at,
+      } : null,
+      requestId,
+    })
+    return true
+  }
+
+  const downloadMatch = pathname.match(/^\/api\/sewp-rfqs\/([0-9a-f-]+)\/documents\/([0-9a-f-]+)\/download$/i)
+  if (request.method === 'POST' && downloadMatch) {
+    const allowed = requirePermission(auth, 'sewp.rfq.view')
+    if (!allowed.ok) return deny(response, sendJson, allowed, requestId)
+    const { data: document, error } = await supabase
+      .from('sewp_rfq_documents')
+      .select('id,display_name,storage_bucket,storage_object_key')
+      .eq('id', downloadMatch[2])
+      .eq('rfq_id', downloadMatch[1])
+      .is('deleted_at', null)
+      .maybeSingle()
+    if (error) return databaseError(response, sendJson, error, requestId)
+    if (!document) {
+      sendJson(response, 404, { error: 'RFQ document not found.', requestId })
+      return true
+    }
+    const signed = await supabase.storage.from(document.storage_bucket).createSignedUrl(document.storage_object_key, 60, {
+      download: document.display_name,
+    })
+    if (signed.error) return databaseError(response, sendJson, signed.error, requestId)
+    sendJson(response, 200, { url: signed.data.signedUrl, expiresIn: 60, requestId })
+    return true
+  }
+
   const detailMatch = pathname.match(/^\/api\/sewp-rfqs\/([0-9a-f-]+)$/i)
   if (request.method === 'GET' && detailMatch) {
     const allowed = requirePermission(auth, 'sewp.rfq.view')
