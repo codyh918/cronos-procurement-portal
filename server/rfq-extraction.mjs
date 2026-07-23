@@ -285,7 +285,21 @@ function parseOptionalNumber(value) { if (!String(value).trim()) return null; co
 function cellText(sheet, row, col) { const cell = sheet[XLSX.utils.encode_cell({ r: row, c: col })]; return cell ? String(cell.w ?? cell.v ?? '').trim() : '' }
 function headerValue(headers, name) { return firstMatch(headers, new RegExp(`^${name}:\\s*(.+)$`, 'im')) }
 function isWorkbook(buffer, filename) { return /\.(xlsx|xls)$/i.test(filename || '') && (buffer.subarray(0, 4).toString('hex') === '504b0304' || buffer.subarray(0, 8).toString('hex') === 'd0cf11e0a1b11ae1') }
-function detectMimeType(buffer, filename) { if (isWorkbook(buffer, filename)) return /\.xlsx$/i.test(filename) ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'application/vnd.ms-excel'; if (buffer.subarray(0, 4).toString() === '%PDF') return 'application/pdf'; return 'application/octet-stream' }
+function detectMimeType(buffer, filename) {
+  if (isWorkbook(buffer, filename)) {
+    return /\.xlsx$/i.test(filename)
+      ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      : 'application/vnd.ms-excel'
+  }
+  if (buffer.subarray(0, 4).toString() === '%PDF') return 'application/pdf'
+  if (/\.docx$/i.test(filename || '') && buffer.subarray(0, 4).toString('hex') === '504b0304') {
+    return 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  }
+  if (/\.doc$/i.test(filename || '') && buffer.subarray(0, 8).toString('hex') === 'd0cf11e0a1b11ae1') {
+    return 'application/msword'
+  }
+  return 'application/octet-stream'
+}
 function htmlToText(value) {
   const source = value instanceof Uint8Array ? new TextDecoder('utf-8').decode(value) : String(value || '')
   return source
