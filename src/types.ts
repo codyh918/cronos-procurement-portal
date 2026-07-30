@@ -5,19 +5,25 @@ export type CanonicalRole = 'admin' | 'procurement'
 
 export type UserProfile = {
   id: string
+  supabaseAuthUserId?: string
+  username?: string
+  firstName?: string
+  lastName?: string
   name: string
   email: string
-  password?: string
   twoFactorSecret?: string
   twoFactorEnabled?: boolean
   role: AppRole
   title: string
   phone: string
   active: boolean
+  createdAt?: string
+  createdBy?: string
 }
 
 export type UserSession = {
   id: string
+  username?: string
   name: string
   email: string
   role: AppRole

@@ -102,6 +102,13 @@
         <VendorField v-model="newVendor.phone" label="Phone" placeholder="Phone" type="tel" />
         <VendorField v-model="newVendor.website" label="Website" placeholder="https://vendor.com" />
         <VendorField v-model="newVendor.accountNumber" label="Account #" placeholder="Cronos account number" />
+        <VendorField v-model="newVendor.addressLine1" label="Address" placeholder="Street address" />
+        <VendorField v-model="newVendor.city" label="City" placeholder="City" />
+        <VendorField v-model="newVendor.state" label="State" placeholder="State" />
+        <VendorField v-model="newVendor.zipCode" label="ZIP Code" placeholder="ZIP code" />
+        <VendorField v-model="newVendor.country" label="Country" placeholder="US" />
+        <VendorField v-model="newVendor.paymentTerms" label="Payment Terms" placeholder="Net 30" />
+        <VendorField v-model="newVendor.taxId" label="Tax / Supplier ID" placeholder="Tax ID" />
         <VendorField v-model="newVendor.oems" label="OEMs" placeholder="Comma-separated OEMs" />
         <VendorField v-model="newVendor.products" label="Products" placeholder="Comma-separated product lines" />
         <label class="vendor-field span-3">
@@ -110,9 +117,9 @@
         </label>
       </div>
 
-      <button class="primary-action" type="button" @click="addVendor">
+      <button class="primary-action" type="button" :disabled="creatingVendor" @click="addVendor">
         <Plus :size="17" />
-        <span>Add Vendor</span>
+        <span>{{ creatingVendor ? 'Adding Vendor…' : 'Add Vendor' }}</span>
       </button>
     </section>
 
@@ -214,12 +221,14 @@ import {
   type VendorImportPreview,
 } from '../services/vendorBulk'
 import {
+  cacheVendorDirectory,
   createEmptyVendorRecord,
   loadVendorDirectory,
   saveVendorDirectory,
   type VendorDirectoryRecord,
   type VendorStatus,
 } from '../services/vendorDirectory'
+import { createVendorRecord } from '../services/atlasDataApi'
 
 const emptyNewVendor = {
   vendor: '',
@@ -228,6 +237,13 @@ const emptyNewVendor = {
   phone: '',
   website: '',
   accountNumber: '',
+  addressLine1: '',
+  city: '',
+  state: '',
+  zipCode: '',
+  country: 'US',
+  paymentTerms: '',
+  taxId: '',
   oems: '',
   products: '',
   notes: '',
@@ -241,6 +257,7 @@ const vendorImportInput = ref<HTMLInputElement | null>(null)
 const importPreview = ref<VendorImportPreview | null>(null)
 const allowBlankOverwrite = ref(false)
 const lastImportLog = ref<VendorImportLog | null>(null)
+const creatingVendor = ref(false)
 const session = computed(() => fetchSession())
 const canImport = computed(() => ['admin', 'procurement'].includes(normalizeRole(session.value?.role)))
 
@@ -280,15 +297,11 @@ function saveDirectory() {
   saveMessage.value = 'Vendor directory saved.'
 }
 
-function addVendor() {
+async function addVendor() {
+  if (creatingVendor.value) return
   const vendorName = newVendor.vendor.trim()
   if (!vendorName) {
     window.alert('Vendor name is required.')
-    return
-  }
-
-  if (vendors.value.some(vendor => vendor.vendor.trim().toLowerCase() === vendorName.toLowerCase())) {
-    window.alert(`${vendorName} is already in the vendor directory.`)
     return
   }
 
@@ -299,13 +312,43 @@ function addVendor() {
     phone: newVendor.phone.trim(),
     website: newVendor.website.trim(),
     accountNumber: newVendor.accountNumber.trim(),
+    addressLine1: newVendor.addressLine1.trim(),
+    city: newVendor.city.trim(),
+    state: newVendor.state.trim(),
+    zipCode: newVendor.zipCode.trim(),
+    country: newVendor.country.trim(),
+    paymentTerms: newVendor.paymentTerms.trim(),
+    taxId: newVendor.taxId.trim(),
     oems: splitList(newVendor.oems),
     products: splitList(newVendor.products),
     notes: newVendor.notes.trim(),
   }
-  vendors.value = saveVendorDirectory([...vendors.value, record])
-  Object.assign(newVendor, emptyNewVendor)
-  saveMessage.value = `${vendorName} added to the vendor directory.`
+  const localDuplicate = vendors.value.find(vendor => vendor.vendor.trim().toLowerCase() === vendorName.toLowerCase())
+  let duplicateOverride = false
+  if (localDuplicate) {
+    duplicateOverride = window.confirm(`${localDuplicate.vendor} may already exist. Create a separate vendor after reviewing this match?`)
+    if (!duplicateOverride) return
+  }
+  try {
+    creatingVendor.value = true
+    let result
+    try {
+      result = await createVendorRecord<VendorDirectoryRecord>(record, duplicateOverride)
+    } catch (error) {
+      const apiError = error as Error & { status?: number; possibleDuplicate?: { legal_name?: string } }
+      if (apiError.status !== 409) throw error
+      const possibleName = apiError.possibleDuplicate?.legal_name || vendorName
+      if (!window.confirm(`${possibleName} may already exist. Create a separate vendor after reviewing this match?`)) return
+      result = await createVendorRecord<VendorDirectoryRecord>(record, true)
+    }
+    vendors.value = cacheVendorDirectory([...vendors.value, result.vendor])
+    Object.assign(newVendor, emptyNewVendor)
+    saveMessage.value = result.message
+  } catch (error) {
+    window.alert(error instanceof Error ? error.message : 'Unable to add vendor.')
+  } finally {
+    creatingVendor.value = false
+  }
 }
 
 async function exportVendors() {

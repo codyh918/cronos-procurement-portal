@@ -14,10 +14,10 @@
         </div>
 
         <label class="auth-field">
-          <span>Email Address</span>
+          <span>Username or Email</span>
           <div class="auth-input-shell">
             <Mail :size="20" aria-hidden="true" />
-            <input v-model="email" type="email" autocomplete="username" placeholder="name@cronos.com" />
+            <input v-model="email" type="text" autocomplete="username" placeholder="username or name@cronosllc.com" />
           </div>
         </label>
 
@@ -89,7 +89,8 @@
 <script setup lang="ts">
 import { onMounted, onUnmounted, ref } from 'vue'
 import { Eye, EyeOff, LockKeyhole, Mail, ShieldCheck } from '@lucide/vue'
-import { beginLogin, completeLogin, fetchSession, loadUsers } from '../services/auth'
+import { beginLogin, completeLogin, fetchSession, loadUsers, setSession } from '../services/auth'
+import { validateSupabaseAccess } from '../services/supabaseAuth'
 import type { UserSession } from '../types'
 
 const session = ref<UserSession | null>(null)
@@ -113,8 +114,19 @@ onUnmounted(() => {
   window.removeEventListener('cronos:session-changed', refreshSession)
 })
 
-function refreshSession() {
-  session.value = fetchSession()
+async function refreshSession() {
+  const localSession = fetchSession()
+  if (!localSession) {
+    session.value = null
+    return
+  }
+  if (!await validateSupabaseAccess()) {
+    setSession(null)
+    session.value = null
+    message.value = 'Your Atlas session is no longer active. Contact an administrator.'
+    return
+  }
+  session.value = localSession
 }
 
 async function submit() {

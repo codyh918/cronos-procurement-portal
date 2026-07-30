@@ -79,8 +79,16 @@
       </div>
       <div class="admin-form-grid">
         <label class="admin-field">
-          <span>Name</span>
-          <input v-model="newUser.name" placeholder="Full name" />
+          <span>Username</span>
+          <input v-model="newUser.username" autocomplete="off" placeholder="firstname.lastname" />
+        </label>
+        <label class="admin-field">
+          <span>First Name</span>
+          <input v-model="newUser.firstName" autocomplete="off" />
+        </label>
+        <label class="admin-field">
+          <span>Last Name</span>
+          <input v-model="newUser.lastName" autocomplete="off" />
         </label>
         <label class="admin-field">
           <span>Email</span>
@@ -89,7 +97,7 @@
         <label class="admin-field">
           <span>Password</span>
           <div class="credential-input-row">
-            <input v-model="newUser.password" type="text" placeholder="Temporary password" />
+            <input v-model="newUser.password" type="password" autocomplete="new-password" placeholder="At least 12 characters" />
             <button class="secondary-action icon-only-button" type="button" title="Generate password" @click="newUser.password = generatePassword()">
               <KeyRound :size="16" />
             </button>
@@ -110,21 +118,11 @@
           <input v-model="newUser.phone" type="tel" placeholder="Phone" />
         </label>
       </div>
-      <button class="primary-action admin-create-button" type="button" @click="createUser">
+      <p class="sync-message">Password requires 12+ characters with uppercase, lowercase, number, and special character.</p>
+      <button class="primary-action admin-create-button" type="button" :disabled="creatingUser" @click="createUser">
         <Plus :size="17" />
-        Add User
+        {{ creatingUser ? 'Creating User…' : 'Add User' }}
       </button>
-      <div v-if="createdCredentials" class="credential-card">
-        <div>
-          <h3>Login Created</h3>
-          <p>{{ createdCredentials.name }} can sign in with these credentials.</p>
-        </div>
-        <pre>{{ credentialText }}</pre>
-        <button class="secondary-action admin-save-button" type="button" @click="copyCredentials">
-          <Copy :size="14" />
-          Copy Login
-        </button>
-      </div>
     </section>
 
     <div class="data-table-frame">
@@ -133,26 +131,30 @@
           <thead>
             <tr>
               <th>Name</th>
+              <th>Username</th>
               <th>Email</th>
               <th>Role</th>
               <th>Title</th>
               <th>Phone</th>
               <th>Status</th>
               <th>2FA</th>
-              <th>Password</th>
+              <th>Password Access</th>
               <th>Actions</th>
             </tr>
           </thead>
           <tbody>
             <tr v-if="users.length === 0">
-              <td colspan="9">&nbsp;</td>
+              <td colspan="10">&nbsp;</td>
             </tr>
             <tr v-for="user in users" :key="user.id">
               <td>
-                <input class="cell-input w-44" :value="user.name" @blur="saveUser(user.id, { name: inputValue($event) })" />
+                {{ user.name }}
               </td>
               <td>
-                <input class="cell-input w-44" :value="user.email" type="email" @blur="saveUser(user.id, { email: inputValue($event) })" />
+                {{ user.username || 'Not linked' }}
+              </td>
+              <td>
+                {{ user.email }}
               </td>
               <td>
                 <select class="cell-input w-44" :value="user.role" @change="saveUser(user.id, { role: inputValue($event) as AppRole })">
@@ -172,12 +174,10 @@
                 </select>
               </td>
               <td>
-                <button class="secondary-action admin-save-button" type="button" @click="resetTwoFactor(user.id)">
-                  {{ user.twoFactorEnabled ? 'Reset 2FA' : 'Setup Pending' }}
-                </button>
+                <span>{{ user.twoFactorEnabled ? 'Enabled' : 'Not configured' }}</span>
               </td>
               <td>
-                <input class="cell-input w-44" type="password" placeholder="New password" @blur="savePassword(user.id, inputValue($event), $event)" />
+                <button class="secondary-action admin-save-button" type="button" @click="sendPasswordReset(user.id)">Send reset</button>
               </td>
               <td>
                 <button class="secondary-action admin-save-button" type="button" @click="saveUser(user.id, user)">
@@ -195,25 +195,23 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
-import { Copy, KeyRound, Plus, Save } from '@lucide/vue'
+import { KeyRound, Plus, Save } from '@lucide/vue'
 import {
-  addUser,
   appRoles,
+  cacheUsers,
   fetchSession,
   getRolePreview,
   loadUsers,
-  resetUserTwoFactor,
   setRolePreview,
-  updateUser,
 } from '../services/auth'
-import { getAppBaseUrl } from '../services/environment'
+import { createAtlasUser, initiateAtlasPasswordReset, listAtlasUsers, updateAtlasUser, type CreateAtlasUserInput } from '../services/authAdminApi'
 import { getRemoteConfigStatus, listLocalCollectionBackups, restoreLocalCollectionBackup, testRemoteConnection } from '../services/remoteRecords'
 import type { AppRole, UserProfile, UserSession } from '../types'
 
-type NewUserForm = Omit<UserProfile, 'id'>
-
-const emptyUser: NewUserForm = {
-  name: '',
+const emptyUser: CreateAtlasUserInput = {
+  username: '',
+  firstName: '',
+  lastName: '',
   email: '',
   password: '',
   role: 'Procurement Team',
@@ -226,8 +224,8 @@ const users = ref<UserProfile[]>([])
 const session = ref<UserSession | null>(null)
 const previewRole = ref<AppRole | null>(null)
 const message = ref('')
-const createdCredentials = ref<{ name: string; email: string; password: string; role: AppRole } | null>(null)
-const newUser = reactive<NewUserForm>({ ...emptyUser })
+const newUser = reactive<CreateAtlasUserInput>({ ...emptyUser })
+const creatingUser = ref(false)
 const remoteStatus = ref(getRemoteConfigStatus())
 const syncMessage = ref('')
 const syncOk = ref(false)
@@ -241,14 +239,9 @@ const previewableRoles = computed(() => appRoles.filter(role => role !== 'Admin'
 const projectBackupCount = computed(() => projectBackups.value.length)
 const latestProjectBackup = computed(() => projectBackups.value[0])
 const latestProjectBackupRecords = computed(() => latestProjectBackup.value?.records ?? 0)
-const credentialText = computed(() =>
-  createdCredentials.value
-    ? `Cronos Procurement App\nURL: ${getAppBaseUrl()}\nName: ${createdCredentials.value.name}\nEmail: ${createdCredentials.value.email}\nTemporary password: ${createdCredentials.value.password}\nRole: ${createdCredentials.value.role}`
-    : '',
-)
-
 onMounted(() => {
   refreshAdminState()
+  void refreshUsersFromServer()
   window.addEventListener('cronos:session-changed', refreshAdminState)
   window.addEventListener('cronos:role-preview-changed', refreshAdminState)
   window.addEventListener('cronos:users-changed', refreshAdminState)
@@ -268,53 +261,48 @@ function refreshAdminState() {
   projectBackups.value = listLocalCollectionBackups('cronos.projects')
 }
 
+async function refreshUsersFromServer() {
+  if (!isAdmin.value) return
+  try {
+    users.value = cacheUsers(await listAtlasUsers())
+  } catch (error) {
+    message.value = error instanceof Error ? error.message : 'Unable to load Atlas users.'
+  }
+}
+
 function changePreviewRole(role: AppRole | '') {
   setRolePreview(role)
   previewRole.value = role || null
 }
 
-function createUser() {
+async function createUser() {
+  if (creatingUser.value) return
   try {
-    if (!newUser.name.trim() || !newUser.email.trim() || !String(newUser.password ?? '').trim()) {
-      window.alert('Name, email, and password are required.')
-      return
-    }
-
-    const credentials = {
-      name: newUser.name.trim(),
-      email: newUser.email.trim().toLowerCase(),
-      password: String(newUser.password ?? ''),
-      role: newUser.role,
-    }
-    users.value = addUser({ ...newUser })
-    createdCredentials.value = credentials
-    message.value = `${credentials.name} added.`
+    creatingUser.value = true
+    const result = await createAtlasUser({ ...newUser })
+    users.value = cacheUsers([result.user, ...users.value.filter(user => user.id !== result.user.id)])
+    message.value = result.message
     Object.assign(newUser, emptyUser)
   } catch (error) {
     window.alert(error instanceof Error ? error.message : 'Unable to add user.')
+  } finally {
+    creatingUser.value = false
   }
 }
 
-function saveUser(userId: string, updates: Partial<UserProfile>) {
+async function saveUser(userId: string, updates: Partial<UserProfile>) {
   try {
-    users.value = updateUser(userId, updates)
+    const updated = await updateAtlasUser(userId, {
+      role: updates.role,
+      active: updates.active,
+      title: updates.title,
+      phone: updates.phone,
+    })
+    users.value = cacheUsers(users.value.map(user => user.id === userId ? updated : user))
     message.value = 'User profile updated.'
   } catch (error) {
     window.alert(error instanceof Error ? error.message : 'Unable to update user.')
   }
-}
-
-function savePassword(userId: string, value: string, event: Event) {
-  if (!value) return
-  saveUser(userId, { password: value })
-  const target = event.target
-  if (target instanceof HTMLInputElement) target.value = ''
-}
-
-function resetTwoFactor(userId: string) {
-  if (!window.confirm('Reset two-factor authentication for this user? They will set up a new authenticator code at their next sign-in.')) return
-  users.value = resetUserTwoFactor(userId)
-  message.value = 'Two-factor authentication reset.'
 }
 
 function generatePassword() {
@@ -323,13 +311,12 @@ function generatePassword() {
   return Array.from(bytes, byte => alphabet[byte % alphabet.length]).join('')
 }
 
-async function copyCredentials() {
-  if (!credentialText.value) return
+async function sendPasswordReset(userId: string) {
   try {
-    await navigator.clipboard.writeText(credentialText.value)
-    message.value = 'Login copied.'
-  } catch {
-    window.alert('Copy failed. Select the login text and copy it manually.')
+    const result = await initiateAtlasPasswordReset(userId)
+    message.value = result.message
+  } catch (error) {
+    window.alert(error instanceof Error ? error.message : 'Unable to initiate password reset.')
   }
 }
 
