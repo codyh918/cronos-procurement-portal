@@ -1,6 +1,9 @@
 const ROLE_PERMISSIONS = {
   admin: ['*'],
   procurement: [
+    'atlas.data.view',
+    'atlas.data.write',
+    'atlas.vendor.create',
     'sewp.rfq.view',
     'sewp.rfq.create',
     'sewp.rfq.edit',
@@ -23,6 +26,7 @@ export async function authenticateSewpRequest(request, authClient) {
 
   const { data, error } = await authClient.auth.getUser(match[1])
   if (error || !data?.user) return { ok: false, status: 401, error: 'The access token is invalid or expired.' }
+  if (data.user.app_metadata?.active === false) return { ok: false, status: 403, error: 'This Atlas account is inactive.' }
 
   const role = normalizeRole(data.user.app_metadata?.atlas_role || data.user.user_metadata?.atlas_role || data.user.user_metadata?.role)
   const explicitPermissions = Array.isArray(data.user.app_metadata?.atlas_permissions)
@@ -35,6 +39,8 @@ export async function authenticateSewpRequest(request, authClient) {
     user: {
       id: data.user.id,
       email: data.user.email || '',
+      username: String(data.user.user_metadata?.username || ''),
+      name: String(data.user.user_metadata?.full_name || data.user.email || ''),
       role,
       permissions,
     },

@@ -1,5 +1,6 @@
 import type { CustomerAddressRecord, CustomerAddressSnapshot, CustomerAddressType, CustomerRecord, Project } from '../types'
-import { hydrateLocalCollection, readLocalCollection, saveLocalAndRemoteCollection } from './remoteRecords'
+import { hydrateLocalCollection, readLocalCollection } from './remoteRecords'
+import { replacePilotCollection } from './atlasDataApi'
 import { structuredCustomerFromProject } from './customerFormatting'
 
 const CUSTOMER_STORAGE_KEY = 'cronos.customers'
@@ -332,11 +333,23 @@ function normalizeAddressRecord(address: CustomerAddressRecord): CustomerAddress
 }
 
 function saveCustomers(customers: CustomerRecord[]) {
-  saveLocalAndRemoteCollection(CUSTOMER_STORAGE_KEY, CUSTOMER_REMOTE_TYPE, REMOTE_KEY, customers.map(normalizeCustomerRecord), 'cronos:customers-changed')
+  const normalized = customers.map(normalizeCustomerRecord)
+  window.localStorage.setItem(CUSTOMER_STORAGE_KEY, JSON.stringify(normalized))
+  window.dispatchEvent(new Event('cronos:customers-changed'))
+  void replacePilotCollection('customers', normalized).catch(reportPilotSyncError)
 }
 
 function saveAddresses(addresses: CustomerAddressRecord[]) {
-  saveLocalAndRemoteCollection(ADDRESS_STORAGE_KEY, ADDRESS_REMOTE_TYPE, REMOTE_KEY, addresses.map(normalizeAddressRecord), 'cronos:customers-changed')
+  const normalized = addresses.map(normalizeAddressRecord)
+  window.localStorage.setItem(ADDRESS_STORAGE_KEY, JSON.stringify(normalized))
+  window.dispatchEvent(new Event('cronos:customers-changed'))
+  void replacePilotCollection('customer-addresses', normalized).catch(reportPilotSyncError)
+}
+
+function reportPilotSyncError(error: unknown) {
+  window.dispatchEvent(new CustomEvent('cronos:remote-sync-error', {
+    detail: error instanceof Error ? error.message : 'Atlas data API sync failed.',
+  }))
 }
 
 function normalizeSearch(value: string) {

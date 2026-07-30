@@ -3,6 +3,7 @@ import WebSocket from 'ws'
 import { loadSewpConfig } from './sewp-config.mjs'
 
 let client
+let authClient
 
 export function getSewpSupabase() {
   if (client !== undefined) return client
@@ -14,4 +15,16 @@ export function getSewpSupabase() {
       })
     : null
   return client
+}
+
+export function getSupabasePasswordAuthClient() {
+  if (authClient !== undefined) return authClient
+  const config = loadSewpConfig()
+  authClient = config.supabaseUrl && config.supabaseAnonKey
+    ? createClient(config.supabaseUrl, config.supabaseAnonKey, {
+        auth: { autoRefreshToken: false, persistSession: false, detectSessionInUrl: false },
+        realtime: { transport: WebSocket },
+      })
+    : null
+  return authClient
 }

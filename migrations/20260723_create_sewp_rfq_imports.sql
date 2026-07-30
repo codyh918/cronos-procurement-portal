@@ -116,7 +116,6 @@ create policy sewp_import_attachments_read on public.sewp_rfq_import_attachments
 create policy sewp_project_lines_read on public.atlas_project_material_lines for select to authenticated
   using (public.sewp_has_permission('sewp.rfq.view'));
 
-alter table storage.buckets drop constraint if exists buckets_allowed_mime_types_check;
 update storage.buckets
 set allowed_mime_types = array_append(coalesce(allowed_mime_types, '{}'::text[]), 'application/vnd.ms-outlook')
 where id = 'sewp-rfq-documents' and not ('application/vnd.ms-outlook' = any(coalesce(allowed_mime_types, '{}'::text[])));

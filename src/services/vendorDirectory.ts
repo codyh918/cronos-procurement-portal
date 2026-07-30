@@ -1,10 +1,12 @@
 import { VENDOR_OPTIONS } from './vendors'
+import { replacePilotCollection } from './atlasDataApi'
 
 const STORAGE_KEY = 'cronos.vendorDirectory'
 
 export type VendorStatus = 'Active' | 'Inactive' | 'Preferred'
 
 export type VendorDirectoryRecord = {
+  id?: string
   vendorId: string
   vendor: string
   dbaName: string
@@ -199,8 +201,19 @@ export function createEmptyVendorRecord(vendor: string): VendorDirectoryRecord {
 }
 
 export function saveVendorDirectory(records: VendorDirectoryRecord[]) {
+  const normalized = cacheVendorDirectory(records)
+  void replacePilotCollection('vendors', normalized).catch(error => {
+    window.dispatchEvent(new CustomEvent('cronos:remote-sync-error', {
+      detail: error instanceof Error ? error.message : 'Atlas vendor API sync failed.',
+    }))
+  })
+  return normalized
+}
+
+export function cacheVendorDirectory(records: VendorDirectoryRecord[]) {
   const normalized = records.map(normalizeRecord)
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(normalized))
+  window.dispatchEvent(new Event('cronos:vendors-changed'))
   return normalized
 }
 
@@ -215,6 +228,7 @@ function loadStoredRecords() {
 function normalizeRecord(record: Partial<VendorDirectoryRecord> & { vendor: string }): VendorDirectoryRecord {
   const now = new Date().toISOString()
   return {
+    id: record.id || crypto.randomUUID(),
     vendorId: record.vendorId || nextVendorId(),
     vendor: record.vendor,
     dbaName: record.dbaName ?? '',

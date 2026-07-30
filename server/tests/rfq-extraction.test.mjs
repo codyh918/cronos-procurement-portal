@@ -40,4 +40,3 @@ test('detects Excel headers, preserves identifiers, blanks, order, and source ce
   assert.equal(lines[0].quantity, 2405)
   assert.equal(lines[0].sourceCells.clin, 'A3')
 })
-

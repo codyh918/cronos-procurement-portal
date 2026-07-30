@@ -2,6 +2,10 @@ import { createReadStream, existsSync, statSync } from 'node:fs'
 import { join, extname, normalize, sep } from 'node:path'
 import { createServer } from 'node:http'
 import { handleSewpApi } from './server/sewp-api.mjs'
+import { handleDataApi } from './server/data-api.mjs'
+import { getSewpSupabase } from './server/sewp-supabase.mjs'
+import { getSupabasePasswordAuthClient } from './server/sewp-supabase.mjs'
+import { handleAtlasAuthApi } from './server/atlas-auth-api.mjs'
 
 const port = Number(process.env.PORT || 4173)
 const root = join(process.cwd(), 'dist')
@@ -261,6 +265,8 @@ async function handleCimsApi(request, response, pathname) {
 
 createServer(async (request, response) => {
   const pathname = decodeURIComponent(new URL(request.url || '/', 'http://localhost').pathname)
+  if (await handleAtlasAuthApi({ request, response, pathname, sendJson, readJsonBody, supabase: getSewpSupabase(), passwordAuthClient: getSupabasePasswordAuthClient() })) return
+  if (await handleDataApi({ request, response, pathname, sendJson, readJsonBody, supabase: getSewpSupabase() })) return
   if (await handleSewpApi({ request, response, pathname, sendJson, readJsonBody, readBufferBody })) return
   if (pathname.startsWith('/api/cims/') && await handleCimsApi(request, response, pathname)) return
 

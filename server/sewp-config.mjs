@@ -2,6 +2,7 @@ export function loadSewpConfig(env = process.env) {
   return {
     supabaseUrl: env.SUPABASE_URL || env.VITE_SUPABASE_URL || '',
     supabaseServiceRoleKey: env.SUPABASE_SERVICE_ROLE_KEY || '',
+    supabaseAnonKey: env.SUPABASE_ANON_KEY || env.VITE_SUPABASE_ANON_KEY || '',
     storageBucket: env.SEWP_STORAGE_BUCKET || 'sewp-rfq-documents',
     maxFileBytes: positiveInteger(env.SEWP_MAX_FILE_BYTES, 25 * 1024 * 1024),
     maxRfqUploadBytes: positiveInteger(env.SEWP_MAX_RFQ_UPLOAD_BYTES, 100 * 1024 * 1024),

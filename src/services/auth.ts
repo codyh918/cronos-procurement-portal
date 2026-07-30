@@ -13,19 +13,9 @@ let pendingSupabaseSession: UserSession | null = null
 
 export const appRoles: AppRole[] = ['Admin', 'Procurement Team']
 
-const seededAdmin: UserProfile = {
-  id: 'seed-admin-cody',
-  name: 'Cody Hibbard',
-  email: 'cody.hibbard@cronosllc.com',
-  password: 'CronosAdmin!2026',
-  role: 'Admin',
-  title: 'Administrator',
-  phone: '',
-  active: true,
-}
-
 export type PendingLogin = {
   id: string
+  username?: string
   name: string
   email: string
   role: AppRole
@@ -64,13 +54,6 @@ export function ensureDefaultAdminSession() {
   return fetchSession()
 }
 
-export function loginUser(email: string, password: string) {
-  const user = findActiveUser(email, password)
-  const session = toSession(user)
-  setSession(session)
-  return session
-}
-
 export async function beginLogin(email: string, password: string): Promise<PendingLogin> {
   if (hasSupabaseAuth()) {
     const secureUser = await signInWithSupabase(email, password)
@@ -80,9 +63,7 @@ export async function beginLogin(email: string, password: string): Promise<Pendi
     pendingSupabaseSession = toSession(secureUser)
     return toPendingLogin(secureUser)
   }
-  await hydrateUsers(true)
-  const user = findActiveUser(email, password)
-  return toPendingLogin(user)
+  throw new Error('Supabase Auth is not configured.')
 }
 
 export async function completeLogin(userId: string, _code = '') {
@@ -123,61 +104,10 @@ export function loadUsers() {
   return readStoredUsers().map(redactPassword)
 }
 
-export function addUser(input: Omit<UserProfile, 'id'>) {
-  const name = input.name.trim()
-  const email = input.email.trim().toLowerCase()
-  const password = String(input.password ?? '')
-
-  if (!name || !email || password.length < 8) {
-    throw new Error('Name, email, and a password of at least 8 characters are required.')
-  }
-
-  const users = readStoredUsers()
-  if (users.some(user => user.email.toLowerCase() === email)) {
-    throw new Error('A user with that email already exists.')
-  }
-
-  const created: UserProfile = {
-    ...input,
-    id: crypto.randomUUID(),
-    name,
-    email,
-    title: input.title.trim(),
-    phone: input.phone.trim(),
-    active: input.active !== false,
-  }
-  const updated = sortUsers([...users, created])
-  saveUsers(updated)
-  return updated.map(redactPassword)
-}
-
-export function updateUser(userId: string, updates: Partial<UserProfile>) {
-  const users = readStoredUsers()
-  let matched = false
-  const updated = users.map(user => {
-    if (user.id !== userId) return user
-    matched = true
-    const password = typeof updates.password === 'string' ? updates.password.trim() : ''
-    return {
-      ...user,
-      name: typeof updates.name === 'string' ? updates.name.trim() : user.name,
-      email: typeof updates.email === 'string' ? updates.email.trim().toLowerCase() : user.email,
-      password: password ? password : user.password,
-      twoFactorSecret: Object.prototype.hasOwnProperty.call(updates, 'twoFactorSecret') ? updates.twoFactorSecret : user.twoFactorSecret,
-      twoFactorEnabled: updates.twoFactorEnabled ?? user.twoFactorEnabled,
-      role: updates.role ?? user.role,
-      title: typeof updates.title === 'string' ? updates.title.trim() : user.title,
-      phone: typeof updates.phone === 'string' ? updates.phone.trim() : user.phone,
-      active: typeof updates.active === 'boolean' ? updates.active : user.active,
-    }
-  })
-
-  if (!matched) throw new Error('Unable to update user.')
-
-  const sorted = sortUsers(updated)
-  saveUsers(sorted)
-  syncSessionAfterUserUpdate(sorted)
-  return sorted.map(redactPassword)
+export function cacheUsers(users: UserProfile[]) {
+  const safeUsers = sortUsers(users.map(redactPassword))
+  saveUsers(safeUsers)
+  return safeUsers
 }
 
 export function resetUserTwoFactor(userId: string) {
@@ -216,11 +146,7 @@ export function normalizeRole(role: AppRole | string | null | undefined) {
 function readStoredUsers() {
   void hydrateUsers()
   const users = readLocalCollection<UserProfile>(USERS_KEY)
-  const normalized = ensureSeededAdmin(users)
-  if (JSON.stringify(normalized) !== JSON.stringify(users)) {
-    saveUsers(normalized)
-  }
-  return normalized
+  return sortUsers(users.map(redactPassword))
 }
 
 function hydrateUsers(force = false) {
@@ -229,21 +155,13 @@ function hydrateUsers(force = false) {
 
   usersHydration = hydrateLocalCollection<UserProfile>(USERS_KEY, USERS_REMOTE_TYPE, USERS_REMOTE_KEY, {
     eventName: 'cronos:users-changed',
-    normalize: ensureSeededAdmin,
+    normalize: users => sortUsers(users.map(redactPassword)),
   })
   return usersHydration
 }
 
-function findActiveUser(email: string, password: string) {
-  const user = readStoredUsers().find(item => item.email.toLowerCase() === email.trim().toLowerCase())
-  if (!user?.active || user.password !== password) {
-    throw new Error('Invalid email or password.')
-  }
-  return user
-}
-
 function saveUsers(users: UserProfile[]) {
-  saveLocalAndRemoteCollection(USERS_KEY, USERS_REMOTE_TYPE, USERS_REMOTE_KEY, users, 'cronos:users-changed')
+  saveLocalAndRemoteCollection(USERS_KEY, USERS_REMOTE_TYPE, USERS_REMOTE_KEY, users.map(redactPassword), 'cronos:users-changed')
 }
 
 function readJson<T>(key: string, fallback: T): T {
@@ -263,41 +181,15 @@ function sortUsers(users: UserProfile[]) {
 }
 
 function redactPassword(user: UserProfile): UserProfile {
-  const { password: _password, ...safeUser } = user
+  const safeUser = { ...user } as UserProfile & { password?: unknown }
+  delete safeUser.password
   return safeUser
-}
-
-function ensureSeededAdmin(users: UserProfile[]) {
-  const existing = users.find(user => user.email.toLowerCase() === seededAdmin.email)
-  if (!existing) return sortUsers([seededAdmin, ...users])
-
-  return sortUsers(
-    users.map(user => {
-      const role = appRoles.includes(user.role) ? user.role : 'Procurement Team'
-      return user.email.toLowerCase() === seededAdmin.email
-        ? {
-            ...user,
-            id: user.id || seededAdmin.id,
-            name: user.name || seededAdmin.name,
-            email: seededAdmin.email,
-            password: !user.password || user.password === 'admin' ? seededAdmin.password : user.password,
-            role: 'Admin',
-            title: user.title || seededAdmin.title,
-            phone: user.phone ?? seededAdmin.phone,
-            active: true,
-          }
-        : {
-            ...user,
-            role,
-            twoFactorEnabled: user.twoFactorEnabled ?? false,
-          }
-    }),
-  )
 }
 
 function toPendingLogin(user: UserProfile): PendingLogin {
   return {
     id: user.id,
+    username: user.username,
     name: user.name,
     email: user.email,
     role: user.role,
@@ -308,6 +200,7 @@ function toPendingLogin(user: UserProfile): PendingLogin {
 function toSession(user: UserProfile): UserSession {
   return {
     id: user.id,
+    username: user.username,
     name: user.name,
     email: user.email,
     role: user.role,
