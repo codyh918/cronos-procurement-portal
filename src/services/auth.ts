@@ -11,7 +11,7 @@ const USERS_REMOTE_KEY = 'all'
 let usersHydration: Promise<UserProfile[]> | null = null
 let pendingSupabaseSession: UserSession | null = null
 
-export const appRoles: AppRole[] = ['Admin', 'Procurement Team']
+export const appRoles: AppRole[] = ['Admin', 'Procurement Team', 'Engineering', 'Sales']
 
 export type PendingLogin = {
   id: string
@@ -140,6 +140,8 @@ export function getEffectiveRole(session: UserSession | null = fetchSession()) {
 export function normalizeRole(role: AppRole | string | null | undefined) {
   const value = String(role ?? '').trim().toLowerCase()
   if (value === 'admin') return 'admin'
+  if (value === 'engineering') return 'engineering'
+  if (value === 'sales') return 'sales'
   return 'procurement'
 }
 

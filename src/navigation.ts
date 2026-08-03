@@ -1,7 +1,7 @@
 import { adminOnlyPaths, getNavigationItemsForRole } from './roles'
 import type { CanonicalRole } from './types'
 
-export const allRoles: CanonicalRole[] = ['admin', 'procurement']
+export const allRoles: CanonicalRole[] = ['admin', 'procurement', 'engineering', 'sales']
 
 export function getNavigationForRole(role: CanonicalRole) {
   return getNavigationItemsForRole(role)
@@ -21,6 +21,7 @@ export function getAllowedRolesForPath(path: string) {
     path.startsWith('/catalog') ||
     path.startsWith('/account')
   ) {
+    if (path.startsWith('/catalog')) return ['admin', 'procurement', 'engineering', 'sales'] as CanonicalRole[]
     return ['admin', 'procurement'] as CanonicalRole[]
   }
 

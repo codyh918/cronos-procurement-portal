@@ -75,7 +75,7 @@
     <section class="admin-card">
       <div class="admin-card-heading">
         <h2>Add User</h2>
-        <p>Create logins for Admin or Procurement Team users.</p>
+        <p>Create secure Atlas logins for Administrators, Procurement, Engineering, or Sales users.</p>
       </div>
       <div class="admin-form-grid">
         <label class="admin-field">

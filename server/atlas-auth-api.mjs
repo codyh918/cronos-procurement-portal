@@ -182,6 +182,8 @@ function normalizeRole(value) {
   const role = String(value || '').trim().toLowerCase()
   if (role === 'admin') return 'admin'
   if (role === 'procurement' || role === 'procurement team') return 'procurement'
+  if (role === 'engineering' || role === 'engineer') return 'engineering'
+  if (role === 'sales') return 'sales'
   return ''
 }
 async function getProfile(supabase, id) {
@@ -201,7 +203,7 @@ function toPublicProfile(row) {
   return {
     id: row.auth_user_id, supabaseAuthUserId: row.auth_user_id, username: row.username,
     firstName: row.first_name, lastName: row.last_name, name: row.display_name, email: row.email,
-    role: row.role === 'admin' ? 'Admin' : 'Procurement Team', title: row.title, phone: row.phone,
+    role: ({ admin: 'Admin', procurement: 'Procurement Team', engineering: 'Engineering', sales: 'Sales' })[row.role] || 'Procurement Team', title: row.title, phone: row.phone,
     active: row.is_active, createdAt: row.created_at, createdBy: row.created_by,
   }
 }

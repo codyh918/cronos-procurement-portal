@@ -1,7 +1,7 @@
 import type { Component } from 'vue'
 
-export type AppRole = 'Admin' | 'Procurement Team'
-export type CanonicalRole = 'admin' | 'procurement'
+export type AppRole = 'Admin' | 'Procurement Team' | 'Engineering' | 'Sales'
+export type CanonicalRole = 'admin' | 'procurement' | 'engineering' | 'sales'
 
 export type UserProfile = {
   id: string
@@ -198,6 +198,7 @@ export type QuoteLine = {
   marginPercent?: number
   markupPercent: number
   vendor: string
+  supplierPartNumber?: string
   quoteNumber: string
   leadTime: string
   approved: boolean

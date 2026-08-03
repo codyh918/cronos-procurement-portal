@@ -15,7 +15,10 @@ const ROLE_PERMISSIONS = {
     'sewp.rfq.transition',
     'sewp.rfq.manage_tasks',
     'sewp.rfq.view_audit',
+    'atlas.catalog.view',
   ],
+  engineering: ['atlas.data.view', 'atlas.catalog.view'],
+  sales: ['atlas.data.view', 'atlas.catalog.view'],
 }
 
 export async function authenticateSewpRequest(request, authClient) {
@@ -54,5 +57,7 @@ export function requirePermission(authResult, permission) {
 }
 
 function normalizeRole(value) {
-  return String(value || '').trim().toLowerCase() === 'admin' ? 'admin' : 'procurement'
+  const role = String(value || '').trim().toLowerCase()
+  if (['admin', 'procurement', 'engineering', 'sales'].includes(role)) return role
+  return 'procurement'
 }

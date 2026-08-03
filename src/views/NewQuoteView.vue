@@ -212,7 +212,7 @@
             list="part-number-suggestions"
             required
             placeholder="Type part number for catalog pricing"
-            @input="applyCatalogPart(lineForm.partNumber)"
+            @input="scheduleCatalogLookup(lineForm.partNumber)"
           />
           <datalist id="part-number-suggestions">
             <option
@@ -254,6 +254,7 @@
         </div>
 
         <FormField v-model="lineForm.quoteNumber" label="Vendor Quote Number" placeholder="Optional" />
+        <FormField v-model="lineForm.supplierPartNumber" label="Supplier Part Number" placeholder="Auto-filled from catalog" />
         <FormField v-model="lineForm.leadTime" label="Lead Time" placeholder="Example: 14 days" />
         <label class="form-field span-2">
           <span>Description</span>
@@ -326,6 +327,7 @@ import { applyPricingToAllLines } from '../services/bulkPricing.mjs'
 import { createQuoteForProject, loadProject, setQuoteApprovalStatus, updateQuoteForProject } from '../services/localProjects'
 import { applyManufacturerUpdateFile } from '../services/manufacturerImport'
 import { findLatestPartPrice, findPartPriceSuggestions } from '../services/partCatalog'
+import { suggestCatalogProducts, type CatalogProduct } from '../services/productCatalogApi'
 import { exportCustomerQuotePdf } from '../services/pdfExports'
 import { parseQuoteImportFile } from '../services/quoteImport'
 import { applyVendorRfqResponseFile } from '../services/vendorRfqResponses'
@@ -359,19 +361,40 @@ const rfqStatus = ref('')
 const routeQuoteId = computed(() => String(route.params.quoteId ?? route.params.quoteNumber ?? ''))
 const isEditMode = computed(() => Boolean(routeQuoteId.value))
 const catalogStatus = ref('')
+const remotePartSuggestions = ref<CatalogProduct[]>([])
+let catalogLookupTimer: ReturnType<typeof setTimeout> | undefined
 
 const lineForm = reactive({
   partNumber: '',
   manufacturer: '',
   description: '',
   vendor: '',
+  supplierPartNumber: '',
   quoteNumber: '',
   leadTime: '',
 })
 
 const showPricingControls = computed(() => project.value?.projectType !== 'Design & Install')
 const nextClin = computed(() => String(draftLines.value.length + 1))
-const partSuggestions = computed(() => findPartPriceSuggestions(lineForm.partNumber))
+const partSuggestions = computed(() => {
+  const local = findPartPriceSuggestions(lineForm.partNumber)
+  const remote = remotePartSuggestions.value.map(product => ({
+    id: product.id,
+    partNumber: product.manufacturer_part_number,
+    manufacturer: product.manufacturer,
+    description: product.description,
+    vendor: product.supplier,
+    unitCost: product.current_cost ?? 0,
+    poNumber: 'Product Catalog',
+  }))
+  const seen = new Set<string>()
+  return [...remote, ...local].filter(item => {
+    const key = `${item.manufacturer}:${item.partNumber}`.toLowerCase()
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  }).slice(0, 12)
+})
 const oemSuggestions = computed(() => getOemSuggestions(lineForm.partNumber))
 const summary = computed(() => calculateQuoteSummaryWithContractFee(draftLines.value, contractFeeEnabled.value, shippingCost.value))
 const previewLine = computed(() =>
@@ -386,6 +409,7 @@ const previewLine = computed(() =>
     markupPercent: showPricingControls.value ? markupPercent.value : 0,
     marginPercent: 0,
     vendor: lineForm.vendor,
+    supplierPartNumber: lineForm.supplierPartNumber,
     quoteNumber: lineForm.quoteNumber,
     leadTime: lineForm.leadTime,
   }),
@@ -412,6 +436,7 @@ onMounted(() => {
 })
 
 onUnmounted(() => {
+  if (catalogLookupTimer) clearTimeout(catalogLookupTimer)
   window.removeEventListener('cronos:projects-changed', reloadQuoteDraftAfterSync)
 })
 
@@ -454,6 +479,17 @@ function applyBulkPricing() {
 }
 
 function applyCatalogPart(partNumber: string) {
+  const remote = remotePartSuggestions.value.find(item => item.manufacturer_part_number.trim().toLowerCase() === partNumber.trim().toLowerCase())
+  if (remote) {
+    lineForm.manufacturer = remote.manufacturer
+    lineForm.description = remote.description
+    lineForm.vendor = remote.supplier
+    lineForm.supplierPartNumber = remote.supplier_part_number
+    lineForm.leadTime = remote.lead_time
+    unitCost.value = remote.current_cost ?? 0
+    catalogStatus.value = `Product Catalog match: ${remote.manufacturer} ${remote.manufacturer_part_number} at ${currency(remote.current_cost ?? 0)}.`
+    return
+  }
   const match = findLatestPartPrice(partNumber)
   if (!match) {
     const inferredVendor = recommendVendorForPart(partNumber, lineForm.manufacturer, lineForm.description)
@@ -471,6 +507,20 @@ function applyCatalogPart(partNumber: string) {
   lineForm.vendor = match.vendor || lineForm.vendor
   unitCost.value = match.unitCost
   catalogStatus.value = `Catalog match: ${match.partNumber} at ${currency(match.unitCost)} from ${match.poNumber}.`
+}
+
+function scheduleCatalogLookup(value: string) {
+  applyCatalogPart(value)
+  if (catalogLookupTimer) clearTimeout(catalogLookupTimer)
+  if (value.trim().length < 2) { remotePartSuggestions.value = []; return }
+  catalogLookupTimer = setTimeout(async () => {
+    try {
+      remotePartSuggestions.value = await suggestCatalogProducts(value, 10)
+      applyCatalogPart(value)
+    } catch {
+      remotePartSuggestions.value = []
+    }
+  }, 220)
 }
 
 function saveQuote() {
@@ -667,9 +717,11 @@ function resetLineForm() {
   lineForm.manufacturer = ''
   lineForm.description = ''
   lineForm.vendor = ''
+  lineForm.supplierPartNumber = ''
   lineForm.quoteNumber = ''
   lineForm.leadTime = ''
   catalogStatus.value = ''
+  remotePartSuggestions.value = []
   quantity.value = 1
   unitCost.value = 0
 }

@@ -71,5 +71,9 @@ function getSupabaseAuthClient() {
 }
 
 function normalizeAppRole(value: unknown): AppRole {
-  return String(value || '').trim().toLowerCase() === 'admin' ? 'Admin' : 'Procurement Team'
+  const role = String(value || '').trim().toLowerCase()
+  if (role === 'admin') return 'Admin'
+  if (role === 'engineering') return 'Engineering'
+  if (role === 'sales') return 'Sales'
+  return 'Procurement Team'
 }

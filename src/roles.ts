@@ -32,7 +32,7 @@ export const navigationRegistry: Record<string, NavItem> = {
   purchaseOrders: { href: '/purchase-orders', match: '/purchase-orders', label: 'Purchase Orders', icon: ShoppingCart },
   sewpRfqs: { href: '/sewp-rfqs/dashboard', match: '/sewp-rfqs', label: 'SEWP RFQ Portal', icon: FileSearch },
   vendors: { href: '/vendors', match: '/vendors', label: 'Vendors', icon: Users },
-  catalog: { href: '/catalog', match: '/catalog', label: 'Catalog', icon: Database },
+  catalog: { href: '/catalog', match: '/catalog', label: 'Product Catalog', icon: Database },
   atlasAssistant: { href: '#assistant', match: '#assistant', label: 'Atlas Assistant', icon: BotMessageSquare },
   manageUsers: { href: '/users', match: '/users', label: 'Manage Users', icon: Users },
   roles: { href: '/roles', match: '/roles', label: 'Roles & Permissions', icon: ShieldCheck },
@@ -70,11 +70,29 @@ export const roleConfigs: Record<CanonicalRole, RoleConfig> = {
       'auditLog',
     ],
   },
+  engineering: {
+    name: 'engineering',
+    label: 'Engineering',
+    workspaceLabel: 'Engineering Workspace',
+    defaultLandingPage: '/catalog',
+    permissions: [],
+    allowedNavigationItems: ['dashboard', 'projects', 'catalog', 'atlasAssistant'],
+  },
+  sales: {
+    name: 'sales',
+    label: 'Sales',
+    workspaceLabel: 'Sales Workspace',
+    defaultLandingPage: '/catalog',
+    permissions: [],
+    allowedNavigationItems: ['dashboard', 'projects', 'quotes', 'catalog', 'atlasAssistant'],
+  },
 }
 
 export const appRoleLabels = {
   admin: 'Admin',
   procurement: 'Procurement Team',
+  engineering: 'Engineering',
+  sales: 'Sales',
 } as const
 
 export const adminOnlyPaths = ['/users', '/roles', '/settings', '/audit-log', '/admin', '/admin/orders']

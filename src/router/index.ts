@@ -5,6 +5,7 @@ import { adminOnlyPaths } from '../roles'
 import { fetchSession, normalizeRole } from '../services/auth'
 import AdminView from '../views/AdminView.vue'
 import CatalogView from '../views/CatalogView.vue'
+import ProductDetailView from '../views/ProductDetailView.vue'
 import CimsAppView from '../views/CimsAppView.vue'
 import CustomerOrderDetailView from '../views/CustomerOrderDetailView.vue'
 import CustomerOrdersView from '../views/CustomerOrdersView.vue'
@@ -58,6 +59,7 @@ const routes = [
           { path: 'sewp-rfqs/:rfqId', name: 'sewp-rfq-detail', component: SewpRfqDetailView },
           { path: 'vendors', name: 'vendors', component: VendorsView },
           { path: 'catalog', name: 'catalog', component: CatalogView },
+          { path: 'catalog/:productId', name: 'catalog-product', component: ProductDetailView },
           { path: 'customers', name: 'customers', component: CustomersView },
           { path: 'customer-orders', name: 'customer-orders', component: CustomerOrdersView },
           { path: 'customer-orders/:orderNumber', name: 'customer-order-detail', component: CustomerOrderDetailView },
