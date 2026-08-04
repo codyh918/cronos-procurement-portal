@@ -69,8 +69,8 @@
         <p>
           {{
             contractFeeEnabled
-              ? 'Contract fee is active. Quote total is line item total divided by .889.'
-              : 'Add a contract fee calculated as line item total divided by .889.'
+              ? 'Contract fee is active. The line item total plus shipping is divided by .889.'
+              : 'Add a contract fee calculated from the line item total plus shipping.'
           }}
         </p>
       </div>

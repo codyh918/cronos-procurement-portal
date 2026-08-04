@@ -98,10 +98,10 @@ export function calculateQuoteSummary(lines: QuoteLine[], contractFeeEnabled = f
   }
 }
 
-export function calculateContractFee(totalQuoteSellPrice: number) {
-  if (totalQuoteSellPrice <= 0) return 0
+export function calculateContractFee(baseAmount: number) {
+  if (baseAmount <= 0) return 0
 
-  return roundCurrency(totalQuoteSellPrice / 0.889 - totalQuoteSellPrice)
+  return roundCurrency(baseAmount / 0.889 - baseAmount)
 }
 
 export function calculateQuoteSummaryWithContractFee(lines: QuoteLine[], contractFeeEnabled = false, shippingCost = 0) {
