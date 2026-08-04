@@ -1,7 +1,6 @@
 import type { CustomerAddressRecord, CustomerAddressSnapshot, CustomerAddressType, CustomerRecord, Project } from '../types'
 import { hydrateLocalCollection, readLocalCollection } from './remoteRecords'
 import { replacePilotCollection } from './atlasDataApi'
-import { structuredCustomerFromProject } from './customerFormatting'
 
 const CUSTOMER_STORAGE_KEY = 'cronos.customers'
 const ADDRESS_STORAGE_KEY = 'cronos.customerAddresses'
@@ -227,20 +226,41 @@ export function rememberCustomerUse(customerId: string, addressId?: string) {
 }
 
 export function snapshotFromCustomerAddress(customer: CustomerRecord | undefined, address: CustomerAddressRecord | undefined, project?: Project): CustomerAddressSnapshot {
-  const structured = structuredCustomerFromProject(project, customer?.displayName || customer?.legalCompanyName || '')
+  // A project can intentionally use a shorter customer name, a different POC, or
+  // blank contact fields than the shared directory record. Once a project exists,
+  // its current form values are the source of truth for customer-facing documents.
+  // Directory values are only defaults when creating a snapshot without a project.
+  if (project) {
+    return {
+      companyName: project.customer,
+      contactName: project.customerContactName,
+      streetAddress1: project.customerAddress1,
+      streetAddress2: project.customerAddress2,
+      city: project.customerCity,
+      state: project.customerState,
+      zipCode: project.customerZip,
+      country: project.customerCountry,
+      email: project.customerEmail,
+      phone: project.customerPhone,
+      customerNumber: project.customerNumber,
+      website: project.customerWebsite,
+      capturedAt: new Date().toISOString(),
+    }
+  }
+
   return {
-    companyName: customer?.displayName || customer?.legalCompanyName || structured.companyName,
-    contactName: address?.contactName || customer?.primaryContact || structured.attention,
-    streetAddress1: address?.streetAddress1 || structured.streetAddress1,
-    streetAddress2: address?.streetAddress2 || structured.streetAddress2,
-    city: address?.city || structured.city,
-    state: address?.state || structured.state,
-    zipCode: address?.zipCode || structured.zipCode,
-    country: address?.country || structured.country,
-    email: address?.email || customer?.primaryEmail || structured.email,
-    phone: address?.phone || customer?.primaryPhone || structured.phone,
-    customerNumber: customer?.customerNumber || structured.customerNumber,
-    website: customer?.website || structured.website,
+    companyName: customer?.displayName || customer?.legalCompanyName || '',
+    contactName: address?.contactName || customer?.primaryContact || '',
+    streetAddress1: address?.streetAddress1 || '',
+    streetAddress2: address?.streetAddress2 || '',
+    city: address?.city || '',
+    state: address?.state || '',
+    zipCode: address?.zipCode || '',
+    country: address?.country || '',
+    email: address?.email || customer?.primaryEmail || '',
+    phone: address?.phone || customer?.primaryPhone || '',
+    customerNumber: customer?.customerNumber || '',
+    website: customer?.website || '',
     capturedAt: new Date().toISOString(),
   }
 }

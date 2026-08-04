@@ -16,22 +16,6 @@ export type StructuredCustomer = {
 }
 
 export function structuredCustomerFromProject(project?: Project, fallbackCompany = ''): StructuredCustomer {
-  if (project?.customerSnapshot) {
-    return {
-      companyName: clean(project.customerSnapshot.companyName || project.customer || fallbackCompany),
-      attention: clean(project.customerSnapshot.contactName),
-      streetAddress1: clean(project.customerSnapshot.streetAddress1),
-      streetAddress2: clean(project.customerSnapshot.streetAddress2),
-      city: clean(project.customerSnapshot.city),
-      state: clean(project.customerSnapshot.state).toUpperCase(),
-      zipCode: clean(project.customerSnapshot.zipCode),
-      country: clean(project.customerSnapshot.country),
-      email: clean(project.customerSnapshot.email),
-      phone: clean(project.customerSnapshot.phone),
-      customerNumber: clean(project.customerSnapshot.customerNumber),
-      website: clean(project.customerSnapshot.website),
-    }
-  }
   const parsed = parseLegacyAddress(project?.deliveryAddress ?? '')
   return {
     companyName: clean(project?.customer || fallbackCompany),
