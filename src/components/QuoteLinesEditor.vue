@@ -28,6 +28,7 @@
                 :part-number="line.partNumber"
                 :manufacturer="line.manufacturer"
                 :quantity="line.quantity"
+                :show-metadata="false"
                 @apply="applyVerifiedPrice(line.id, $event)"
               />
               <datalist :id="`quote-line-part-suggestions-${line.id}`">

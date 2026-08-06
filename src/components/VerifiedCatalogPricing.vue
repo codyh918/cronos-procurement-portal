@@ -10,7 +10,7 @@
         </select>
         <button class="primary-action compact-apply-price" type="button" @click="applySelected">Apply</button>
       </div>
-      <p v-if="selectedPrice" class="compact-price-meta">
+      <p v-if="selectedPrice && showMetadata" class="compact-price-meta">
         {{ selectedPrice.vendor }} · effective {{ formatDateOnly(selectedPrice.effective_date) }} ·
         expires {{ selectedPrice.expiration_date ? formatDateOnly(selectedPrice.expiration_date) : 'never' }} ·
         {{ selectedPrice.days_remaining ?? 'no expiration' }}{{ selectedPrice.days_remaining === null ? '' : ' days left' }} ·
@@ -41,7 +41,7 @@ import { computed, onBeforeUnmount, ref, watch } from 'vue'
 import { currency } from '../services/calculations'
 import { findVerifiedCatalogPrices, type VerifiedCatalogPrice } from '../services/productCatalogApi'
 
-const props = withDefaults(defineProps<{ partNumber: string; manufacturer?: string; quantity?: number }>(), { manufacturer: '', quantity: 0 })
+const props = withDefaults(defineProps<{ partNumber: string; manufacturer?: string; quantity?: number; showMetadata?: boolean }>(), { manufacturer: '', quantity: 0, showMetadata: true })
 const emit = defineEmits<{ apply: [price: VerifiedCatalogPrice] }>()
 const prices = ref<VerifiedCatalogPrice[]>([]); const loading = ref(false); const error = ref(''); const selectedId = ref('')
 const applicablePrices = computed(() => prices.value.filter(price => price.applicable))
