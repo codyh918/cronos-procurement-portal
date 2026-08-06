@@ -42,6 +42,19 @@ export type ImportSummary = {
   duplicateRecords: number; errors: Array<{ row: number; error: string }>; skippedRows: number; priceChanges: number
 }
 
+export type CatalogImportBatch = {
+  id: string; source_file: string; status: string; total_rows: number; new_products: number; updated_products: number
+  imported_at: string; pricing_verification_status: 'Verified' | 'Unverified'; pricing_verified_at: string | null; pricing_expiration_date: string | null
+}
+
+export type VerifiedCatalogPrice = {
+  id: string; product_id: string; manufacturer: string; manufacturer_part_number: string; description: string
+  new_cost: number; vendor: string; effective_date: string; expiration_date: string | null; quantity_basis: number | null
+  pricing_status: 'Verified' | 'Unverified' | 'Pending Verification' | 'Expired' | 'Rejected'
+  display_status: 'Verified' | 'Unverified' | 'Pending Verification' | 'Expired' | 'Rejected'
+  verified_at: string | null; verified_by_name: string; days_remaining: number | null; applicable: boolean; disabled_reason: string
+}
+
 async function catalogRequest<T>(path: string, init?: RequestInit): Promise<T> {
   const token = await getSupabaseAccessToken()
   if (!token) throw new Error('An authenticated Atlas session is required.')
@@ -73,11 +86,21 @@ export function updateCatalogProduct(id: string, changes: Record<string, unknown
   return catalogRequest<{ product: CatalogProduct }>(`/api/catalog/products/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(changes) })
 }
 
-export function importCatalog(file: File) {
-  return catalogRequest<ImportSummary>(`/api/catalog/import?filename=${encodeURIComponent(file.name)}`, { method: 'POST', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file })
+export function importCatalog(file: File, options: { verifyPricing?: boolean; expirationDate?: string } = {}) {
+  const params = new URLSearchParams({ filename: file.name })
+  if (options.verifyPricing) { params.set('verifyPricing', 'true'); params.set('expirationDate', options.expirationDate || '') }
+  return catalogRequest<ImportSummary>(`/api/catalog/import?${params}`, { method: 'POST', headers: { 'Content-Type': file.type || 'application/octet-stream' }, body: file })
 }
+
+export function loadCatalogImportBatches() { return catalogRequest<{ batches: CatalogImportBatch[] }>('/api/catalog/import-batches') }
+export function verifyCatalogImportBatch(batchId: string, expirationDate: string) { return catalogRequest<{ batchId: string; verifiedRecords: number; verifiedAt: string; expirationDate: string }>(`/api/catalog/import-batches/${batchId}/verify`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ expirationDate }) }) }
 
 export async function suggestCatalogProducts(query: string, limit = 8) {
   if (query.trim().length < 2) return []
   return (await searchCatalog({ q: query, pageSize: limit })).products
+}
+
+export function findVerifiedCatalogPrices(partNumber: string, manufacturer = '', quantity = 0) {
+  const params = new URLSearchParams({ partNumber, manufacturer, quantity: String(quantity) })
+  return catalogRequest<{ prices: VerifiedCatalogPrice[] }>(`/api/catalog/verified-prices?${params}`)
 }

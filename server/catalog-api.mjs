@@ -42,6 +42,30 @@ export async function handleCatalogApi({ request, response, pathname, sendJson, 
       sendJson(response, 200, { changes: data || [], total: count || 0 })
       return true
     }
+    if (request.method === 'GET' && pathname === '/api/catalog/import-batches') {
+      const batches = await supabase.from('atlas_catalog_import_batches').select('id,source_file,status,total_rows,new_products,updated_products,imported_at,pricing_verification_status,pricing_verified_at,pricing_expiration_date').order('imported_at', { ascending: false }).limit(25)
+      if (batches.error) throw batches.error
+      sendJson(response, 200, { batches: batches.data || [] }); return true
+    }
+    const verifyBatchMatch = pathname.match(/^\/api\/catalog\/import-batches\/([0-9a-f-]+)\/verify$/i)
+    if (request.method === 'POST' && verifyBatchMatch) {
+      const profile = await activeAdminProfile(supabase, auth.user.id)
+      if (!profile) { sendJson(response, 403, { error: 'Administrator access is required.' }); return true }
+      const body = await readJsonBody(request); const expirationDate = validFutureDate(body.expirationDate)
+      if (!expirationDate) { sendJson(response, 400, { error: 'A future expiration date is required.' }); return true }
+      const verifiedAt = new Date().toISOString(); const batchId = verifyBatchMatch[1]
+      const pricing = await supabase.from('atlas_product_pricing_history').update({ pricing_status: 'Verified', verified_at: verifiedAt, verified_by: auth.user.id, expiration_date: expirationDate }).eq('import_batch', batchId).select('id,product_id')
+      if (pricing.error) throw pricing.error
+      if (!pricing.data?.length) { sendJson(response, 409, { error: 'This batch has no pricing records to verify.' }); return true }
+      const batch = await supabase.from('atlas_catalog_import_batches').update({ pricing_verification_status: 'Verified', pricing_verified_at: verifiedAt, pricing_verified_by: auth.user.id, pricing_expiration_date: expirationDate }).eq('id', batchId)
+      if (batch.error) throw batch.error
+      await chunkedInsert(supabase, 'atlas_catalog_audit_events', pricing.data.map(row => ({ product_id: row.product_id, action: 'pricing.batch_verified', actor_user_id: auth.user.id, import_batch: batchId, after_data: { pricing_history_id: row.id, pricing_status: 'Verified', verified_at: verifiedAt, expiration_date: expirationDate } })), false)
+      sendJson(response, 200, { batchId, verifiedRecords: pricing.data.length, verifiedAt, expirationDate }); return true
+    }
+    if (request.method === 'GET' && pathname === '/api/catalog/verified-prices') {
+      await findVerifiedPrices({ request, response, sendJson, supabase })
+      return true
+    }
     const productMatch = pathname.match(/^\/api\/catalog\/products\/([0-9a-f-]+)$/i)
     if (request.method === 'GET' && productMatch) {
       const id = productMatch[1]
@@ -80,7 +104,10 @@ export async function handleCatalogApi({ request, response, pathname, sendJson, 
       if (!/\.(xlsx|csv)$/i.test(filename)) { sendJson(response, 400, { error: 'Only XLSX and CSV catalog files are supported.' }); return true }
       const buffer = await readBufferBody(request, 40 * 1024 * 1024)
       const parsed = parseCatalogWorkbook(buffer, filename)
-      const summary = await importProducts(supabase, parsed, filename, auth.user.id)
+      const verifyPricing = url.searchParams.get('verifyPricing') === 'true'
+      const expirationDate = verifyPricing ? validFutureDate(url.searchParams.get('expirationDate')) : null
+      if (verifyPricing && !expirationDate) { sendJson(response, 400, { error: 'A future expiration date is required when verifying imported pricing.' }); return true }
+      const summary = await importProducts(supabase, parsed, filename, auth.user.id, { verifyPricing, expirationDate })
       sendJson(response, 200, summary)
       return true
     }
@@ -91,6 +118,41 @@ export async function handleCatalogApi({ request, response, pathname, sendJson, 
     sendJson(response, 500, { error: message })
   }
   return true
+}
+
+async function findVerifiedPrices({ request, response, sendJson, supabase }) {
+  const url = new URL(request.url, 'http://localhost')
+  const partNumber = string(url.searchParams.get('partNumber'))
+  const manufacturer = string(url.searchParams.get('manufacturer'))
+  const quantity = Math.max(0, numberParam(url, 'quantity', 0))
+  if (!partNumber) { sendJson(response, 400, { error: 'Part number is required.' }); return }
+  let productQuery = supabase.from('atlas_products').select('id,manufacturer,manufacturer_part_number,description,supplier').ilike('manufacturer_part_number', partNumber).eq('active', true).limit(25)
+  if (manufacturer) productQuery = productQuery.ilike('manufacturer', manufacturer)
+  const products = await productQuery
+  if (products.error) throw products.error
+  const exact = (products.data || []).filter(product => string(product.manufacturer_part_number).toLowerCase() === partNumber.toLowerCase() && (!manufacturer || string(product.manufacturer).toLowerCase() === manufacturer.toLowerCase()))
+  if (!exact.length) { sendJson(response, 200, { prices: [] }); return }
+  const history = await supabase.from('atlas_product_pricing_history').select('id,product_id,new_cost,effective_date,expiration_date,quantity_basis,pricing_status,vendor,verified_at,verified_by,source_file').in('product_id', exact.map(product => product.id)).order('effective_date', { ascending: false })
+  if (history.error) throw history.error
+  const verifierIds = [...new Set((history.data || []).map(row => row.verified_by).filter(Boolean))]
+  const profiles = verifierIds.length ? await supabase.from('atlas_user_profiles').select('auth_user_id,display_name,email').in('auth_user_id', verifierIds) : { data: [], error: null }
+  if (profiles.error) throw profiles.error
+  const names = new Map((profiles.data || []).map(profile => [profile.auth_user_id, profile.display_name || profile.email]))
+  const productsById = new Map(exact.map(product => [product.id, product])); const now = Date.now()
+  const prices = (history.data || []).map(row => {
+    const product = productsById.get(row.product_id); const expiration = row.expiration_date ? Date.parse(row.expiration_date) : null
+    const eligibility = catalogPriceEligibility(row, quantity, now)
+    return { ...row, manufacturer: product?.manufacturer || '', manufacturer_part_number: product?.manufacturer_part_number || '', description: product?.description || '', vendor: row.vendor || product?.supplier || '', verified_by_name: row.verified_by ? (names.get(row.verified_by) || 'Verified user') : '', days_remaining: expiration === null ? null : Math.max(0, Math.ceil((expiration - now) / 86400000)), ...eligibility }
+  })
+  sendJson(response, 200, { prices })
+}
+
+export function catalogPriceEligibility(row, quantity, now = Date.now()) {
+  const expiration = row.expiration_date ? Date.parse(row.expiration_date) : null
+  const expired = expiration !== null && expiration < now
+  const quantityEligible = !row.quantity_basis || quantity >= Number(row.quantity_basis)
+  const applicable = row.pricing_status === 'Verified' && !expired && quantityEligible
+  return { display_status: expired ? 'Expired' : row.pricing_status, applicable, disabled_reason: applicable ? '' : expired ? 'Expired pricing cannot be applied.' : !quantityEligible ? `Minimum quantity is ${row.quantity_basis}.` : `${row.pricing_status} pricing cannot be applied.` }
 }
 
 async function searchProducts({ request, response, sendJson, supabase }) {
@@ -121,9 +183,10 @@ async function searchProducts({ request, response, sendJson, supabase }) {
   sendJson(response, 200, { products: data || [], total: count || 0, page, pageSize, suggestions: buildSuggestions(queryText, data || []) })
 }
 
-async function importProducts(supabase, parsed, filename, actorId) {
+async function importProducts(supabase, parsed, filename, actorId, verification = {}) {
   const batchId = randomUUID(); const now = new Date().toISOString()
-  const batchInsert = await supabase.from('atlas_catalog_import_batches').insert({ id: batchId, source_file: filename, source_type: filename.toLowerCase().endsWith('.csv') ? 'csv' : 'xlsx', total_rows: parsed.totalRows, imported_by: actorId })
+  const verifiedFields = verification.verifyPricing ? { pricing_verification_status: 'Verified', pricing_verified_at: now, pricing_verified_by: actorId, pricing_expiration_date: verification.expirationDate } : {}
+  const batchInsert = await supabase.from('atlas_catalog_import_batches').insert({ id: batchId, source_file: filename, source_type: filename.toLowerCase().endsWith('.csv') ? 'csv' : 'xlsx', total_rows: parsed.totalRows, imported_by: actorId, ...verifiedFields })
   if (batchInsert.error) throw new Error(`Could not start catalog import: ${catalogErrorMessage(batchInsert.error)}`)
   const existing = new Map()
   const importKeys = parsed.products.map(item => ({ manufacturer: item.manufacturer, manufacturer_part_number: item.manufacturerPartNumber }))
@@ -138,7 +201,7 @@ async function importProducts(supabase, parsed, filename, actorId) {
     const row = { ...toDatabaseProduct(item), updated_at: now, updated_by: actorId, last_import_batch: batchId, source_file: filename }
     if (current) {
       row.id = current.id; updates.push(row)
-      if (money(current.current_cost) !== null && money(item.currentCost) !== null && money(current.current_cost) !== money(item.currentCost)) prices.push({ product_id: current.id, previous_cost: current.current_cost, new_cost: item.currentCost, imported_by: actorId, import_batch: batchId, source_file: filename })
+      if (money(item.currentCost) !== null && (verification.verifyPricing || money(current.current_cost) !== money(item.currentCost))) prices.push(priceHistoryRow(current.id, current.current_cost, item, actorId, batchId, filename, now, verification))
       audits.push({ product_id: current.id, action: 'product.import_updated', actor_user_id: actorId, import_batch: batchId, after_data: row })
     } else inserts.push(row)
   }
@@ -147,7 +210,7 @@ async function importProducts(supabase, parsed, filename, actorId) {
   const inserted = await chunkedCatalogUpsert(supabase, inserts)
   await chunkedUpsert(supabase, 'atlas_products', updates, 'id')
   for (const row of inserted) {
-    if (money(row.current_cost) !== null) prices.push({ product_id: row.id, previous_cost: null, new_cost: row.current_cost, imported_by: actorId, import_batch: batchId, source_file: filename })
+    if (money(row.current_cost) !== null) prices.push(priceHistoryRow(row.id, null, { currentCost: row.current_cost, supplier: row.supplier }, actorId, batchId, filename, now, verification))
     audits.push({ product_id: row.id, action: 'product.import_created', actor_user_id: actorId, import_batch: batchId, after_data: row })
   }
   await chunkedInsert(supabase, 'atlas_product_pricing_history', prices, false)
@@ -156,6 +219,12 @@ async function importProducts(supabase, parsed, filename, actorId) {
   await supabase.from('atlas_catalog_import_batches').update({ status: parsed.errors.length ? 'completed_with_errors' : 'completed', new_products: summary.newProducts, updated_products: summary.updatedProducts, duplicate_records: summary.duplicateRecords, error_rows: parsed.errors.length, skipped_rows: summary.skippedRows, price_changes: summary.priceChanges, summary, completed_at: new Date().toISOString() }).eq('id', batchId)
   return summary
 }
+
+function priceHistoryRow(productId, previousCost, item, actorId, batchId, filename, now, verification) {
+  return { product_id: productId, previous_cost: previousCost, new_cost: item.currentCost, imported_by: actorId, import_batch: batchId, source_file: filename, vendor: item.supplier || '', pricing_status: verification.verifyPricing ? 'Verified' : 'Unverified', verified_at: verification.verifyPricing ? now : null, verified_by: verification.verifyPricing ? actorId : null, expiration_date: verification.verifyPricing ? verification.expirationDate : null }
+}
+
+function validFutureDate(value) { const parsed = Date.parse(String(value || '')); return Number.isFinite(parsed) && parsed > Date.now() ? new Date(parsed).toISOString() : null }
 
 export function parseCatalogWorkbook(buffer, filename) {
   const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true })

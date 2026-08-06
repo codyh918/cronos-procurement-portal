@@ -2905,6 +2905,25 @@ table {
   font-weight: 700;
 }
 
+.verified-price-panel { margin-top: .5rem; min-width: 20rem; color: var(--text); }
+.verified-price-message { margin: .35rem 0; font-size: .78rem; color: var(--text-muted); }
+.price-error { color: var(--danger); }
+.verified-price-heading, .verified-price-summary { display: flex; justify-content: space-between; align-items: center; gap: .75rem; }
+.verified-price-heading { margin-bottom: .45rem; font-size: .8rem; }
+.verified-price-heading span { color: var(--text-muted); }
+.verified-price-records { display: grid; gap: .5rem; }
+.verified-price-card { padding: .65rem; border: 1px solid var(--border); border-radius: .55rem; background: var(--surface-2); }
+.verified-price-card.disabled { opacity: .72; }
+.verified-price-card dl { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .3rem .7rem; margin: .5rem 0; }
+.verified-price-card dl div { min-width: 0; }
+.verified-price-card dt { font-size: .68rem; color: var(--text-muted); text-transform: uppercase; }
+.verified-price-card dd { margin: 0; font-size: .76rem; overflow-wrap: anywhere; }
+.catalog-price-status { padding: .15rem .4rem; border-radius: 999px; font-size: .7rem; font-weight: 700; }
+.catalog-price-status.is-verified { color: #087443; background: #daf6e8; }
+.catalog-price-status.is-blocked { color: #9b2c2c; background: #fde8e8; }
+.apply-catalog-price { width: 100%; justify-content: center; font-size: .75rem; }
+.verified-price-card small { display: block; margin-top: .35rem; color: var(--danger); }
+
 .clin-pill {
   display: inline-flex;
   width: 64px;
@@ -6207,4 +6226,29 @@ textarea {
   flex: 0 0 3.25rem;
   text-align: center;
   font-weight: 700;
+}
+
+/* Keep PO commercial values and dates crisp against the white form fields. */
+.po-detail-page .tracking-field input,
+.po-detail-page .tracking-field select,
+.po-detail-page .tracking-field textarea,
+.po-detail-page .cell-input {
+  color: #000;
+  font-weight: 800;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: geometricPrecision;
+  opacity: 1;
+}
+
+.po-detail-page .tracking-field input::placeholder,
+.po-detail-page .tracking-field textarea::placeholder,
+.po-detail-page .cell-input::placeholder {
+  color: #303030;
+  opacity: 1;
+}
+
+.po-detail-page input[type='date']::-webkit-datetime-edit,
+.po-detail-page input[type='number'] {
+  color: #000;
+  font-weight: 800;
 }

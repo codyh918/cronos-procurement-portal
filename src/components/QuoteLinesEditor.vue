@@ -24,9 +24,12 @@
                 :list="`quote-line-part-suggestions-${line.id}`"
                 @input="updatePartNumber(line.id, inputValue($event))"
               />
-              <p class="quote-line-catalog-help">
-                {{ catalogHint(line.partNumber) }}
-              </p>
+              <VerifiedCatalogPricing
+                :part-number="line.partNumber"
+                :manufacturer="line.manufacturer"
+                :quantity="line.quantity"
+                @apply="applyVerifiedPrice(line.id, $event)"
+              />
               <datalist :id="`quote-line-part-suggestions-${line.id}`">
                 <option v-for="record in findPartPriceSuggestions(line.partNumber)" :key="record.id" :value="record.partNumber">
                   {{ record.description }} - {{ record.vendor }}
@@ -108,10 +111,12 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { Trash2 } from '@lucide/vue'
 import { calculateLineTotals, currency } from '../services/calculations'
-import { findLatestPartPrice, findPartPriceSuggestions } from '../services/partCatalog'
+import { findPartPriceSuggestions } from '../services/partCatalog'
+import type { VerifiedCatalogPrice } from '../services/productCatalogApi'
 import { recommendVendorForPart } from '../services/vendorIntelligence'
 import { getVendorOptions } from '../services/vendors'
 import type { QuoteLine } from '../types'
+import VerifiedCatalogPricing from './VerifiedCatalogPricing.vue'
 
 const props = withDefaults(
   defineProps<{
@@ -215,22 +220,12 @@ function syncHorizontalScroll(source: 'top' | 'table') {
 
 function updatePartNumber(id: string, partNumber: string) {
   const currentLine = props.lines.find(line => line.id === id)
-  const match = findLatestPartPrice(partNumber)
-  updateLine(
-    id,
-    match
-      ? {
-          partNumber,
-          manufacturer: match.manufacturer || currentLine?.manufacturer || '',
-          description: match.description || currentLine?.description || '',
-          vendor: match.vendor || currentLine?.vendor || '',
-          unitCost: match.unitCost,
-        }
-      : {
-          partNumber,
-          vendor: currentLine?.vendor || recommendVendorForPart(partNumber, currentLine?.manufacturer, currentLine?.description),
-        },
-  )
+  updateLine(id, { partNumber, vendor: currentLine?.vendor || recommendVendorForPart(partNumber, currentLine?.manufacturer, currentLine?.description) })
+}
+
+function applyVerifiedPrice(id: string, price: VerifiedCatalogPrice) {
+  if (!price.applicable || price.display_status !== 'Verified') return
+  updateLine(id, { unitCost: Number(price.new_cost), vendor: price.vendor || props.lines.find(line => line.id === id)?.vendor || '' })
 }
 
 function removeLine(id: string) {
@@ -252,8 +247,4 @@ function numberValue(event: Event) {
   return Number(inputValue(event))
 }
 
-function catalogHint(partNumber: string) {
-  const match = findLatestPartPrice(partNumber)
-  return match ? `Catalog: ${currency(match.unitCost)}` : ''
-}
 </script>

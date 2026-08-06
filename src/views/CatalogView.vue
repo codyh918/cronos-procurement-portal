@@ -6,11 +6,14 @@
         <h1>Product Catalog</h1>
         <p>Search manufacturer catalogs, supplier records, specifications, and current pricing.</p>
       </div>
-      <label v-if="isAdmin" class="upload-button catalog-import-button">
-        <FileUp :size="18" />
-        <span>Import Catalog</span>
-        <input type="file" accept=".xlsx,.csv" @change="handleImport" />
-      </label>
+      <div v-if="isAdmin" class="catalog-import-controls">
+        <label><input v-model="verifyImportedPricing" type="checkbox" /> I attest that pricing in this file is verified</label>
+        <label v-if="verifyImportedPricing">Pricing expires <input v-model="importExpirationDate" type="date" :min="tomorrow" /></label>
+        <label class="upload-button catalog-import-button" :class="{ disabled: verifyImportedPricing && !importExpirationDate }">
+          <FileUp :size="18" /><span>Import Catalog</span>
+          <input type="file" accept=".xlsx,.csv" :disabled="verifyImportedPricing && !importExpirationDate" @change="handleImport" />
+        </label>
+      </div>
     </header>
 
     <section class="catalog-search-panel">
@@ -32,6 +35,20 @@
       <div><strong>{{ importSummary.priceChanges }}</strong><span>Price Changes</span></div>
     </section>
     <p v-if="status" class="status-note">{{ status }}</p>
+
+    <section v-if="isAdmin && importBatches.length" class="catalog-batch-panel">
+      <h2>Recent catalog imports</h2>
+      <p>Bulk-verify a previously uploaded file after confirming its pricing source and expiration.</p>
+      <div v-for="batch in importBatches" :key="batch.id" class="catalog-batch-row">
+        <div><strong>{{ batch.source_file }}</strong><small>{{ formatDate(batch.imported_at) }} · {{ batch.total_rows }} rows</small></div>
+        <span class="catalog-badge" :class="batch.pricing_verification_status === 'Verified' ? 'success' : 'muted'">{{ batch.pricing_verification_status }}</span>
+        <span v-if="batch.pricing_expiration_date">Expires {{ formatDate(batch.pricing_expiration_date) }}</span>
+        <template v-else>
+          <input v-model="batchExpirationDates[batch.id]" type="date" :min="tomorrow" aria-label="Pricing expiration date" />
+          <button class="secondary-action" type="button" :disabled="!batchExpirationDates[batch.id] || verifyingBatch === batch.id" @click="verifyBatch(batch.id)">Verify batch pricing</button>
+        </template>
+      </div>
+    </section>
 
     <div class="catalog-layout">
       <aside class="catalog-filters">
@@ -78,16 +95,18 @@ import FilterSelect from '../components/catalog/FilterSelect.vue'
 import FilterToggle from '../components/catalog/FilterToggle.vue'
 import { currency } from '../services/calculations'
 import { fetchSession } from '../services/auth'
-import { importCatalog, loadCatalogFacets, searchCatalog, type CatalogProduct, type ImportSummary } from '../services/productCatalogApi'
+import { importCatalog, loadCatalogFacets, loadCatalogImportBatches, searchCatalog, verifyCatalogImportBatch, type CatalogImportBatch, type CatalogProduct, type ImportSummary } from '../services/productCatalogApi'
 
 const router = useRouter(); const query = ref(''); const products = ref<CatalogProduct[]>([]); const total = ref(0); const page = ref(1); const pageSize = ref(25)
 const manufacturer = ref(''); const category = ref(''); const supplier = ref(''); const minPrice = ref<number | null>(null); const maxPrice = ref<number | null>(null); const leadTimeDays = ref<number | null>(null)
 const purchasable = ref<boolean | null>(null); const inStock = ref<boolean | null>(null); const taaCompliant = ref<boolean | null>(null); const serialRequired = ref<boolean | null>(null); const active = ref<boolean | null>(true)
 const loading = ref(false); const error = ref(''); const status = ref(''); const suggestions = ref<string[]>([]); const importSummary = ref<ImportSummary | null>(null)
+const verifyImportedPricing = ref(true); const importExpirationDate = ref(''); const importBatches = ref<CatalogImportBatch[]>([]); const batchExpirationDates = ref<Record<string, string>>({}); const verifyingBatch = ref('')
 const facets = ref({ manufacturers: [] as Array<{ value: string; count: number }>, categories: [] as Array<{ value: string; count: number }>, suppliers: [] as Array<{ value: string; count: number }> })
 const isAdmin = computed(() => fetchSession()?.role === 'Admin'); const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
 
-onMounted(async () => { try { facets.value = await loadCatalogFacets() } catch {} await runSearch(1) })
+const tomorrow = computed(() => { const date = new Date(); date.setDate(date.getDate() + 1); return date.toISOString().slice(0, 10) })
+onMounted(async () => { try { facets.value = await loadCatalogFacets(); if (isAdmin.value) importBatches.value = (await loadCatalogImportBatches()).batches } catch {} await runSearch(1) })
 async function runSearch(nextPage = page.value) { loading.value = true; error.value = ''; try { const result = await searchCatalog({ q: query.value, page: nextPage, pageSize: pageSize.value, manufacturer: manufacturer.value ? [manufacturer.value] : [], category: category.value ? [category.value] : [], supplier: supplier.value ? [supplier.value] : [], minPrice: minPrice.value, maxPrice: maxPrice.value, leadTimeDays: leadTimeDays.value, purchasable: purchasable.value, inStock: inStock.value, taaCompliant: taaCompliant.value, serialRequired: serialRequired.value, active: active.value }); products.value = result.products; total.value = result.total; page.value = result.page; suggestions.value = result.suggestions } catch (cause) { error.value = cause instanceof Error ? cause.message : 'Unable to search the product catalog.' } finally { loading.value = false } }
 async function handleImport(event: Event) {
   const input = event.target as HTMLInputElement
@@ -95,13 +114,14 @@ async function handleImport(event: Event) {
   if (!file) return
   status.value = `Importing ${file.name}…`
   try {
-    importSummary.value = await importCatalog(file)
+    importSummary.value = await importCatalog(file, { verifyPricing: verifyImportedPricing.value, expirationDate: importExpirationDate.value })
     const summary = importSummary.value
     status.value = summary.errors.length
       ? `Import processed: ${summary.newProducts} new, ${summary.updatedProducts} updated, and ${summary.errors.length} rejected rows.`
       : `Import complete: ${summary.newProducts} new and ${summary.updatedProducts} updated.`
     try {
       facets.value = await loadCatalogFacets()
+      if (isAdmin.value) importBatches.value = (await loadCatalogImportBatches()).batches
       await runSearch(1)
     } catch (refreshCause) {
       const refreshMessage = refreshCause instanceof Error ? refreshCause.message : 'Catalog refresh failed.'
@@ -113,6 +133,8 @@ async function handleImport(event: Event) {
     input.value = ''
   }
 }
+async function verifyBatch(batchId: string) { verifyingBatch.value = batchId; try { const result = await verifyCatalogImportBatch(batchId, batchExpirationDates.value[batchId]); status.value = `Verified ${result.verifiedRecords} pricing records in the selected import batch.`; importBatches.value = (await loadCatalogImportBatches()).batches } catch (cause) { status.value = cause instanceof Error ? cause.message : 'Unable to verify the import batch.' } finally { verifyingBatch.value = '' } }
+function formatDate(value: string) { return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value)) }
 function clearFilters() { manufacturer.value = ''; category.value = ''; supplier.value = ''; minPrice.value = null; maxPrice.value = null; leadTimeDays.value = null; purchasable.value = null; inStock.value = null; taaCompliant.value = null; serialRequired.value = null; active.value = true; void runSearch(1) }
 function openProduct(id: string) { void router.push(`/catalog/${id}`) }
 function yesNo(value: boolean | null) { return value === null ? 'Unknown' : value ? 'Yes' : 'No' }
@@ -120,4 +142,5 @@ function yesNo(value: boolean | null) { return value === null ? 'Unknown' : valu
 
 <style scoped>
 .product-catalog-page{display:grid;gap:1.25rem}.catalog-hero,.results-heading,.filter-heading{display:flex;justify-content:space-between;align-items:center;gap:1rem}.catalog-hero h1{margin:.15rem 0}.eyebrow{font-size:.72rem;font-weight:800;letter-spacing:.12em;color:#64748b}.catalog-import-button input{display:none}.catalog-search-panel{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:.75rem;padding:1rem 1.1rem;background:#fff;border:1px solid #dbe3ec;border-radius:14px;box-shadow:0 8px 24px rgba(15,23,42,.06)}.catalog-search-panel input{border:0;outline:0;font-size:1rem;width:100%}.suggestion-row{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;color:#64748b}.suggestion-row button{border:1px solid #cbd5e1;background:#fff;border-radius:999px;padding:.35rem .7rem;color:#334155}.import-summary-card{display:grid;grid-template-columns:repeat(6,1fr);gap:.75rem}.import-summary-card div{background:#fff;border:1px solid #dbe3ec;border-radius:12px;padding:.85rem}.import-summary-card strong,.import-summary-card span{display:block}.import-summary-card strong{font-size:1.25rem}.import-summary-card span{font-size:.75rem;color:#64748b}.catalog-layout{display:grid;grid-template-columns:240px minmax(0,1fr);gap:1rem}.catalog-filters,.catalog-results{background:#fff;border:1px solid #dbe3ec;border-radius:14px}.catalog-filters{padding:1rem;align-self:start;display:grid;gap:1rem}.filter-heading h2,.results-heading h2{margin:0}.filter-heading button{border:0;background:none;color:#2563eb}.catalog-filters fieldset{border:0;padding:0;margin:0;display:grid;gap:.4rem}.catalog-filters legend{font-size:.78rem;font-weight:700;color:#475569;margin-bottom:.4rem}.catalog-filters select,.catalog-filters input,.results-heading select{width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:.55rem;background:#fff}.range-fields{display:grid;grid-template-columns:1fr 1fr;gap:.4rem}.apply-filters{justify-content:center}.catalog-results{min-width:0}.results-heading{padding:1rem 1.1rem;border-bottom:1px solid #e2e8f0}.results-heading p{margin:.2rem 0 0;color:#64748b;font-size:.82rem}.catalog-table-wrap{overflow:auto}.catalog-table{width:100%;border-collapse:collapse;font-size:.82rem}.catalog-table th{position:sticky;top:0;background:#f8fafc;text-align:left;color:#475569;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em}.catalog-table th,.catalog-table td{padding:.78rem;border-bottom:1px solid #eef2f7}.catalog-table tbody tr{cursor:pointer}.catalog-table tbody tr:hover{background:#f8fbff}.part-number{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#1d4ed8}.catalog-badge{display:inline-flex;padding:.2rem .45rem;border-radius:999px;font-size:.72rem}.catalog-badge.success{background:#dcfce7;color:#166534}.catalog-badge.muted{background:#f1f5f9;color:#64748b}.catalog-empty{padding:4rem;text-align:center;color:#64748b}.error-state{color:#b91c1c}.pagination{display:flex;justify-content:center;align-items:center;gap:1rem;padding:1rem}.pagination button{border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:.45rem .8rem}.pagination button:disabled{opacity:.45}@media(max-width:900px){.catalog-layout{grid-template-columns:1fr}.import-summary-card{grid-template-columns:repeat(2,1fr)}.catalog-hero{align-items:flex-start;flex-direction:column}}
+.catalog-import-controls{display:grid;gap:.55rem;justify-items:end}.catalog-import-controls>label:not(.upload-button){font-size:.78rem;color:#475569}.catalog-import-controls input[type=date]{margin-left:.35rem;padding:.35rem;border:1px solid #cbd5e1;border-radius:7px}.catalog-import-button.disabled{opacity:.5}.catalog-batch-panel{background:#fff;border:1px solid #dbe3ec;border-radius:14px;padding:1rem;display:grid;gap:.7rem}.catalog-batch-panel h2,.catalog-batch-panel p{margin:0}.catalog-batch-row{display:grid;grid-template-columns:minmax(220px,1fr) auto auto auto auto;align-items:center;gap:.75rem;border-top:1px solid #eef2f7;padding-top:.7rem}.catalog-batch-row small{display:block;color:#64748b}.catalog-batch-row input{padding:.45rem;border:1px solid #cbd5e1;border-radius:8px}
 </style>

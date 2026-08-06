@@ -231,6 +231,12 @@
             </option>
           </datalist>
           <small v-if="catalogStatus" class="field-help">{{ catalogStatus }}</small>
+          <VerifiedCatalogPricing
+            :part-number="lineForm.partNumber"
+            :manufacturer="lineForm.manufacturer"
+            :quantity="quantity"
+            @apply="applyVerifiedCatalogPrice"
+          />
         </label>
         <FormField v-model="lineForm.manufacturer" label="Manufacturer" placeholder="Enter manufacturer" />
         <label class="form-field">
@@ -322,12 +328,13 @@ import FormField from '../components/FormField.vue'
 import QuoteLinesEditor from '../components/QuoteLinesEditor.vue'
 import QuoteSummaryTile from '../components/QuoteSummaryTile.vue'
 import RfqStep from '../components/RfqStep.vue'
+import VerifiedCatalogPricing from '../components/VerifiedCatalogPricing.vue'
 import { calculateLineTotals, calculateQuoteSummaryWithContractFee, currency, type PricingMode } from '../services/calculations'
 import { applyPricingToAllLines } from '../services/bulkPricing.mjs'
 import { createQuoteForProject, loadProject, setQuoteApprovalStatus, updateQuoteForProject } from '../services/localProjects'
 import { applyManufacturerUpdateFile } from '../services/manufacturerImport'
 import { findLatestPartPrice, findPartPriceSuggestions } from '../services/partCatalog'
-import { suggestCatalogProducts, type CatalogProduct } from '../services/productCatalogApi'
+import { suggestCatalogProducts, type CatalogProduct, type VerifiedCatalogPrice } from '../services/productCatalogApi'
 import { exportCustomerQuotePdf } from '../services/pdfExports'
 import { parseQuoteImportFile } from '../services/quoteImport'
 import { applyVendorRfqResponseFile } from '../services/vendorRfqResponses'
@@ -486,8 +493,7 @@ function applyCatalogPart(partNumber: string) {
     lineForm.vendor = remote.supplier
     lineForm.supplierPartNumber = remote.supplier_part_number
     lineForm.leadTime = remote.lead_time
-    unitCost.value = remote.current_cost ?? 0
-    catalogStatus.value = `Product Catalog match: ${remote.manufacturer} ${remote.manufacturer_part_number} at ${currency(remote.current_cost ?? 0)}.`
+    catalogStatus.value = `Exact Product Catalog match: ${remote.manufacturer} ${remote.manufacturer_part_number}. Select a verified pricing record below to apply its cost.`
     return
   }
   const match = findLatestPartPrice(partNumber)
@@ -505,8 +511,15 @@ function applyCatalogPart(partNumber: string) {
   lineForm.manufacturer = match.manufacturer || lineForm.manufacturer
   lineForm.description = match.description || lineForm.description
   lineForm.vendor = match.vendor || lineForm.vendor
-  unitCost.value = match.unitCost
-  catalogStatus.value = `Catalog match: ${match.partNumber} at ${currency(match.unitCost)} from ${match.poNumber}.`
+  catalogStatus.value = `Local purchase-history match found for ${match.partNumber}. Unit cost was not changed; only verified catalog pricing can be applied below.`
+}
+
+function applyVerifiedCatalogPrice(price: VerifiedCatalogPrice) {
+  if (!price.applicable || price.display_status !== 'Verified') return
+  unitCost.value = Number(price.new_cost)
+  lineForm.vendor = price.vendor || lineForm.vendor
+  lineForm.manufacturer = price.manufacturer || lineForm.manufacturer
+  catalogStatus.value = `Applied verified catalog unit cost ${currency(price.new_cost)} from ${price.vendor || 'the selected pricing record'}.`
 }
 
 function scheduleCatalogLookup(value: string) {
