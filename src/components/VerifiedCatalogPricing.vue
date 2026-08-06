@@ -17,7 +17,7 @@
           <dl>
             <div><dt>Vendor</dt><dd>{{ price.vendor || '—' }}</dd></div>
             <div><dt>Effective</dt><dd>{{ formatDate(price.effective_date) }}</dd></div>
-            <div><dt>Expires</dt><dd>{{ price.expiration_date ? formatDate(price.expiration_date) : 'No expiration' }}</dd></div>
+            <div><dt>Expires</dt><dd>{{ price.expiration_date ? formatDateOnly(price.expiration_date) : 'No expiration' }}</dd></div>
             <div><dt>Days remaining</dt><dd>{{ price.days_remaining ?? 'No expiration' }}</dd></div>
             <div><dt>Quantity basis</dt><dd>{{ price.quantity_basis ?? 'Any quantity' }}</dd></div>
             <div><dt>Verified</dt><dd>{{ price.verified_at ? formatDate(price.verified_at) : 'Not verified' }}</dd></div>
@@ -64,4 +64,5 @@ async function load(part: string) {
 }
 
 function formatDate(value: string) { return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value)) }
+function formatDateOnly(value: string) { return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(value)) }
 </script>

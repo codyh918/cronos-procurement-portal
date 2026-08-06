@@ -8,7 +8,7 @@
       </div>
       <div v-if="isAdmin" class="catalog-import-controls">
         <label><input v-model="verifyImportedPricing" type="checkbox" /> I attest that pricing in this file is verified</label>
-        <label v-if="verifyImportedPricing">Pricing expires <input v-model="importExpirationDate" type="date" :min="tomorrow" /></label>
+        <label v-if="verifyImportedPricing">Pricing expires <input v-model="importExpirationDate" type="date" :min="today" /></label>
         <label class="upload-button catalog-import-button" :class="{ disabled: verifyImportedPricing && !importExpirationDate }">
           <FileUp :size="18" /><span>Import Catalog</span>
           <input type="file" accept=".xlsx,.csv" :disabled="verifyImportedPricing && !importExpirationDate" @change="handleImport" />
@@ -42,9 +42,9 @@
       <div v-for="batch in importBatches" :key="batch.id" class="catalog-batch-row">
         <div><strong>{{ batch.source_file }}</strong><small>{{ formatDate(batch.imported_at) }} · {{ batch.total_rows }} rows</small></div>
         <span class="catalog-badge" :class="batch.pricing_verification_status === 'Verified' ? 'success' : 'muted'">{{ batch.pricing_verification_status }}</span>
-        <span v-if="batch.pricing_expiration_date">Expires {{ formatDate(batch.pricing_expiration_date) }}</span>
+        <span v-if="batch.pricing_expiration_date">Expires {{ formatDateOnly(batch.pricing_expiration_date) }}</span>
         <template v-else>
-          <input v-model="batchExpirationDates[batch.id]" type="date" :min="tomorrow" aria-label="Pricing expiration date" />
+          <input v-model="batchExpirationDates[batch.id]" type="date" :min="today" aria-label="Pricing expiration date" />
           <button class="secondary-action" type="button" :disabled="!batchExpirationDates[batch.id] || verifyingBatch === batch.id" @click="verifyBatch(batch.id)">Verify batch pricing</button>
         </template>
       </div>
@@ -105,7 +105,7 @@ const verifyImportedPricing = ref(true); const importExpirationDate = ref(''); c
 const facets = ref({ manufacturers: [] as Array<{ value: string; count: number }>, categories: [] as Array<{ value: string; count: number }>, suppliers: [] as Array<{ value: string; count: number }> })
 const isAdmin = computed(() => fetchSession()?.role === 'Admin'); const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
 
-const tomorrow = computed(() => { const date = new Date(); date.setDate(date.getDate() + 1); return date.toISOString().slice(0, 10) })
+const today = computed(() => { const date = new Date(); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` })
 onMounted(async () => { try { facets.value = await loadCatalogFacets(); if (isAdmin.value) importBatches.value = (await loadCatalogImportBatches()).batches } catch {} await runSearch(1) })
 async function runSearch(nextPage = page.value) { loading.value = true; error.value = ''; try { const result = await searchCatalog({ q: query.value, page: nextPage, pageSize: pageSize.value, manufacturer: manufacturer.value ? [manufacturer.value] : [], category: category.value ? [category.value] : [], supplier: supplier.value ? [supplier.value] : [], minPrice: minPrice.value, maxPrice: maxPrice.value, leadTimeDays: leadTimeDays.value, purchasable: purchasable.value, inStock: inStock.value, taaCompliant: taaCompliant.value, serialRequired: serialRequired.value, active: active.value }); products.value = result.products; total.value = result.total; page.value = result.page; suggestions.value = result.suggestions } catch (cause) { error.value = cause instanceof Error ? cause.message : 'Unable to search the product catalog.' } finally { loading.value = false } }
 async function handleImport(event: Event) {
@@ -135,6 +135,7 @@ async function handleImport(event: Event) {
 }
 async function verifyBatch(batchId: string) { verifyingBatch.value = batchId; try { const result = await verifyCatalogImportBatch(batchId, batchExpirationDates.value[batchId]); status.value = `Verified ${result.verifiedRecords} pricing records in the selected import batch.`; importBatches.value = (await loadCatalogImportBatches()).batches } catch (cause) { status.value = cause instanceof Error ? cause.message : 'Unable to verify the import batch.' } finally { verifyingBatch.value = '' } }
 function formatDate(value: string) { return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value)) }
+function formatDateOnly(value: string) { return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(value)) }
 function clearFilters() { manufacturer.value = ''; category.value = ''; supplier.value = ''; minPrice.value = null; maxPrice.value = null; leadTimeDays.value = null; purchasable.value = null; inStock.value = null; taaCompliant.value = null; serialRequired.value = null; active.value = true; void runSearch(1) }
 function openProduct(id: string) { void router.push(`/catalog/${id}`) }
 function yesNo(value: boolean | null) { return value === null ? 'Unknown' : value ? 'Yes' : 'No' }

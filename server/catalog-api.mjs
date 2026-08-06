@@ -224,7 +224,11 @@ function priceHistoryRow(productId, previousCost, item, actorId, batchId, filena
   return { product_id: productId, previous_cost: previousCost, new_cost: item.currentCost, imported_by: actorId, import_batch: batchId, source_file: filename, vendor: item.supplier || '', pricing_status: verification.verifyPricing ? 'Verified' : 'Unverified', verified_at: verification.verifyPricing ? now : null, verified_by: verification.verifyPricing ? actorId : null, expiration_date: verification.verifyPricing ? verification.expirationDate : null }
 }
 
-function validFutureDate(value) { const parsed = Date.parse(String(value || '')); return Number.isFinite(parsed) && parsed > Date.now() ? new Date(parsed).toISOString() : null }
+function validFutureDate(value) {
+  const raw = String(value || '').trim()
+  const parsed = Date.parse(/^\d{4}-\d{2}-\d{2}$/.test(raw) ? `${raw}T23:59:59.999Z` : raw)
+  return Number.isFinite(parsed) && parsed > Date.now() ? new Date(parsed).toISOString() : null
+}
 
 export function parseCatalogWorkbook(buffer, filename) {
   const workbook = XLSX.read(buffer, { type: 'buffer', cellDates: true })
