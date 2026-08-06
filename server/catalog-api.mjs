@@ -144,7 +144,7 @@ async function importProducts(supabase, parsed, filename, actorId) {
   }
   // Upsert here as a final database-level guard. A stale/incomplete catalog snapshot
   // must not abort the whole import when the unique manufacturer + part key exists.
-  const inserted = await chunkedUpsertReturning(supabase, 'atlas_products', inserts, 'manufacturer,manufacturer_part_number')
+  const inserted = await chunkedCatalogUpsert(supabase, inserts)
   await chunkedUpsert(supabase, 'atlas_products', updates, 'id')
   for (const row of inserted) {
     if (money(row.current_cost) !== null) prices.push({ product_id: row.id, previous_cost: null, new_cost: row.current_cost, imported_by: actorId, import_batch: batchId, source_file: filename })
@@ -205,4 +205,4 @@ async function activeAdminProfile(supabase, id) { const { data } = await supabas
 async function findRelatedProducts(supabase, product) { let query = supabase.from('atlas_products').select(PRODUCT_SELECT).neq('id', product.id).limit(8); if (product.category) query = query.eq('category', product.category); else query = query.eq('manufacturer', product.manufacturer); const { data } = await query; return data || [] }
 async function chunkedInsert(supabase, table, rows, returning = true) { const output = []; for (let index = 0; index < rows.length; index += 200) { let query = supabase.from(table).insert(rows.slice(index, index + 200)); if (returning) query = query.select('*'); const result = await query; if (result.error) throw result.error; output.push(...(result.data || [])) } return output }
 async function chunkedUpsert(supabase, table, rows, onConflict) { for (let index = 0; index < rows.length; index += 200) { const result = await supabase.from(table).upsert(rows.slice(index, index + 200), { onConflict }); if (result.error) throw result.error } }
-async function chunkedUpsertReturning(supabase, table, rows, onConflict) { const output = []; for (let index = 0; index < rows.length; index += 200) { const result = await supabase.from(table).upsert(rows.slice(index, index + 200), { onConflict }).select('*'); if (result.error) throw result.error; output.push(...(result.data || [])) } return output }
+async function chunkedCatalogUpsert(supabase, rows) { const output = []; for (let index = 0; index < rows.length; index += 200) { const result = await supabase.rpc('atlas_catalog_upsert_products', { p_rows: rows.slice(index, index + 200) }); if (result.error) throw new Error(`Could not upsert catalog products: ${catalogErrorMessage(result.error)}`); output.push(...(result.data || [])) } return output }
