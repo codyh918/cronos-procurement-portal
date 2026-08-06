@@ -142,7 +142,7 @@ async function findVerifiedPrices({ request, response, sendJson, supabase }) {
   const prices = (history.data || []).map(row => {
     const product = productsById.get(row.product_id); const expiration = row.expiration_date ? Date.parse(row.expiration_date) : null
     const eligibility = catalogPriceEligibility(row, quantity, now)
-    return { ...row, manufacturer: product?.manufacturer || '', manufacturer_part_number: product?.manufacturer_part_number || '', description: product?.description || '', vendor: row.vendor || product?.supplier || '', verified_by_name: row.verified_by ? (names.get(row.verified_by) || 'Verified user') : '', days_remaining: expiration === null ? null : Math.max(0, Math.ceil((expiration - now) / 86400000)), ...eligibility }
+    return { ...row, manufacturer: product?.manufacturer || '', manufacturer_part_number: product?.manufacturer_part_number || '', description: product?.description || '', vendor: row.vendor || product?.supplier || product?.manufacturer || '', verified_by_name: row.verified_by ? (names.get(row.verified_by) || 'Verified user') : '', days_remaining: expiration === null ? null : Math.max(0, Math.ceil((expiration - now) / 86400000)), ...eligibility }
   })
   sendJson(response, 200, { prices })
 }
