@@ -128,7 +128,7 @@ export async function hydrateLocalCollection<T>(
       return local
     }
     backupLocalCollection(storageKey, `before-hydrate-${recordType}`)
-    window.localStorage.setItem(storageKey, JSON.stringify(merged))
+    writeLocalCollection(storageKey, merged)
     if (options.eventName) window.dispatchEvent(new Event(options.eventName))
     return merged
   }
@@ -159,8 +159,13 @@ export function saveLocalAndRemoteCollection<T>(
   options: CollectionSyncOptions = {},
 ) {
   backupLocalCollection(storageKey, `before-save-${recordType}`)
-  window.localStorage.setItem(storageKey, JSON.stringify(items))
+  const localSaved = writeLocalCollection(storageKey, items)
   if (eventName) window.dispatchEvent(new Event(eventName))
+  if (!localSaved) {
+    window.dispatchEvent(new CustomEvent('cronos:remote-sync-error', {
+      detail: `Atlas saved remotely, but this browser cache is full. Project backups were cleared; refresh the page if the latest data does not appear immediately.`,
+    }))
+  }
   void saveRemoteCollection(recordType, recordKey, items, options).catch(error => {
     window.dispatchEvent(new CustomEvent('cronos:remote-sync-error', { detail: error instanceof Error ? error.message : 'Supabase sync failed.' }))
   })
@@ -174,10 +179,15 @@ export async function saveLocalAndRemoteCollectionStrict<T>(
   eventName?: string,
   options: CollectionSyncOptions = {},
 ) {
-  backupLocalCollection(storageKey, `before-save-${recordType}`)
-  window.localStorage.setItem(storageKey, JSON.stringify(items))
-  if (eventName) window.dispatchEvent(new Event(eventName))
   await saveRemoteCollection(recordType, recordKey, items, options)
+  backupLocalCollection(storageKey, `before-save-${recordType}`)
+  const localSaved = writeLocalCollection(storageKey, items)
+  if (eventName) window.dispatchEvent(new Event(eventName))
+  if (!localSaved) {
+    window.dispatchEvent(new CustomEvent('cronos:remote-sync-error', {
+      detail: `Atlas saved this change to Supabase, but this browser cache is full. Project backups were cleared; refresh the page to reload from Supabase.`,
+    }))
+  }
 }
 
 async function saveRemoteCollection<T>(recordType: string, recordKey: string, items: T[], options: CollectionSyncOptions) {
@@ -267,7 +277,7 @@ export async function restoreLocalCollectionBackup<T>(
   if (!Array.isArray(items)) throw new Error('Backup is not a valid collection.')
 
   backupLocalCollection(storageKey, `before-restore-${recordType}`)
-  window.localStorage.setItem(storageKey, JSON.stringify(items))
+  writeLocalCollection(storageKey, items)
   if (eventName) window.dispatchEvent(new Event(eventName))
   await saveRemoteRecord(recordType, recordKey, items)
   return items
@@ -285,6 +295,10 @@ function safeRecordCount(raw: string) {
 function backupLocalCollection(storageKey: string, reason: string) {
   const raw = window.localStorage.getItem(storageKey)
   if (!raw || raw === '[]') return
+  if (raw.length > 1_500_000) {
+    pruneBackups(storageKey, 0)
+    return
+  }
 
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-')
   const backupKey = `${storageKey}.backup.${timestamp}`
@@ -293,10 +307,42 @@ function backupLocalCollection(storageKey: string, reason: string) {
     window.localStorage.setItem(backupKey, raw)
     window.localStorage.setItem(latestKey, raw)
     window.localStorage.setItem(`${latestKey}.meta`, JSON.stringify({ reason, createdAt: new Date().toISOString() }))
-    pruneBackups(storageKey, 8)
+    pruneBackups(storageKey, 2)
   } catch (error) {
     console.warn(`Unable to back up ${storageKey} before ${reason}.`, error)
   }
+}
+
+function writeLocalCollection<T>(storageKey: string, items: T[]) {
+  const serialized = JSON.stringify(items)
+  try {
+    window.localStorage.setItem(storageKey, serialized)
+    return true
+  } catch (error) {
+    if (!isQuotaExceededError(error)) throw error
+  }
+
+  pruneBackups(storageKey, 0)
+  window.localStorage.removeItem(`${storageKey}.backup.latest`)
+  window.localStorage.removeItem(`${storageKey}.backup.latest.meta`)
+
+  try {
+    window.localStorage.setItem(storageKey, serialized)
+    return true
+  } catch (error) {
+    if (!isQuotaExceededError(error)) throw error
+    console.warn(`Unable to cache ${storageKey}; browser storage quota is full.`, error)
+    return false
+  }
+}
+
+function isQuotaExceededError(error: unknown) {
+  return error instanceof DOMException && (
+    error.name === 'QuotaExceededError' ||
+    error.name === 'NS_ERROR_DOM_QUOTA_REACHED' ||
+    error.code === 22 ||
+    error.code === 1014
+  )
 }
 
 function pruneBackups(storageKey: string, keep: number) {

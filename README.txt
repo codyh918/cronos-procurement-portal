@@ -1,4 +1,4 @@
-Atlas Quote Save / MEL Upload Fix - CORRECT V2
+Atlas Quote Save / MEL Upload / localStorage Quota Fix - CORRECT V2
 
 This is for the Vue/Vite Atlas app that serves /assets/index-*.js on Railway.
 Do NOT use the earlier Next/React patch folder for the Railway Atlas production app.
@@ -16,6 +16,8 @@ What changed:
 - XLSX imports choose the worksheet with real material rows.
 - Total Quantity is recognized as quantity for MEL uploads.
 - Blank/MPL/summary rows are ignored before saving.
+- Browser localStorage quota no longer blocks strict quote saves.
+- Atlas clears old cronos.projects backup entries and retries local cache writes when storage is full.
 
 Validated on local source:
 - npm run type-check passed
