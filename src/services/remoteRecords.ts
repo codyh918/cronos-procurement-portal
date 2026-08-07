@@ -166,6 +166,20 @@ export function saveLocalAndRemoteCollection<T>(
   })
 }
 
+export async function saveLocalAndRemoteCollectionStrict<T>(
+  storageKey: string,
+  recordType: string,
+  recordKey: string,
+  items: T[],
+  eventName?: string,
+  options: CollectionSyncOptions = {},
+) {
+  backupLocalCollection(storageKey, `before-save-${recordType}`)
+  window.localStorage.setItem(storageKey, JSON.stringify(items))
+  if (eventName) window.dispatchEvent(new Event(eventName))
+  await saveRemoteCollection(recordType, recordKey, items, options)
+}
+
 async function saveRemoteCollection<T>(recordType: string, recordKey: string, items: T[], options: CollectionSyncOptions) {
   if (!options.mergeById || !options.changedIds?.length) {
     await saveRemoteRecord(recordType, recordKey, items)

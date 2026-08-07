@@ -19,9 +19,9 @@
           <FileSpreadsheet :size="17" />
           <span>Vendor RFQ Workbooks</span>
         </button>
-        <button class="primary-action" type="button" :disabled="!draftLines.length" @click="saveQuote">
+        <button class="primary-action" type="button" :disabled="!draftLines.length || isSavingQuote" @click="saveQuote">
           <Save :size="17" />
-          <span>{{ quote ? 'Save Changes' : 'Save Quote' }}</span>
+          <span>{{ isSavingQuote ? 'Saving...' : quote ? 'Save Changes' : 'Save Quote' }}</span>
         </button>
         <button v-if="!quote" class="secondary-action" type="button" :disabled="!draftLines.length" @click="exportRfqPackage">
           <FileSpreadsheet :size="17" />
@@ -29,6 +29,9 @@
         </button>
       </div>
     </header>
+    <div v-if="saveQuoteError" class="warning-note save-error">
+      {{ saveQuoteError }}
+    </div>
 
     <section class="quote-summary-grid">
       <QuoteSummaryTile label="Lines" :value="String(draftLines.length)" />
@@ -293,9 +296,9 @@
           <p>{{ quote ? 'Modify any line item field, remove lines, or add new ones before saving changes.' : 'Modify any line item field before saving the quote.' }}</p>
         </div>
         <div class="page-actions">
-          <button class="primary-action" type="button" :disabled="!draftLines.length" @click="saveQuote">
+          <button class="primary-action" type="button" :disabled="!draftLines.length || isSavingQuote" @click="saveQuote">
             <Save :size="17" />
-            <span>{{ quote ? 'Save Changes' : 'Save Quote' }}</span>
+            <span>{{ isSavingQuote ? 'Saving...' : quote ? 'Save Changes' : 'Save Quote' }}</span>
           </button>
           <button class="secondary-action" type="button" :disabled="!draftLines.length" @click="exportRfqPackage">
             <FileSpreadsheet :size="17" />
@@ -331,7 +334,7 @@ import RfqStep from '../components/RfqStep.vue'
 import VerifiedCatalogPricing from '../components/VerifiedCatalogPricing.vue'
 import { calculateLineTotals, calculateQuoteSummaryWithContractFee, currency, type PricingMode } from '../services/calculations'
 import { applyPricingToAllLines } from '../services/bulkPricing.mjs'
-import { createQuoteForProject, loadProject, setQuoteApprovalStatus, updateQuoteForProject } from '../services/localProjects'
+import { createQuoteForProjectStrict, loadProject, setQuoteApprovalStatus, updateQuoteForProjectStrict } from '../services/localProjects'
 import { applyManufacturerUpdateFile } from '../services/manufacturerImport'
 import { findLatestPartPrice, findPartPriceSuggestions } from '../services/partCatalog'
 import { suggestCatalogProducts, type CatalogProduct, type VerifiedCatalogPrice } from '../services/productCatalogApi'
@@ -369,6 +372,8 @@ const routeQuoteId = computed(() => String(route.params.quoteId ?? route.params.
 const isEditMode = computed(() => Boolean(routeQuoteId.value))
 const catalogStatus = ref('')
 const remotePartSuggestions = ref<CatalogProduct[]>([])
+const isSavingQuote = ref(false)
+const saveQuoteError = ref('')
 let catalogLookupTimer: ReturnType<typeof setTimeout> | undefined
 
 const lineForm = reactive({
@@ -536,30 +541,39 @@ function scheduleCatalogLookup(value: string) {
   }, 220)
 }
 
-function saveQuote() {
-  if (!draftLines.value.length || !project.value) return
+async function saveQuote() {
+  if (!draftLines.value.length || !project.value || isSavingQuote.value) return
 
-  const normalizedLines = normalizePricingForProject(applySequentialClins(draftLines.value), showPricingControls.value)
-  if (quote.value) {
-    const updatedQuote = updateQuoteForProject(project.value.id, quote.value.id, normalizedLines, {
+  isSavingQuote.value = true
+  saveQuoteError.value = ''
+
+  try {
+    const normalizedLines = normalizePricingForProject(applySequentialClins(draftLines.value), showPricingControls.value)
+    if (quote.value) {
+      const updatedQuote = await updateQuoteForProjectStrict(project.value.id, quote.value.id, normalizedLines, {
+        contractFeeEnabled: contractFeeEnabled.value,
+        expirationDays: expirationDays.value,
+        quoteName: quoteName.value,
+        shippingCost: shippingCost.value,
+      })
+      router.push(`/projects/${project.value.id}?quote=${encodeURIComponent(updatedQuote.quoteNumber)}`)
+      return
+    }
+
+    const newQuoteLines = normalizedLines.map(({ id: _id, approved: _approved, ...line }) => line)
+    const createdQuote = await createQuoteForProjectStrict(project.value.id, newQuoteLines, {
       contractFeeEnabled: contractFeeEnabled.value,
       expirationDays: expirationDays.value,
       quoteName: quoteName.value,
       shippingCost: shippingCost.value,
     })
-    router.push(`/projects/${project.value.id}?quote=${encodeURIComponent(updatedQuote.quoteNumber)}`)
-    return
+
+    router.push(`/projects/${project.value.id}?quote=${encodeURIComponent(createdQuote.quoteNumber)}`)
+  } catch (error) {
+    saveQuoteError.value = error instanceof Error ? error.message : 'Quote could not be saved.'
+  } finally {
+    isSavingQuote.value = false
   }
-
-  const newQuoteLines = normalizedLines.map(({ id: _id, approved: _approved, ...line }) => line)
-  const createdQuote = createQuoteForProject(project.value.id, newQuoteLines, {
-    contractFeeEnabled: contractFeeEnabled.value,
-    expirationDays: expirationDays.value,
-    quoteName: quoteName.value,
-    shippingCost: shippingCost.value,
-  })
-
-  router.push(`/projects/${project.value.id}?quote=${encodeURIComponent(createdQuote.quoteNumber)}`)
 }
 
 function toggleApproval() {

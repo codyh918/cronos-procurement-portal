@@ -4,7 +4,7 @@ import { generateVendorPurchaseOrders, groupQuoteLinesByVendor, marginPercentToM
 import type { CheckbookPoImportInput } from './checkbookImport'
 import { syncCustomerOrdersFromApprovedProjects } from './customerOrders'
 import { recordPurchaseOrdersInCatalog } from './partCatalog'
-import { hydrateLocalCollection, readLocalCollection, saveLocalAndRemoteCollection } from './remoteRecords'
+import { hydrateLocalCollection, readLocalCollection, saveLocalAndRemoteCollection, saveLocalAndRemoteCollectionStrict } from './remoteRecords'
 import type { TrackingImportInput } from './trackingImport'
 import { loadVendorDirectory } from './vendorDirectory'
 import { normalizeCustomerFields } from './customerFormatting'
@@ -110,6 +110,26 @@ export function createQuoteForProject(
   lines: Array<Omit<QuoteLine, 'id' | 'approved'>>,
   options: { contractFeeEnabled?: boolean; expirationDays?: 30 | 60 | 90; quoteName?: string; shippingCost?: number } = {},
 ): CustomerQuote {
+  const { quote, projects } = prepareQuoteCreate(projectId, lines, options)
+  saveProjects(projects, quote.projectId)
+  return quote
+}
+
+export async function createQuoteForProjectStrict(
+  projectId: string,
+  lines: Array<Omit<QuoteLine, 'id' | 'approved'>>,
+  options: { contractFeeEnabled?: boolean; expirationDays?: 30 | 60 | 90; quoteName?: string; shippingCost?: number } = {},
+): Promise<CustomerQuote> {
+  const { quote, projects } = prepareQuoteCreate(projectId, lines, options)
+  await saveProjectsStrict(projects, quote.projectId)
+  return quote
+}
+
+function prepareQuoteCreate(
+  projectId: string,
+  lines: Array<Omit<QuoteLine, 'id' | 'approved'>>,
+  options: { contractFeeEnabled?: boolean; expirationDays?: 30 | 60 | 90; quoteName?: string; shippingCost?: number } = {},
+) {
   const project = loadProject(projectId)
   if (!project) {
     throw new Error('Project not found.')
@@ -142,8 +162,7 @@ export function createQuoteForProject(
       : current,
   )
 
-  saveProjects(projects, project.id)
-  return quote
+  return { quote, projects }
 }
 
 export function updateQuoteForProject(
@@ -152,6 +171,32 @@ export function updateQuoteForProject(
   lines: Array<Omit<QuoteLine, 'id' | 'approved'> & Partial<Pick<QuoteLine, 'id' | 'approved'>>>,
   options: { contractFeeEnabled?: boolean; expirationDays?: 30 | 60 | 90; quoteName?: string; shippingCost?: number } = {},
 ): CustomerQuote {
+  const { updatedQuote, updatedProject, projects, syncResult } = prepareQuoteUpdate(projectId, quoteId, lines, options)
+
+  saveProjects(projects, updatedProject.id)
+  finalizeQuoteUpdateSync(updatedProject, updatedQuote, syncResult)
+  return updatedQuote
+}
+
+export async function updateQuoteForProjectStrict(
+  projectId: string,
+  quoteId: string,
+  lines: Array<Omit<QuoteLine, 'id' | 'approved'> & Partial<Pick<QuoteLine, 'id' | 'approved'>>>,
+  options: { contractFeeEnabled?: boolean; expirationDays?: 30 | 60 | 90; quoteName?: string; shippingCost?: number } = {},
+): Promise<CustomerQuote> {
+  const { updatedQuote, updatedProject, projects, syncResult } = prepareQuoteUpdate(projectId, quoteId, lines, options)
+
+  await saveProjectsStrict(projects, updatedProject.id)
+  finalizeQuoteUpdateSync(updatedProject, updatedQuote, syncResult)
+  return updatedQuote
+}
+
+function prepareQuoteUpdate(
+  projectId: string,
+  quoteId: string,
+  lines: Array<Omit<QuoteLine, 'id' | 'approved'> & Partial<Pick<QuoteLine, 'id' | 'approved'>>>,
+  options: { contractFeeEnabled?: boolean; expirationDays?: 30 | 60 | 90; quoteName?: string; shippingCost?: number } = {},
+) {
   const project = loadProject(projectId)
   if (!project) {
     throw new Error('Project not found.')
@@ -184,13 +229,15 @@ export function updateQuoteForProject(
   const updatedProject = syncResult.project
   const projects = loadProjects().map(current => (current.id === project.id ? updatedProject : current))
 
-  saveProjects(projects, updatedProject.id)
+  return { updatedQuote, updatedProject, projects, syncResult }
+}
+
+function finalizeQuoteUpdateSync(updatedProject: Project, updatedQuote: CustomerQuote, syncResult: ReturnType<typeof syncPurchaseOrdersForQuote>) {
   if (syncResult.touchedPurchaseOrders.length) {
     recordPurchaseOrdersInCatalog(updatedProject, syncResult.touchedPurchaseOrders)
     syncCustomerOrdersFromApprovedProjects([updatedProject])
   }
   logQuotePoSync(updatedQuote, syncResult)
-  return updatedQuote
 }
 
 export function updateQuoteName(projectId: string, quoteId: string, quoteName: string) {
@@ -805,6 +852,26 @@ function linkProjectCustomer(project: Project): Project {
 }
 
 function saveProjects(projects: Project[], changedProjectId?: string) {
+  const { normalizedProjects, changedIds } = prepareProjectsForSave(projects, changedProjectId)
+
+  saveLocalAndRemoteCollection(STORAGE_KEY, REMOTE_TYPE, REMOTE_KEY, normalizedProjects, 'cronos:projects-changed', {
+    mergeById: changedIds.length > 0,
+    changedIds,
+    mergeItem: mergeProjectPreservingNestedRecords,
+  })
+}
+
+async function saveProjectsStrict(projects: Project[], changedProjectId?: string) {
+  const { normalizedProjects, changedIds } = prepareProjectsForSave(projects, changedProjectId)
+
+  await saveLocalAndRemoteCollectionStrict(STORAGE_KEY, REMOTE_TYPE, REMOTE_KEY, normalizedProjects, 'cronos:projects-changed', {
+    mergeById: changedIds.length > 0,
+    changedIds,
+    mergeItem: mergeProjectPreservingNestedRecords,
+  })
+}
+
+function prepareProjectsForSave(projects: Project[], changedProjectId?: string) {
   const now = new Date().toISOString()
   const changedIds = changedProjectId ? [changedProjectId] : []
   const normalizedProjects = projects.map(project => {
@@ -817,11 +884,7 @@ function saveProjects(projects: Project[], changedProjectId?: string) {
     }
   })
 
-  saveLocalAndRemoteCollection(STORAGE_KEY, REMOTE_TYPE, REMOTE_KEY, normalizedProjects, 'cronos:projects-changed', {
-    mergeById: changedIds.length > 0,
-    changedIds,
-    mergeItem: mergeProjectPreservingNestedRecords,
-  })
+  return { normalizedProjects, changedIds }
 }
 
 function mergeProjectsPreservingNestedRecords(remoteProjects: Project[], localProjects: Project[]) {

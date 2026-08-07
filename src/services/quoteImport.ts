@@ -13,12 +13,12 @@ export async function parseQuoteImportFile(file: File): Promise<ImportedQuoteLin
 
   if (extension === '.xlsx') {
     const rows = await parseWorkbook(file)
-    return rowsToLines(rows).filter(line => line.partNumber || line.description).slice(0, 1000)
+    return rowsToMaterialLines(rows).slice(0, 1000)
   }
 
   if (extension === '.xls') {
     const rows = parseLegacySpreadsheetText(await file.text())
-    const lines = rowsToLines(rows).filter(line => line.partNumber || line.description).slice(0, 1000)
+    const lines = rowsToMaterialLines(rows).slice(0, 1000)
     if (!lines.length) {
       throw new Error('This legacy XLS file could not be read in the browser. Save it as XLSX, CSV, or PDF and import again.')
     }
@@ -27,11 +27,11 @@ export async function parseQuoteImportFile(file: File): Promise<ImportedQuoteLin
 
   if (extension === '.pdf') {
     const rows = await parsePdf(file)
-    return rowsToLines(rows).filter(line => line.partNumber || line.description).slice(0, 1000)
+    return rowsToMaterialLines(rows).slice(0, 1000)
   }
 
   const text = await file.text()
-  return rowsToLines(parseDelimited(text)).filter(line => line.partNumber || line.description).slice(0, 1000)
+  return rowsToMaterialLines(parseDelimited(text)).slice(0, 1000)
 }
 
 function parseLegacySpreadsheetText(text: string) {
@@ -158,9 +158,17 @@ async function parseWorkbook(file: File) {
   const { default: JSZip } = await import('jszip')
   const zip = await JSZip.loadAsync(await file.arrayBuffer())
   const sharedStrings = await readSharedStrings(zip)
-  const sheetPath = await findFirstWorksheetPath(zip)
-  const sheetXml = await zip.file(sheetPath)?.async('string')
-  if (!sheetXml) throw new Error('Unable to read the first worksheet from this XLSX file.')
+  const sheetPaths = await findWorksheetPaths(zip)
+  const sheetRows = await Promise.all(sheetPaths.map(async sheetPath => {
+    const xml = await zip.file(sheetPath)?.async('string')
+    return xml ? worksheetToRows(xml, sharedStrings) : []
+  }))
+  const rows = sheetRows
+    .filter(sheet => sheet.length)
+    .sort((left, right) => rowsToMaterialLines(right).length - rowsToMaterialLines(left).length)[0]
+  const sheetXml = rows ? null : await zip.file('xl/worksheets/sheet1.xml')?.async('string')
+  if (rows) return rows
+  if (!sheetXml) throw new Error('Unable to read a worksheet from this XLSX file.')
   return worksheetToRows(sheetXml, sharedStrings)
 }
 
@@ -176,23 +184,24 @@ async function readSharedStrings(zip: ZipArchive) {
   )
 }
 
-async function findFirstWorksheetPath(zip: ZipArchive) {
+async function findWorksheetPaths(zip: ZipArchive) {
   const workbookXml = await zip.file('xl/workbook.xml')?.async('string')
   const relsXml = await zip.file('xl/_rels/workbook.xml.rels')?.async('string')
-  if (!workbookXml || !relsXml) return 'xl/worksheets/sheet1.xml'
+  if (!workbookXml || !relsXml) return ['xl/worksheets/sheet1.xml']
 
   const workbook = new DOMParser().parseFromString(workbookXml, 'application/xml')
-  const sheet = workbook.getElementsByTagName('sheet')[0]
-  const relationshipId = sheet?.getAttribute('r:id') ?? sheet?.getAttribute('id')
-  if (!relationshipId) return 'xl/worksheets/sheet1.xml'
-
   const rels = new DOMParser().parseFromString(relsXml, 'application/xml')
-  const relationship = Array.from(rels.getElementsByTagName('Relationship')).find(item => item.getAttribute('Id') === relationshipId)
-  const target = relationship?.getAttribute('Target')
-  if (!target) return 'xl/worksheets/sheet1.xml'
+  const relationships = Array.from(rels.getElementsByTagName('Relationship'))
+  const paths = Array.from(workbook.getElementsByTagName('sheet'))
+    .map(sheet => sheet.getAttribute('r:id') ?? sheet.getAttribute('id') ?? '')
+    .map(relationshipId => relationships.find(item => item.getAttribute('Id') === relationshipId)?.getAttribute('Target') ?? '')
+    .filter(Boolean)
+    .map(target => {
+      const normalized = target.replace(/^\/?xl\//, '')
+      return `xl/${normalized}`
+    })
 
-  const normalized = target.replace(/^\/?xl\//, '')
-  return `xl/${normalized}`
+  return paths.length ? paths : ['xl/worksheets/sheet1.xml']
 }
 
 function worksheetToRows(xml: string, sharedStrings: string[]) {
@@ -269,16 +278,20 @@ function rowsToLines(rows: string[][]): ImportedQuoteLine[] {
   return dataRows.map((row, index) => (row.length <= 1 ? inferLineFromText(row[0] ?? '', index) : rowToLine(row, header, index)))
 }
 
+function rowsToMaterialLines(rows: string[][]) {
+  return rowsToLines(rows).filter(isMaterialLine)
+}
+
 function rowToLine(row: string[], header: string[], index: number): ImportedQuoteLine {
   const find = (...keys: string[]) => findByHeader(row, header, keys)
-  const partNumber = find('partnumber', 'partno', 'pn', 'sku', 'modelnumber', 'model', 'itemnumber')
+  const partNumber = find('partnumber', 'partno', 'pn', 'sku', 'modelnumber', 'model')
   const description = find('description', 'itemdescription', 'desc', 'product', 'material', 'equipment', 'item')
   const manufacturer = find('manufacturer', 'mfr', 'brand', 'make', 'oem')
-  const quantity = parseNumber(find('quantity', 'qty', 'count', 'needed', 'totalqty')) || 1
-  const unitCost = parseNumber(find('unitcost', 'unitprice', 'netprice', 'price', 'cost', 'budgetprice'))
+  const quantity = parseNumber(find('totalquantity', 'totalqty', 'quantity', 'qty', 'count', 'needed')) || 1
+  const unitCost = parseNumber(find('unitcost', 'unitprice', 'netprice', 'listprice', 'price', 'cost', 'budgetprice'))
 
   return {
-    clin: find('clin', 'itemno', 'lineno', 'line') || String(index + 1),
+    clin: find('clin', 'itemnumber', 'itemno', 'lineno', 'line') || String(index + 1),
     partNumber,
     manufacturer,
     description,
@@ -303,6 +316,14 @@ function findByHeader(row: string[], header: string[], keys: string[]) {
     if (containsIndex >= 0) return row[containsIndex] ?? ''
   }
   return ''
+}
+
+function isMaterialLine(line: ImportedQuoteLine) {
+  const summaryText = `${line.partNumber} ${line.description}`.toLowerCase()
+  if (!line.partNumber && !line.description) return false
+  if (/^(equipment|parts|grand)\s+total\b/.test(summaryText.trim())) return false
+  if (/supplier unable to quote|updated\/not quoted/.test(summaryText)) return false
+  return line.quantity > 0
 }
 
 function inferLineFromText(text: string, index: number): ImportedQuoteLine {
@@ -341,6 +362,10 @@ function normalizeHeader(value: string) {
 }
 
 function parseNumber(value: string) {
-  const parsed = Number(String(value ?? '').replace(/[$,]/g, ''))
+  const normalized = String(value ?? '')
+    .replace(/\(([^)]+)\)/, '-$1')
+    .replace(/[$,\s]/g, '')
+    .replace(/^[-–—]+$/, '0')
+  const parsed = Number(normalized)
   return Number.isFinite(parsed) ? parsed : 0
 }
