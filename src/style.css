@@ -2873,7 +2873,7 @@ table {
 
 .quote-lines-table {
   width: 100%;
-  min-width: 1680px;
+  min-width: 1760px;
   border-collapse: collapse;
   color: var(--app-text);
   font-size: 12px;
@@ -2895,6 +2895,10 @@ table {
   border-top: 1px solid var(--app-border-soft);
   padding: 12px;
   vertical-align: top;
+}
+
+.line-item-cell {
+  min-width: 88px;
 }
 
 .quote-line-catalog-help {

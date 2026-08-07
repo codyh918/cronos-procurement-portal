@@ -17,6 +17,9 @@
         </thead>
         <tbody>
           <tr v-for="line in lines" :key="line.id">
+            <td class="line-item-cell">
+              <span class="clin-pill">{{ line.clin }}</span>
+            </td>
             <td>
               <input
                 class="cell-input w-36"
@@ -141,6 +144,7 @@ let syncingScroll = false
 let resizeObserver: ResizeObserver | undefined
 
 const headings = computed(() => [
+  'Line Item',
   'Part Number',
   'Manufacturer',
   'Description',
