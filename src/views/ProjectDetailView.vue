@@ -540,6 +540,17 @@
         </div>
       </div>
     </section>
+
+    <section v-if="activeTab === 'activity'" class="project-tab-panel">
+      <PanelHeading title="Activity" description="Project, quote, and purchase-order milestones from the existing Atlas record." />
+      <div class="detail-panel activity-list">
+        <div v-for="item in projectActivity" :key="item.key" class="activity-row">
+          <span class="activity-dot" />
+          <div><strong>{{ item.title }}</strong><p>{{ item.detail }}</p></div>
+          <time>{{ item.date ? formatDate(item.date) : 'Date unavailable' }}</time>
+        </div>
+      </div>
+    </section>
   </div>
 
   <div v-else class="project-detail-page">
@@ -590,7 +601,7 @@ type PurchasedEquipmentLine = PurchaseOrderLine & {
   poStatus: Status
   vendor: string
 }
-type ProjectTabId = 'overview' | 'quotes' | 'purchase-orders' | 'material-tracking' | 'shipments' | 'documents'
+type ProjectTabId = 'overview' | 'quotes' | 'purchase-orders' | 'material-tracking' | 'shipments' | 'documents' | 'activity'
 
 const route = useRoute()
 const router = useRouter()
@@ -608,9 +619,10 @@ const projectTabs: Array<{ id: ProjectTabId; label: string }> = [
   { id: 'overview', label: 'Overview' },
   { id: 'quotes', label: 'Quotes' },
   { id: 'purchase-orders', label: 'Purchase Orders' },
-  { id: 'material-tracking', label: 'Material Tracking' },
-  { id: 'shipments', label: 'Shipments' },
+  { id: 'shipments', label: 'Receiving' },
+  { id: 'material-tracking', label: 'Tracking' },
   { id: 'documents', label: 'Documents' },
+  { id: 'activity', label: 'Activity' },
 ]
 
 onMounted(() => {
@@ -625,6 +637,14 @@ function reloadProject() {
 const assignedUserNames = computed(() => {
   const ids = new Set(project.value?.assignedUserIds ?? [])
   return users.value.filter(user => ids.has(user.id)).map(user => user.name).join(', ')
+})
+const projectActivity = computed(() => {
+  if (!project.value) return []
+  return [
+    { key: `project-${project.value.id}`, title: 'Project created', detail: `${project.value.projectNumber} · ${project.value.customer}`, date: project.value.createdAt || '' },
+    ...(project.value.quotes ?? []).map(quote => ({ key: `quote-${quote.id}`, title: `Quote ${quote.quoteNumber}`, detail: `${quote.quoteName || 'Untitled quote'} · ${quote.status}`, date: quote.createdAt })),
+    ...(project.value.purchaseOrders ?? []).map(po => ({ key: `po-${po.id}`, title: `Purchase order ${po.poNumber}`, detail: `${po.vendor} · ${po.status}`, date: po.dateIssued })),
+  ].sort((a, b) => Date.parse(b.date || '1970-01-01') - Date.parse(a.date || '1970-01-01'))
 })
 
 const quoteSummary = computed(() =>

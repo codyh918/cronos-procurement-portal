@@ -1,21 +1,14 @@
-# Atlas Product Catalog Redesign — Git Upload
+# Atlas Projects Page Redesign
 
-This folder contains only the files changed for the August 11, 2026 Product Catalog release. Copy or upload these files into the repository root while preserving the included directory structure.
+Upload this folder's contents into the root of the production GitHub repository, preserving the included paths.
 
-## Deployment order
+Included files:
 
-1. In the production Supabase SQL Editor, run `migrations/20260811_catalog_database_redesign.sql`.
-2. Upload the remaining files to the matching paths in the production GitHub repository.
-3. Commit and push the changes so Railway starts a new deployment.
-4. Confirm Railway completes `npm run build` and starts the service with `npm run start`.
-5. Test Products, Pricing Imports, Needs Verification, Price Changes, and an unchanged catalog reimport.
+- `src/views/ProjectsView.vue`
+- `src/views/ProjectDetailView.vue`
 
-## Included application files
+No Supabase migration or environment-variable change is required.
 
-- `src/views/CatalogView.vue`
-- `src/services/productCatalogApi.ts`
-- `server/catalog-api.mjs`
-- `server/tests/catalog-import.test.mjs`
-- `migrations/20260811_catalog_database_redesign.sql`
+After uploading, commit and push the files. Railway should automatically run `npm run build` and deploy the updated application.
 
-Do not upload this wrapper directory itself into the repository. Upload its contents so `src`, `server`, and `migrations` merge with the existing repository directories.
+Do not upload this wrapper folder as a nested repository directory. Merge its `src` directory with the repository's existing `src` directory.
