@@ -1,15 +1,13 @@
-# Cody Procurement Leadership Dashboard
+# Atlas Purchase Order Typography Standardization
 
 Upload this folder's contents into the production GitHub repository root while preserving the included paths.
 
 Included files:
 
-- `src/components/dashboard/ProcurementLeadershipDashboard.vue`
-- `src/views/DashboardView.vue`
-- `src/services/auth.ts`
+- `src/views/PurchaseOrderDetailView.vue`
+- `src/views/PurchaseOrdersView.vue`
+- `src/style.css`
 
-No database migration or new environment variable is required.
+No database migration or environment-variable change is required. This release changes PO presentation only; calculations, tracking, PDF generation, persistence, and permissions are unchanged.
 
-The new dashboard is selected only when the authenticated session matches Cody Hibbard through the centralized `hasProcurementLeadershipDashboardAccess` helper. All other users continue to render the existing operational dashboard.
-
-After uploading, commit and push the files. Railway should automatically build and deploy the update.
+After uploading, commit and push the files so Railway builds and deploys the update.

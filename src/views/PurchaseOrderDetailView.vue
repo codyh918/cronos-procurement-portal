@@ -61,7 +61,7 @@
     <section class="po-tracking-card">
       <label class="tracking-field">
         <span>Status</span>
-        <select :value="po.status" @change="updatePo({ status: inputValue($event) as Status })">
+        <select :class="statusSelectClass(po.status)" :value="po.status" @change="updatePo({ status: inputValue($event) as Status })">
           <option v-for="status in poStatuses" :key="status" :value="status">{{ status }}</option>
         </select>
       </label>
@@ -107,7 +107,7 @@
               <td><input class="cell-input w-20" type="number" min="0" :value="line.quantityOrdered" @change="updateLine(line.id, { quantityOrdered: numberValue($event) })" /></td>
               <td><input class="cell-input w-28" type="number" min="0" step="0.01" :value="line.unitCost" @change="updateLine(line.id, { unitCost: numberValue($event) })" /></td>
               <td>
-                <select class="cell-input w-40" :value="line.status" @change="updateLine(line.id, { status: inputValue($event) as Status })">
+                <select :class="['cell-input', 'w-40', statusSelectClass(line.status)]" :value="line.status" @change="updateLine(line.id, { status: inputValue($event) as Status })">
                   <option v-for="status in lineStatuses" :key="status" :value="status">{{ status }}</option>
                 </select>
               </td>
@@ -244,5 +244,13 @@ function inputValue(event: Event) {
 function numberValue(event: Event) {
   const value = Number(inputValue(event))
   return Number.isFinite(value) ? value : 0
+}
+
+function statusSelectClass(status: Status) {
+  if (['Received', 'Delivered'].includes(status)) return 'po-status-success'
+  if (['Partially Received', 'Backordered'].includes(status)) return 'po-status-warning'
+  if (status === 'Cancelled') return 'po-status-danger'
+  if (status === 'Shipped') return 'po-status-shipped'
+  return 'po-status-progress'
 }
 </script>

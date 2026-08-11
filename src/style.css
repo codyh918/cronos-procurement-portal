@@ -6228,27 +6228,129 @@ textarea {
   font-weight: 700;
 }
 
-/* Keep PO commercial values and dates crisp against the white form fields. */
+/* PO typography follows the shared Atlas heading/text/muted hierarchy. */
 .po-detail-page .tracking-field input,
 .po-detail-page .tracking-field select,
 .po-detail-page .tracking-field textarea,
-.po-detail-page .cell-input {
-  color: #000;
-  font-weight: 800;
+.po-detail-page .cell-input,
+.purchase-orders-page .tracking-field input,
+.purchase-orders-page .tracking-field select,
+.purchase-orders-page .tracking-field textarea,
+.purchase-orders-page .register-header input {
+  color: var(--app-text);
+  font-weight: 500;
   -webkit-font-smoothing: antialiased;
-  text-rendering: geometricPrecision;
   opacity: 1;
 }
 
 .po-detail-page .tracking-field input::placeholder,
 .po-detail-page .tracking-field textarea::placeholder,
-.po-detail-page .cell-input::placeholder {
-  color: #303030;
+.po-detail-page .cell-input::placeholder,
+.purchase-orders-page .tracking-field input::placeholder,
+.purchase-orders-page .tracking-field textarea::placeholder,
+.purchase-orders-page .register-header input::placeholder {
+  color: color-mix(in srgb, var(--app-muted) 72%, transparent);
   opacity: 1;
 }
 
 .po-detail-page input[type='date']::-webkit-datetime-edit,
+.po-detail-page input[type='number'],
+.purchase-orders-page input[type='date']::-webkit-datetime-edit,
+.purchase-orders-page input[type='number'] {
+  color: var(--app-text);
+  font-weight: 500;
+}
+
+.po-detail-page .page-heading h1,
+.po-detail-page .po-lines-heading h2,
+.purchase-orders-page .page-heading h1,
+.purchase-orders-page .register-header h2,
+.purchase-orders-page .po-list-edit-heading h2 {
+  color: var(--app-heading);
+  font-weight: 700;
+}
+
+.po-detail-page .page-heading p,
+.po-detail-page .po-lines-heading p,
+.purchase-orders-page .page-heading p,
+.purchase-orders-page .register-header p,
+.purchase-orders-page .po-list-edit-heading p {
+  color: var(--app-muted);
+  font-weight: 400;
+}
+
+.po-detail-page .tracking-field > span,
+.purchase-orders-page .tracking-field > span {
+  color: var(--app-muted);
+  font-weight: 600;
+  letter-spacing: 0.035em;
+}
+
+.po-detail-page .tracking-field input,
+.po-detail-page .tracking-field select,
+.po-detail-page .tracking-field textarea,
+.po-detail-page .cell-input,
+.purchase-orders-page .tracking-field input,
+.purchase-orders-page .tracking-field select,
+.purchase-orders-page .tracking-field textarea,
+.purchase-orders-page .register-header input {
+  border-color: var(--app-border);
+  background: var(--app-panel);
+}
+
+.po-detail-page .tracking-field input:focus,
+.po-detail-page .tracking-field select:focus,
+.po-detail-page .tracking-field textarea:focus,
+.po-detail-page .cell-input:focus,
+.purchase-orders-page .tracking-field input:focus,
+.purchase-orders-page .tracking-field select:focus,
+.purchase-orders-page .tracking-field textarea:focus,
+.purchase-orders-page .register-header input:focus {
+  border-color: var(--app-link);
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--app-link) 14%, transparent);
+  outline: none;
+}
+
+.po-detail-page .po-lines-table th {
+  color: var(--app-muted);
+  font-weight: 650;
+  letter-spacing: 0.045em;
+}
+
+.po-detail-page .po-lines-table td,
+.purchase-orders-page .data-table td {
+  color: var(--app-text);
+  font-weight: 400;
+}
+
+.po-detail-page .po-part-number-cell .w-44 {
+  color: var(--app-heading);
+  font-weight: 600;
+}
+
+.po-detail-page .po-item-number-input,
 .po-detail-page input[type='number'] {
-  color: #000;
-  font-weight: 800;
+  font-weight: 500;
+}
+
+.po-status-progress,
+.po-status-success,
+.po-status-warning,
+.po-status-danger,
+.po-status-shipped {
+  font-weight: 600 !important;
+}
+
+.po-status-progress { color: #1d4ed8 !important; background-color: #eff6ff !important; }
+.po-status-success { color: #047857 !important; background-color: #ecfdf5 !important; }
+.po-status-warning { color: #a16207 !important; background-color: #fffbeb !important; }
+.po-status-danger { color: #be123c !important; background-color: #fff1f2 !important; }
+.po-status-shipped { color: #6d28d9 !important; background-color: #f5f3ff !important; }
+
+:root[data-theme='dark'] .po-status-progress,
+:root[data-theme='dark'] .po-status-success,
+:root[data-theme='dark'] .po-status-warning,
+:root[data-theme='dark'] .po-status-danger,
+:root[data-theme='dark'] .po-status-shipped {
+  background-color: var(--app-panel-soft) !important;
 }

@@ -70,7 +70,7 @@
       <section class="po-tracking-card po-list-tracking-card">
         <label class="tracking-field">
           <span>Status</span>
-          <select :value="po.status" @change="updatePo(po, { status: inputValue($event) as Status })">
+          <select :class="statusSelectClass(po.status)" :value="po.status" @change="updatePo(po, { status: inputValue($event) as Status })">
             <option v-for="status in poStatuses" :key="status" :value="status">{{ status }}</option>
           </select>
         </label>
@@ -235,5 +235,13 @@ function inputValue(event: Event) {
 function formatDateOrPending(value?: string) {
   if (!value) return 'Pending'
   return formatDisplayDate(value)
+}
+
+function statusSelectClass(status: Status) {
+  if (['Received', 'Delivered'].includes(status)) return 'po-status-success'
+  if (['Partially Received', 'Backordered'].includes(status)) return 'po-status-warning'
+  if (status === 'Cancelled') return 'po-status-danger'
+  if (status === 'Shipped') return 'po-status-shipped'
+  return 'po-status-progress'
 }
 </script>
