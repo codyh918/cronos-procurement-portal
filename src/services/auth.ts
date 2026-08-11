@@ -145,6 +145,18 @@ export function normalizeRole(role: AppRole | string | null | undefined) {
   return 'procurement'
 }
 
+/** Centralized identity gate for the Cody-only portfolio dashboard. */
+export function hasProcurementLeadershipDashboardAccess(session: UserSession | null = fetchSession()) {
+  if (!session) return false
+  const email = session.email.trim().toLowerCase()
+  const username = String(session.username || '').trim().toLowerCase()
+  return email === 'cody.hibbard@cronosllc.com'
+    || email === 'chibbard@cronosllc.com'
+    || username === 'cody.hibbard'
+    || username === 'chibbard'
+    || session.name.trim().toLowerCase() === 'cody hibbard'
+}
+
 function readStoredUsers() {
   void hydrateUsers()
   const users = readLocalCollection<UserProfile>(USERS_KEY)

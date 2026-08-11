@@ -1,5 +1,6 @@
 <template>
-  <div class="procurement-dashboard">
+  <ProcurementLeadershipDashboard v-if="leadershipAccess" />
+  <div v-else class="procurement-dashboard">
     <header class="dashboard-header procurement-command-header">
       <div>
         <h1>Procurement Dashboard</h1>
@@ -336,7 +337,8 @@
 import { computed, defineComponent, h, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { Search } from '@lucide/vue'
-import { fetchSession, getEffectiveRole, loadUsers } from '../services/auth'
+import ProcurementLeadershipDashboard from '../components/dashboard/ProcurementLeadershipDashboard.vue'
+import { fetchSession, getEffectiveRole, hasProcurementLeadershipDashboardAccess, loadUsers } from '../services/auth'
 import {
   loadProcurementDashboardData,
   updateProcurementTask,
@@ -357,6 +359,7 @@ type DueOutCategory = 'today' | 'week' | 'overdue' | 'vendor' | 'internal' | 'cu
 type BadgeTone = 'default' | 'success' | 'warning' | 'danger' | 'critical' | 'muted'
 
 const session = ref(fetchSession())
+const leadershipAccess = computed(() => hasProcurementLeadershipDashboardAccess(session.value))
 const users = ref<UserProfile[]>([])
 const data = ref(loadProcurementDashboardData([]))
 const viewMode = ref<ViewMode>('my')

@@ -1,14 +1,15 @@
-# Atlas Projects Page Redesign
+# Cody Procurement Leadership Dashboard
 
-Upload this folder's contents into the root of the production GitHub repository, preserving the included paths.
+Upload this folder's contents into the production GitHub repository root while preserving the included paths.
 
 Included files:
 
-- `src/views/ProjectsView.vue`
-- `src/views/ProjectDetailView.vue`
+- `src/components/dashboard/ProcurementLeadershipDashboard.vue`
+- `src/views/DashboardView.vue`
+- `src/services/auth.ts`
 
-No Supabase migration or environment-variable change is required.
+No database migration or new environment variable is required.
 
-After uploading, commit and push the files. Railway should automatically run `npm run build` and deploy the updated application.
+The new dashboard is selected only when the authenticated session matches Cody Hibbard through the centralized `hasProcurementLeadershipDashboardAccess` helper. All other users continue to render the existing operational dashboard.
 
-Do not upload this wrapper folder as a nested repository directory. Merge its `src` directory with the repository's existing `src` directory.
+After uploading, commit and push the files. Railway should automatically build and deploy the update.
