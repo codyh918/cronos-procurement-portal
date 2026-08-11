@@ -30,20 +30,41 @@ export async function handleCatalogApi({ request, response, pathname, sendJson, 
       sendJson(response, 200, data || { manufacturers: [], categories: [], suppliers: [] })
       return true
     }
+    if (request.method === 'GET' && pathname === '/api/catalog/metrics') {
+      const now = new Date(); const soon = new Date(now.getTime() + 30 * 86400000).toISOString()
+      const [products, pricing, changes] = await Promise.all([
+        supabase.from('atlas_products').select('id', { count: 'exact', head: true }).eq('active', true),
+        supabase.from('atlas_product_pricing_history').select('product_id,pricing_status,expiration_date,effective_date').order('effective_date', { ascending: false }),
+        supabase.from('atlas_product_pricing_history').select('product_id').not('previous_cost', 'is', null).gte('effective_date', new Date(now.getTime() - 30 * 86400000).toISOString()),
+      ])
+      if (products.error || pricing.error || changes.error) throw products.error || pricing.error || changes.error
+      const latest = latestPricingByProduct(pricing.data || []); const values = [...latest.values()]
+      sendJson(response, 200, { totalProducts: products.count || 0, verifiedProducts: values.filter(row => pricingDisplayStatus(row) === 'Verified').length, expiringSoon: values.filter(row => pricingDisplayStatus(row) === 'Expiring Soon').length, expiredProducts: values.filter(row => pricingDisplayStatus(row) === 'Expired').length, unverifiedProducts: values.filter(row => pricingDisplayStatus(row) === 'Unverified').length, recentPriceChanges: new Set((changes.data || []).map(row => row.product_id)).size })
+      return true
+    }
+    if (request.method === 'GET' && pathname === '/api/catalog/needs-verification') {
+      const pricing = await supabase.from('atlas_product_pricing_history').select('id,product_id,new_cost,vendor,source_file,pricing_status,expiration_date,effective_date,atlas_products(manufacturer,manufacturer_part_number,description)').order('effective_date', { ascending: false }).limit(5000)
+      if (pricing.error) throw pricing.error
+      const rows = [...latestPricingByProduct(pricing.data || []).values()].map(row => ({ ...row, display_status: pricingDisplayStatus(row), days_until_expiration: daysUntil(row.expiration_date) })).filter(row => ['Unverified', 'Expiring Soon', 'Expired'].includes(row.display_status))
+      sendJson(response, 200, { records: rows }); return true
+    }
     if (request.method === 'GET' && pathname === '/api/catalog/pricing-changes') {
       const url = new URL(request.url, 'http://localhost')
       let query = supabase.from('atlas_product_pricing_history')
-        .select('id,product_id,previous_cost,new_cost,effective_date,source_file,change_amount,change_percent,atlas_products(manufacturer,manufacturer_part_number,description)', { count: 'exact' })
+        .select('id,product_id,previous_cost,new_cost,effective_date,source_file,vendor,change_amount,change_percent,atlas_products(manufacturer,manufacturer_part_number,description)', { count: 'exact' })
         .order('effective_date', { ascending: false })
         .range(0, Math.min(numberParam(url, 'limit', 100), 500) - 1)
       if (url.searchParams.get('batch')) query = query.eq('import_batch', url.searchParams.get('batch'))
+      if (url.searchParams.get('supplier')) query = query.eq('vendor', url.searchParams.get('supplier'))
+      if (url.searchParams.get('from')) query = query.gte('effective_date', url.searchParams.get('from'))
+      if (url.searchParams.get('to')) query = query.lte('effective_date', url.searchParams.get('to'))
       const { data, error, count } = await query
       if (error) throw error
       sendJson(response, 200, { changes: data || [], total: count || 0 })
       return true
     }
     if (request.method === 'GET' && pathname === '/api/catalog/import-batches') {
-      const batches = await supabase.from('atlas_catalog_import_batches').select('id,source_file,status,total_rows,new_products,updated_products,imported_at,pricing_verification_status,pricing_verified_at,pricing_expiration_date').order('imported_at', { ascending: false }).limit(25)
+      const batches = await supabase.from('atlas_catalog_import_batches').select('id,source_file,status,total_rows,new_products,updated_products,unchanged_products,metadata_updated_products,duplicate_records,error_rows,skipped_rows,price_changes,imported_at,imported_by,pricing_verification_status,pricing_verified_at,pricing_expiration_date').order('imported_at', { ascending: false }).limit(50)
       if (batches.error) throw batches.error
       sendJson(response, 200, { batches: batches.data || [] }); return true
     }
@@ -177,10 +198,18 @@ async function searchProducts({ request, response, sendJson, supabase }) {
   const min = money(url.searchParams.get('minPrice')); const max = money(url.searchParams.get('maxPrice'))
   if (min !== null) query = query.gte('current_cost', min); if (max !== null) query = query.lte('current_cost', max)
   const leadDays = numberParam(url, 'leadTimeDays', 0); if (leadDays > 0) query = query.lte('lead_time_days', leadDays)
-  query = query.order('manufacturer').order('manufacturer_part_number').range((page - 1) * pageSize, page * pageSize - 1)
+  const sortMap = { partNumber: 'manufacturer_part_number', manufacturer: 'manufacturer', cost: 'current_cost', lastUpdated: 'updated_at' }
+  const sort = sortMap[url.searchParams.get('sort')] || 'manufacturer'; const ascending = url.searchParams.get('direction') !== 'desc'
+  query = query.order(sort, { ascending }).order('manufacturer_part_number').range((page - 1) * pageSize, page * pageSize - 1)
   const { data, error, count } = await query
   if (error) throw error
-  sendJson(response, 200, { products: data || [], total: count || 0, page, pageSize, suggestions: buildSuggestions(queryText, data || []) })
+  const ids = (data || []).map(row => row.id); let history = { data: [], error: null }
+  if (ids.length) history = await supabase.from('atlas_product_pricing_history').select('id,product_id,new_cost,vendor,source_file,pricing_status,expiration_date,effective_date,verified_at').in('product_id', ids).order('effective_date', { ascending: false })
+  if (history.error) throw history.error
+  const latest = latestPricingByProduct(history.data || [])
+  let products = (data || []).map(product => { const price = latest.get(product.id); return { ...product, current_pricing: price ? { ...price, display_status: pricingDisplayStatus(price), days_until_expiration: daysUntil(price.expiration_date) } : null, pricing_status: price ? pricingDisplayStatus(price) : 'Unverified' } })
+  const status = url.searchParams.get('pricingStatus'); if (status) products = products.filter(product => product.pricing_status === status)
+  sendJson(response, 200, { products, total: status ? products.length : count || 0, page, pageSize, suggestions: buildSuggestions(queryText, products) })
 }
 
 async function importProducts(supabase, parsed, filename, actorId, verification = {}) {
@@ -195,14 +224,18 @@ async function importProducts(supabase, parsed, filename, actorId, verification 
     if (result.error) throw new Error(`Could not match existing catalog products: ${catalogErrorMessage(result.error)}`)
     for (const item of result.data || []) existing.set(productKey(item.manufacturer, item.manufacturer_part_number), item)
   }
-  const inserts = []; const updates = []; const prices = []; const audits = []
+  const inserts = []; const updates = []; const prices = []; const audits = []; let unchangedProducts = 0; let metadataUpdatedProducts = 0; let priceChanges = 0
   for (const item of parsed.products) {
     const current = existing.get(productKey(item.manufacturer, item.manufacturer_part_number))
     const row = { ...toDatabaseProduct(item), updated_at: now, updated_by: actorId, last_import_batch: batchId, source_file: filename }
     if (current) {
-      row.id = current.id; updates.push(row)
-      if (money(item.currentCost) !== null && (verification.verifyPricing || money(current.current_cost) !== money(item.currentCost))) prices.push(priceHistoryRow(current.id, current.current_cost, item, actorId, batchId, filename, now, verification))
-      audits.push({ product_id: current.id, action: 'product.import_updated', actor_user_id: actorId, import_batch: batchId, after_data: row })
+      const priceChanged = money(item.currentCost) !== null && money(current.current_cost) !== money(item.currentCost)
+      const metadataChanged = productMetadataChanged(current, row)
+      if (priceChanged || metadataChanged) { row.id = current.id; updates.push(row) }
+      if (priceChanged) { prices.push(priceHistoryRow(current.id, current.current_cost, item, actorId, batchId, filename, now, verification)); priceChanges += 1 }
+      if (metadataChanged) metadataUpdatedProducts += 1
+      if (!priceChanged && !metadataChanged) unchangedProducts += 1
+      if (priceChanged || metadataChanged) audits.push({ product_id: current.id, action: priceChanged ? 'pricing.changed' : 'product.metadata_updated', actor_user_id: actorId, import_batch: batchId, before_data: current, after_data: row })
     } else inserts.push(row)
   }
   // Upsert here as a final database-level guard. A stale/incomplete catalog snapshot
@@ -215,8 +248,10 @@ async function importProducts(supabase, parsed, filename, actorId, verification 
   }
   await chunkedInsert(supabase, 'atlas_product_pricing_history', prices, false)
   await chunkedInsert(supabase, 'atlas_catalog_audit_events', audits, false)
-  const summary = { batchId, sourceFile: filename, totalRows: parsed.totalRows, newProducts: inserts.length, updatedProducts: updates.length, duplicateRecords: parsed.duplicates, errors: parsed.errors, skippedRows: parsed.skipped, priceChanges: prices.filter(item => item.previous_cost !== null).length }
-  await supabase.from('atlas_catalog_import_batches').update({ status: parsed.errors.length ? 'completed_with_errors' : 'completed', new_products: summary.newProducts, updated_products: summary.updatedProducts, duplicate_records: summary.duplicateRecords, error_rows: parsed.errors.length, skipped_rows: summary.skippedRows, price_changes: summary.priceChanges, summary, completed_at: new Date().toISOString() }).eq('id', batchId)
+  if (parsed.duplicates) await supabase.from('atlas_catalog_audit_events').insert({ action: 'catalog.duplicate_detected', actor_user_id: actorId, import_batch: batchId, after_data: { duplicate_rows: parsed.duplicates, source_file: filename } })
+  const summary = { batchId, sourceFile: filename, totalRows: parsed.totalRows, newProducts: inserts.length, updatedProducts: updates.length, unchangedProducts, metadataUpdatedProducts, duplicateRecords: parsed.duplicates, errors: parsed.errors, skippedRows: parsed.skipped, priceChanges }
+  await supabase.from('atlas_catalog_import_batches').update({ status: parsed.errors.length ? 'completed_with_errors' : 'completed', new_products: summary.newProducts, updated_products: summary.updatedProducts, unchanged_products: unchangedProducts, metadata_updated_products: metadataUpdatedProducts, duplicate_records: summary.duplicateRecords, error_rows: parsed.errors.length, skipped_rows: summary.skippedRows, price_changes: summary.priceChanges, summary, completed_at: new Date().toISOString() }).eq('id', batchId)
+  await supabase.from('atlas_catalog_audit_events').insert({ action: 'catalog.imported', actor_user_id: actorId, import_batch: batchId, after_data: summary })
   return summary
 }
 
@@ -265,6 +300,10 @@ function booleanParam(value) { if (value === true || /^(y|yes|true|1)$/i.test(st
 function money(value) { if (value === null || value === undefined || value === '') return null; const parsed = Number(String(value).replace(/[$,]/g, '')); return Number.isFinite(parsed) && parsed >= 0 ? Math.round(parsed * 100) / 100 : null }
 function catalogErrorMessage(error) { if (error instanceof Error && error.message) return error.message; if (error && typeof error === 'object') { const parts = [error.message, error.details, error.hint, error.code].filter(Boolean); if (parts.length) return parts.join(' | ') } return String(error || 'Catalog operation failed.') }
 function productKey(manufacturer, part) { return `${string(manufacturer).toLowerCase()}::${string(part).toLowerCase()}` }
+function productMetadataChanged(current, next) { return ['description','additional_description','category','subcategory','supplier','supplier_part_number','unit_of_measure','lead_time','purchasable','procurement_status','taa_compliant','in_stock','active'].some(key => JSON.stringify(current[key] ?? null) !== JSON.stringify(next[key] ?? null)) }
+function latestPricingByProduct(rows) { const result = new Map(); for (const row of rows) if (!result.has(row.product_id)) result.set(row.product_id, row); return result }
+function daysUntil(value) { return value ? Math.ceil((Date.parse(value) - Date.now()) / 86400000) : null }
+function pricingDisplayStatus(row) { if (!row || row.pricing_status !== 'Verified') return 'Unverified'; const days = daysUntil(row.expiration_date); if (days === null || days < 0) return 'Expired'; return days <= 30 ? 'Expiring Soon' : 'Verified' }
 function screenSize(item) { const match = `${item.description} ${item.category}`.match(/(?:^|\s)(\d{2,3}(?:\.\d+)?)\s*(?:"|inch|in\b)/i); return match ? Number(match[1]) : null }
 function leadDays(value) { const text = string(value); const match = text.match(/(\d+)/); if (!match) return null; const count = Number(match[1]); return /week/i.test(text) ? count * 7 : count }
 function toDatabaseProduct(item) { return { manufacturer: item.manufacturer, manufacturer_part_number: item.manufacturerPartNumber, description: item.description || '', additional_description: item.additionalDescription || '', category: item.category || '', subcategory: item.subcategory || '', keywords: [], budget_unit_price: item.budgetUnitPrice, current_cost: item.currentCost, unit_of_measure: item.unitOfMeasure || '', supplier: item.supplier || '', supplier_part_number: item.supplierPartNumber || '', fsc: item.fsc || '', nsn: item.nsn || '', lead_time: item.leadTime || '', lead_time_days: leadDays(item.leadTime), purchasable: item.purchasable, procurement_status: item.procurementStatus || '', dpas: item.dpas || '', serial_number_required: item.serialNumberRequired, taa_compliant: item.taaCompliant ?? null, in_stock: item.inStock ?? null, screen_size_inches: screenSize(item), source_row: item.sourceRow, active: item.active !== false } }

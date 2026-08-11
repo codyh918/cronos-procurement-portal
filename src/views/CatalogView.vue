@@ -1,151 +1,69 @@
 <template>
-  <div class="product-catalog-page">
-    <header class="catalog-hero">
-      <div>
-        <p class="eyebrow">MASTER PRODUCT DATABASE</p>
-        <h1>Product Catalog</h1>
-        <p>Search manufacturer catalogs, supplier records, specifications, and current pricing.</p>
-      </div>
-      <div v-if="isAdmin" class="catalog-import-controls">
-        <label><input v-model="verifyImportedPricing" type="checkbox" /> I attest that pricing in this file is verified</label>
-        <label v-if="verifyImportedPricing">Pricing expires <input v-model="importExpirationDate" type="date" :min="today" /></label>
-        <label class="upload-button catalog-import-button" :class="{ disabled: verifyImportedPricing && !importExpirationDate }">
-          <FileUp :size="18" /><span>Import Catalog</span>
-          <input type="file" accept=".xlsx,.csv" :disabled="verifyImportedPricing && !importExpirationDate" @change="handleImport" />
-        </label>
-      </div>
-    </header>
+  <div class="catalog-page">
+    <header class="hero"><div><p class="eyebrow">MASTER PRODUCT DATABASE</p><h1>Product Catalog</h1><p>Search products, validate current pricing, and review pricing history.</p></div><button v-if="isAdmin" class="primary-action" @click="activeTab = 'imports'"><FileUp :size="17" /> Import Catalog</button></header>
+    <nav class="tabs" aria-label="Product Catalog sections"><button v-for="tab in tabs" :key="tab.id" :class="{ active: activeTab === tab.id }" @click="selectTab(tab.id)">{{ tab.label }}<span v-if="tab.id === 'verification' && metrics.unverifiedProducts">{{ metrics.unverifiedProducts }}</span></button></nav>
 
-    <section class="catalog-search-panel">
-      <Search :size="22" />
-      <input v-model="query" placeholder='Search “Cisco codec”, “55 inch”, part number, supplier…' @keyup.enter="runSearch(1)" />
-      <button class="primary-action" type="button" @click="runSearch(1)">Search</button>
-    </section>
-    <div v-if="suggestions.length" class="suggestion-row">
-      <span>Explore:</span>
-      <button v-for="suggestion in suggestions" :key="suggestion" type="button" @click="query = suggestion; runSearch(1)">{{ suggestion }}</button>
-    </div>
+    <template v-if="activeTab === 'products'">
+      <section class="metrics"><article v-for="card in metricCards" :key="card.label" :class="card.tone"><strong>{{ card.value.toLocaleString() }}</strong><span>{{ card.label }}</span></article></section>
+      <section class="search"><Search :size="21" /><input v-model="query" placeholder="Search 55 inch display, Cisco codec, secure KVM, Crestron touch panel, SUHD55…" @keyup.enter="runSearch(1)" /><button class="primary-action" @click="runSearch(1)">Search</button></section>
+      <section class="filters">
+        <FilterSelect v-model="manufacturer" label="Manufacturer" :options="facets.manufacturers"/><FilterSelect v-model="category" label="Category" :options="facets.categories"/><FilterSelect v-model="supplier" label="Supplier" :options="facets.suppliers"/>
+        <label>Pricing Status<select v-model="pricingStatus" @change="runSearch(1)"><option value="">All statuses</option><option>Verified</option><option>Expiring Soon</option><option>Expired</option><option>Unverified</option></select></label>
+        <button class="clear" @click="clearFilters">Clear filters</button>
+      </section>
+      <section class="panel"><header class="panel-head"><div><h2>Products</h2><p>{{ total.toLocaleString() }} catalog products</p></div><select v-model.number="pageSize" @change="runSearch(1)"><option :value="25">25 per page</option><option :value="50">50 per page</option><option :value="100">100 per page</option></select></header>
+        <div v-if="loading" class="empty">Searching catalog…</div><div v-else-if="error" class="empty error">{{ error }}</div><div v-else class="table-wrap"><table><thead><tr><th v-for="column in productColumns" :key="column.label" @click="column.sort && changeSort(column.sort)">{{ column.label }} <span v-if="sort === column.sort">{{ direction === 'asc' ? '↑' : '↓' }}</span></th></tr></thead><tbody><tr v-for="product in products" :key="product.id" tabindex="0" @click="openDrawer(product.id)" @keyup.enter="openDrawer(product.id)"><td class="part">{{ product.manufacturer_part_number }}</td><td><strong>{{ product.manufacturer }}</strong></td><td class="description">{{ product.description }}</td><td>{{ currency(product.current_pricing?.new_cost ?? product.current_cost ?? 0) }}</td><td>{{ product.current_pricing?.vendor || product.supplier || '—' }}</td><td><span class="badge" :class="statusClass(product.pricing_status)">{{ product.pricing_status }}</span></td><td>{{ product.current_pricing?.expiration_date ? dateOnly(product.current_pricing.expiration_date) : '—' }}</td><td>{{ formatDate(product.updated_at) }}</td></tr></tbody></table></div>
+        <footer class="pagination"><button :disabled="page <= 1" @click="runSearch(page - 1)">Previous</button><span>Page {{ page }} of {{ totalPages }}</span><button :disabled="page >= totalPages" @click="runSearch(page + 1)">Next</button></footer>
+      </section>
+    </template>
 
-    <section v-if="importSummary" class="import-summary-card">
-      <div><strong>{{ importSummary.newProducts }}</strong><span>New Products</span></div>
-      <div><strong>{{ importSummary.updatedProducts }}</strong><span>Updated Products</span></div>
-      <div><strong>{{ importSummary.duplicateRecords }}</strong><span>Duplicate Records</span></div>
-      <div><strong>{{ importSummary.errors.length }}</strong><span>Errors</span></div>
-      <div><strong>{{ importSummary.skippedRows }}</strong><span>Skipped Rows</span></div>
-      <div><strong>{{ importSummary.priceChanges }}</strong><span>Price Changes</span></div>
-    </section>
-    <p v-if="status" class="status-note">{{ status }}</p>
+    <template v-else-if="activeTab === 'imports'"><section class="panel import-panel"><header class="panel-head"><div><h2>Pricing Imports</h2><p>Upload catalogs and administer batch verification.</p></div><label v-if="isAdmin" class="upload primary-action"><FileUp :size="17"/> Import Catalog<input type="file" accept=".xlsx,.csv" @change="handleImport"/></label></header><div v-if="isAdmin" class="import-options"><label><input v-model="verifyImportedPricing" type="checkbox"/> Verify imported pricing</label><label>Expiration <input v-model="importExpirationDate" type="date" :min="today"/></label></div><section v-if="importSummary" class="summary"><span><b>{{ importSummary.newProducts }}</b> New</span><span><b>{{ importSummary.updatedProducts }}</b> Updated</span><span><b>{{ importSummary.unchangedProducts }}</b> Unchanged</span><span><b>{{ importSummary.priceChanges }}</b> Price Changes</span><span><b>{{ importSummary.errors.length }}</b> Errors</span></section><p v-if="status" class="notice">{{ status }}</p><div class="table-wrap"><table><thead><tr><th>Filename</th><th>Import Date</th><th>Rows</th><th>New</th><th>Updated</th><th>Unchanged</th><th>Price Changes</th><th>Errors</th><th>Verification</th><th>Expiration</th><th>Actions</th></tr></thead><tbody><tr v-for="batch in importBatches" :key="batch.id"><td>{{ batch.source_file }}</td><td>{{ formatDate(batch.imported_at) }}</td><td>{{ batch.total_rows }}</td><td>{{ batch.new_products }}</td><td>{{ batch.updated_products }}</td><td>{{ batch.unchanged_products }}</td><td>{{ batch.price_changes }}</td><td>{{ batch.error_rows }}</td><td><span class="badge" :class="statusClass(batchState(batch))">{{ batchState(batch) }}</span></td><td>{{ batch.pricing_expiration_date ? dateOnly(batch.pricing_expiration_date) : '—' }}</td><td><div class="row-actions" v-if="isAdmin"><input v-model="batchDates[batch.id]" type="date" :min="today"/><button @click="verifyBatch(batch.id)">Verify / Update</button></div></td></tr></tbody></table></div></section></template>
 
-    <section v-if="isAdmin && importBatches.length" class="catalog-batch-panel">
-      <h2>Recent catalog imports</h2>
-      <p>Bulk-verify a previously uploaded file after confirming its pricing source and expiration.</p>
-      <div v-for="batch in importBatches" :key="batch.id" class="catalog-batch-row">
-        <div><strong>{{ batch.source_file }}</strong><small>{{ formatDate(batch.imported_at) }} · {{ batch.total_rows }} rows</small></div>
-        <span class="catalog-badge" :class="batchVerificationState(batch).className">{{ batchVerificationState(batch).label }}</span>
-        <span v-if="batch.pricing_expiration_date">{{ isBatchExpired(batch) ? 'Expired' : 'Expires' }} {{ formatDateOnly(batch.pricing_expiration_date) }}</span>
-        <span v-else>Not yet verified</span>
-        <input v-model="batchExpirationDates[batch.id]" type="date" :min="today" :aria-label="`New pricing expiration date for ${batch.source_file}`" />
-        <button class="secondary-action" type="button" :disabled="!batchExpirationDates[batch.id] || verifyingBatch === batch.id" @click="verifyBatch(batch.id)">{{ batch.pricing_expiration_date ? (isBatchExpired(batch) ? 'Re-verify pricing' : 'Update expiration') : 'Verify batch pricing' }}</button>
-      </div>
-    </section>
+    <template v-else-if="activeTab === 'verification'"><section class="panel"><header class="panel-head"><div><h2>Needs Verification</h2><p>Unverified, expiring within 30 days, and expired current pricing.</p></div></header><div class="table-wrap"><table><thead><tr><th>Part Number</th><th>Manufacturer</th><th>Description</th><th>Current Cost</th><th>Source</th><th>Status</th><th>Expiration</th><th>Days Remaining</th></tr></thead><tbody><tr v-for="row in verificationRows" :key="row.id" @click="openDrawer(row.product_id)"><td class="part">{{ row.atlas_products?.manufacturer_part_number }}</td><td>{{ row.atlas_products?.manufacturer }}</td><td>{{ row.atlas_products?.description }}</td><td>{{ currency(row.new_cost) }}</td><td>{{ row.vendor || row.source_file }}</td><td><span class="badge" :class="statusClass(row.display_status)">{{ row.display_status }}</span></td><td>{{ row.expiration_date ? dateOnly(row.expiration_date) : '—' }}</td><td>{{ row.days_until_expiration ?? '—' }}</td></tr></tbody></table></div></section></template>
 
-    <div class="catalog-layout">
-      <aside class="catalog-filters">
-        <div class="filter-heading"><h2>Filters</h2><button type="button" @click="clearFilters">Clear</button></div>
-        <FilterSelect v-model="manufacturer" label="Manufacturer" :options="facets.manufacturers" />
-        <FilterSelect v-model="category" label="Category" :options="facets.categories" />
-        <FilterSelect v-model="supplier" label="Supplier" :options="facets.suppliers" />
-        <fieldset><legend>Price Range</legend><div class="range-fields"><input v-model.number="minPrice" type="number" min="0" placeholder="Min" /><input v-model.number="maxPrice" type="number" min="0" placeholder="Max" /></div></fieldset>
-        <fieldset><legend>Lead Time</legend><select v-model.number="leadTimeDays"><option :value="null">Any</option><option :value="7">7 days</option><option :value="14">14 days</option><option :value="30">30 days</option><option :value="60">60 days</option></select></fieldset>
-        <FilterToggle v-model="purchasable" label="Purchasable" />
-        <FilterToggle v-model="inStock" label="In Stock" />
-        <FilterToggle v-model="taaCompliant" label="TAA Compliant" />
-        <FilterToggle v-model="serialRequired" label="Serial Number Required" />
-        <FilterToggle v-model="active" label="Active" />
-        <button class="secondary-action apply-filters" type="button" @click="runSearch(1)">Apply Filters</button>
-      </aside>
+    <template v-else><section class="change-filters"><FilterSelect v-model="changeSupplier" label="Supplier" :options="facets.suppliers"/><label>From<input v-model="changeFrom" type="date"/></label><label>To<input v-model="changeTo" type="date"/></label><label>Direction<select v-model="changeDirection"><option value="">All</option><option value="increase">Increase</option><option value="decrease">Decrease</option></select></label><label>Minimum change %<input v-model.number="changeThreshold" type="number" min="0"/></label><button @click="loadChanges">Apply</button></section><section class="panel"><header class="panel-head"><div><h2>Price Changes</h2><p>Audit trail of catalog cost changes.</p></div></header><div class="table-wrap"><table><thead><tr><th>Part Number</th><th>Manufacturer</th><th>Description</th><th>Previous Cost</th><th>New Cost</th><th>Dollar Change</th><th>Percent Change</th><th>Source</th><th>Change Date</th></tr></thead><tbody><tr v-for="row in filteredChanges" :key="row.id" :class="{ significant: Math.abs(row.change_percent || 0) >= 10 }"><td class="part">{{ row.atlas_products?.manufacturer_part_number }}</td><td>{{ row.atlas_products?.manufacturer }}</td><td>{{ row.atlas_products?.description }}</td><td>{{ currency(row.previous_cost) }}</td><td>{{ currency(row.new_cost) }}</td><td :class="row.change_amount >= 0 ? 'increase' : 'decrease'">{{ currency(row.change_amount) }}</td><td>{{ Number(row.change_percent || 0).toFixed(1) }}%</td><td>{{ row.vendor || row.source_file }}</td><td>{{ formatDate(row.effective_date) }}</td></tr></tbody></table></div></section></template>
 
-      <main class="catalog-results">
-        <div class="results-heading"><div><h2>Products</h2><p>{{ total.toLocaleString() }} matching products · server-side results</p></div><select v-model.number="pageSize" @change="runSearch(1)"><option :value="25">25 per page</option><option :value="50">50 per page</option><option :value="100">100 per page</option></select></div>
-        <div v-if="loading" class="catalog-empty">Searching the catalog…</div>
-        <div v-else-if="error" class="catalog-empty error-state">{{ error }}</div>
-        <div v-else-if="!products.length" class="catalog-empty"><h3>No exact match</h3><p>Try a broader description, nearby screen size, manufacturer, or category.</p></div>
-        <div v-else class="catalog-table-wrap">
-          <table class="catalog-table">
-            <thead><tr><th>Manufacturer</th><th>Part Number</th><th>Description</th><th>Current Cost</th><th>Supplier</th><th>Lead Time</th><th>Purchasable</th><th>Status</th></tr></thead>
-            <tbody>
-              <tr v-for="product in products" :key="product.id" tabindex="0" @click="openProduct(product.id)" @keyup.enter="openProduct(product.id)">
-                <td><strong>{{ product.manufacturer }}</strong></td><td><span class="part-number">{{ product.manufacturer_part_number }}</span></td><td>{{ product.description }}</td><td>{{ currency(product.current_cost ?? 0) }}</td><td>{{ product.supplier || '—' }}</td><td>{{ product.lead_time || '—' }}</td><td><span :class="['catalog-badge', product.purchasable ? 'success' : 'muted']">{{ yesNo(product.purchasable) }}</span></td><td>{{ product.procurement_status || (product.active ? 'Active' : 'Inactive') }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <div class="pagination"><button type="button" :disabled="page <= 1" @click="runSearch(page - 1)">Previous</button><span>Page {{ page }} of {{ totalPages }}</span><button type="button" :disabled="page >= totalPages" @click="runSearch(page + 1)">Next</button></div>
-      </main>
-    </div>
+    <div v-if="drawerOpen" class="backdrop" @click.self="closeDrawer"><aside class="drawer"><button class="drawer-close" aria-label="Close" @click="closeDrawer">×</button><div v-if="drawerLoading" class="empty">Loading product…</div><template v-else-if="detail"><p class="eyebrow">PRODUCT DETAIL</p><h2>{{ detail.product.manufacturer_part_number }}</h2><h3>{{ detail.product.manufacturer }}</h3><p>{{ detail.product.description }} {{ detail.product.additional_description }}</p><dl><div><dt>Current verified cost</dt><dd>{{ currentDetailPrice?.display_status === 'Verified' || currentDetailPrice?.display_status === 'Expiring Soon' ? currency(currentDetailPrice.new_cost) : 'Not available' }}</dd></div><div><dt>Pricing status</dt><dd><span class="badge" :class="statusClass(currentDetailPrice?.display_status || 'Unverified')">{{ currentDetailPrice?.display_status || 'Unverified' }}</span></dd></div><div><dt>Verified through</dt><dd>{{ currentDetailPrice?.expiration_date ? dateOnly(currentDetailPrice.expiration_date) : '—' }}</dd></div><div><dt>Supplier / Source</dt><dd>{{ currentDetailPrice?.vendor || detail.product.supplier || '—' }}</dd></div><div><dt>Last updated</dt><dd>{{ formatDate(detail.product.updated_at) }}</dd></div><div><dt>Source file</dt><dd>{{ currentDetailPrice?.source_file || detail.product.source_file || '—' }}</dd></div></dl><p v-if="currentDetailPrice && !['Verified','Expiring Soon'].includes(currentDetailPrice.display_status)" class="warning">This price may be viewed for reference, but cannot be applied as verified quote pricing because it is {{ currentDetailPrice.display_status.toLowerCase() }}.</p><div class="drawer-actions"><button v-if="isAdmin">Edit Product</button><button v-if="isAdmin">Verify Pricing</button></div><h3>Price History</h3><div v-for="price in detail.pricingHistory" :key="price.id" class="history"><span>{{ formatDate(price.effective_date) }} — {{ currency(price.new_cost) }}</span><span>{{ price.vendor || price.source_file }} · {{ price.pricing_status }}</span></div></template></aside></div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
 import { FileUp, Search } from '@lucide/vue'
 import FilterSelect from '../components/catalog/FilterSelect.vue'
-import FilterToggle from '../components/catalog/FilterToggle.vue'
 import { currency } from '../services/calculations'
 import { fetchSession } from '../services/auth'
-import { importCatalog, loadCatalogFacets, loadCatalogImportBatches, searchCatalog, verifyCatalogImportBatch, type CatalogImportBatch, type CatalogProduct, type ImportSummary } from '../services/productCatalogApi'
-
-const router = useRouter(); const query = ref(''); const products = ref<CatalogProduct[]>([]); const total = ref(0); const page = ref(1); const pageSize = ref(25)
-const manufacturer = ref(''); const category = ref(''); const supplier = ref(''); const minPrice = ref<number | null>(null); const maxPrice = ref<number | null>(null); const leadTimeDays = ref<number | null>(null)
-const purchasable = ref<boolean | null>(null); const inStock = ref<boolean | null>(null); const taaCompliant = ref<boolean | null>(null); const serialRequired = ref<boolean | null>(null); const active = ref<boolean | null>(true)
-const loading = ref(false); const error = ref(''); const status = ref(''); const suggestions = ref<string[]>([]); const importSummary = ref<ImportSummary | null>(null)
-const verifyImportedPricing = ref(true); const importExpirationDate = ref(''); const importBatches = ref<CatalogImportBatch[]>([]); const batchExpirationDates = ref<Record<string, string>>({}); const verifyingBatch = ref('')
-const facets = ref({ manufacturers: [] as Array<{ value: string; count: number }>, categories: [] as Array<{ value: string; count: number }>, suppliers: [] as Array<{ value: string; count: number }> })
-const isAdmin = computed(() => fetchSession()?.role === 'Admin'); const totalPages = computed(() => Math.max(1, Math.ceil(total.value / pageSize.value)))
-
-const today = computed(() => { const date = new Date(); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` })
-onMounted(async () => { try { facets.value = await loadCatalogFacets(); if (isAdmin.value) setImportBatches((await loadCatalogImportBatches()).batches) } catch {} await runSearch(1) })
-async function runSearch(nextPage = page.value) { loading.value = true; error.value = ''; try { const result = await searchCatalog({ q: query.value, page: nextPage, pageSize: pageSize.value, manufacturer: manufacturer.value ? [manufacturer.value] : [], category: category.value ? [category.value] : [], supplier: supplier.value ? [supplier.value] : [], minPrice: minPrice.value, maxPrice: maxPrice.value, leadTimeDays: leadTimeDays.value, purchasable: purchasable.value, inStock: inStock.value, taaCompliant: taaCompliant.value, serialRequired: serialRequired.value, active: active.value }); products.value = result.products; total.value = result.total; page.value = result.page; suggestions.value = result.suggestions } catch (cause) { error.value = cause instanceof Error ? cause.message : 'Unable to search the product catalog.' } finally { loading.value = false } }
-async function handleImport(event: Event) {
-  const input = event.target as HTMLInputElement
-  const file = input.files?.[0]
-  if (!file) return
-  status.value = `Importing ${file.name}…`
-  try {
-    importSummary.value = await importCatalog(file, { verifyPricing: verifyImportedPricing.value, expirationDate: importExpirationDate.value })
-    const summary = importSummary.value
-    status.value = summary.errors.length
-      ? `Import processed: ${summary.newProducts} new, ${summary.updatedProducts} updated, and ${summary.errors.length} rejected rows.`
-      : `Import complete: ${summary.newProducts} new and ${summary.updatedProducts} updated.`
-    try {
-      facets.value = await loadCatalogFacets()
-      if (isAdmin.value) setImportBatches((await loadCatalogImportBatches()).batches)
-      await runSearch(1)
-    } catch (refreshCause) {
-      const refreshMessage = refreshCause instanceof Error ? refreshCause.message : 'Catalog refresh failed.'
-      status.value += ` Products were saved, but the screen refresh failed: ${refreshMessage}`
-    }
-  } catch (cause) {
-    status.value = cause instanceof Error ? cause.message : 'Catalog import failed.'
-  } finally {
-    input.value = ''
-  }
-}
-async function verifyBatch(batchId: string) { verifyingBatch.value = batchId; try { const result = await verifyCatalogImportBatch(batchId, batchExpirationDates.value[batchId]); status.value = `Verified ${result.verifiedRecords} pricing records through ${formatDateOnly(result.expirationDate)}.`; setImportBatches((await loadCatalogImportBatches()).batches) } catch (cause) { status.value = cause instanceof Error ? cause.message : 'Unable to verify the import batch.' } finally { verifyingBatch.value = '' } }
-function setImportBatches(batches: CatalogImportBatch[]) { importBatches.value = batches; const defaultDate = futureDate(30); for (const batch of batches) batchExpirationDates.value[batch.id] ||= defaultDate }
-function futureDate(days: number) { const date = new Date(); date.setDate(date.getDate() + days); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}` }
-function isBatchExpired(batch: CatalogImportBatch) { return Boolean(batch.pricing_expiration_date && Date.parse(batch.pricing_expiration_date) < Date.now()) }
-function batchVerificationState(batch: CatalogImportBatch) { if (isBatchExpired(batch)) return { label: 'Expired', className: 'expired' }; if (batch.pricing_verification_status === 'Verified') return { label: 'Verified', className: 'success' }; return { label: 'Unverified', className: 'muted' } }
-function formatDate(value: string) { return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(value)) }
-function formatDateOnly(value: string) { return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium', timeZone: 'UTC' }).format(new Date(value)) }
-function clearFilters() { manufacturer.value = ''; category.value = ''; supplier.value = ''; minPrice.value = null; maxPrice.value = null; leadTimeDays.value = null; purchasable.value = null; inStock.value = null; taaCompliant.value = null; serialRequired.value = null; active.value = true; void runSearch(1) }
-function openProduct(id: string) { void router.push(`/catalog/${id}`) }
-function yesNo(value: boolean | null) { return value === null ? 'Unknown' : value ? 'Yes' : 'No' }
+import { importCatalog, loadCatalogFacets, loadCatalogImportBatches, loadCatalogMetrics, loadCatalogProduct, loadNeedsVerification, loadPriceChanges, searchCatalog, verifyCatalogImportBatch, type CatalogImportBatch, type CatalogProduct, type ImportSummary } from '../services/productCatalogApi'
+type Tab = 'products'|'imports'|'verification'|'changes'
+const tabs = [{id:'products' as Tab,label:'Products'},{id:'imports' as Tab,label:'Pricing Imports'},{id:'verification' as Tab,label:'Needs Verification'},{id:'changes' as Tab,label:'Price Changes'}]
+const activeTab=ref<Tab>('products'), query=ref(''), products=ref<CatalogProduct[]>([]), total=ref(0), page=ref(1), pageSize=ref(25), loading=ref(false), error=ref(''), status=ref('')
+const manufacturer=ref(''),category=ref(''),supplier=ref(''),pricingStatus=ref(''),sort=ref('manufacturer'),direction=ref<'asc'|'desc'>('asc')
+const facets=ref({manufacturers:[],categories:[],suppliers:[]} as any), metrics=ref({totalProducts:0,verifiedProducts:0,expiringSoon:0,expiredProducts:0,unverifiedProducts:0,recentPriceChanges:0})
+const importBatches=ref<CatalogImportBatch[]>([]),importSummary=ref<ImportSummary|null>(null),verifyImportedPricing=ref(true),importExpirationDate=ref(''),batchDates=ref<Record<string,string>>({})
+const verificationRows=ref<any[]>([]),changes=ref<any[]>([]),changeSupplier=ref(''),changeFrom=ref(''),changeTo=ref(''),changeDirection=ref(''),changeThreshold=ref(0)
+const drawerOpen=ref(false),drawerLoading=ref(false),detail=ref<any>(null)
+const isAdmin=computed(()=>fetchSession()?.role==='Admin'),today=computed(()=>new Date().toISOString().slice(0,10)),totalPages=computed(()=>Math.max(1,Math.ceil(total.value/pageSize.value)))
+const metricCards=computed(()=>[{label:'Total Products',value:metrics.value.totalProducts,tone:''},{label:'Verified Products',value:metrics.value.verifiedProducts,tone:'green'},{label:'Expiring Within 30 Days',value:metrics.value.expiringSoon,tone:'amber'},{label:'Expired Products',value:metrics.value.expiredProducts,tone:'red'},{label:'Unverified Products',value:metrics.value.unverifiedProducts,tone:'gray'},{label:'Recent Price Changes',value:metrics.value.recentPriceChanges,tone:'blue'}])
+const productColumns=[{label:'Part Number',sort:'partNumber'},{label:'Manufacturer',sort:'manufacturer'},{label:'Description'},{label:'Current Cost',sort:'cost'},{label:'Supplier / Pricing Source'},{label:'Pricing Status'},{label:'Verified Through',sort:'expiration'},{label:'Last Updated',sort:'lastUpdated'}]
+const currentDetailPrice=computed(()=>detail.value?.pricingHistory?.[0]?{...detail.value.pricingHistory[0],display_status:displayStatus(detail.value.pricingHistory[0])}:null)
+const filteredChanges=computed(()=>changes.value.filter(row=>(!changeDirection.value||(changeDirection.value==='increase'?row.change_amount>0:row.change_amount<0))&&Math.abs(row.change_percent||0)>=changeThreshold.value))
+onMounted(async()=>{try{[facets.value,metrics.value]=await Promise.all([loadCatalogFacets(),loadCatalogMetrics()])}catch{} await runSearch(1)})
+async function selectTab(tab:Tab){activeTab.value=tab;if(tab==='imports')await loadImports();if(tab==='verification')verificationRows.value=(await loadNeedsVerification()).records;if(tab==='changes')await loadChanges()}
+async function runSearch(next=page.value){loading.value=true;error.value='';try{const r=await searchCatalog({q:query.value,page:next,pageSize:pageSize.value,manufacturer:manufacturer.value?[manufacturer.value]:[],category:category.value?[category.value]:[],supplier:supplier.value?[supplier.value]:[],pricingStatus:pricingStatus.value,sort:sort.value,direction:direction.value,active:true});products.value=r.products;total.value=r.total;page.value=r.page}catch(e){error.value=e instanceof Error?e.message:'Unable to search catalog.'}finally{loading.value=false}}
+function changeSort(next:string){if(sort.value===next)direction.value=direction.value==='asc'?'desc':'asc';else{sort.value=next;direction.value='asc'}void runSearch(1)}
+function clearFilters(){manufacturer.value='';category.value='';supplier.value='';pricingStatus.value='';void runSearch(1)}
+async function loadImports(){if(!isAdmin.value)return;importBatches.value=(await loadCatalogImportBatches()).batches;for(const b of importBatches.value)batchDates.value[b.id] ||= futureDate(30)}
+async function handleImport(e:Event){const input=e.target as HTMLInputElement,file=input.files?.[0];if(!file)return;if(verifyImportedPricing.value&&!importExpirationDate.value){status.value='Choose an expiration date before importing verified pricing.';input.value='';return}try{status.value=`Importing ${file.name}…`;importSummary.value=await importCatalog(file,{verifyPricing:verifyImportedPricing.value,expirationDate:importExpirationDate.value});status.value=`Import complete: ${importSummary.value.newProducts} new, ${importSummary.value.updatedProducts} updated, ${importSummary.value.unchangedProducts} unchanged.`;await Promise.all([loadImports(),runSearch(1),loadCatalogMetrics().then(v=>metrics.value=v)])}catch(err){status.value=err instanceof Error?err.message:'Import failed.'}finally{input.value=''}}
+async function verifyBatch(id:string){await verifyCatalogImportBatch(id,batchDates.value[id]);status.value='Pricing verification updated.';await Promise.all([loadImports(),loadCatalogMetrics().then(v=>metrics.value=v)])}
+async function loadChanges(){const filters:Record<string,string>={};if(changeSupplier.value)filters.supplier=changeSupplier.value;if(changeFrom.value)filters.from=changeFrom.value;if(changeTo.value)filters.to=changeTo.value;changes.value=(await loadPriceChanges(filters)).changes}
+async function openDrawer(id:string){drawerOpen.value=true;drawerLoading.value=true;try{detail.value=await loadCatalogProduct(id)}finally{drawerLoading.value=false}}
+function closeDrawer(){drawerOpen.value=false;detail.value=null}
+function displayStatus(row:any){if(row.pricing_status!=='Verified')return'Unverified';if(!row.expiration_date||Date.parse(row.expiration_date)<Date.now())return'Expired';return Date.parse(row.expiration_date)-Date.now()<=30*86400000?'Expiring Soon':'Verified'}
+function statusClass(s:string){return s==='Verified'?'verified':s==='Expiring Soon'?'expiring':s==='Expired'?'expired':'unverified'}
+function batchState(b:CatalogImportBatch){return b.pricing_expiration_date&&Date.parse(b.pricing_expiration_date)<Date.now()?'Expired':b.pricing_verification_status}
+function formatDate(v:string){return new Intl.DateTimeFormat(undefined,{dateStyle:'medium'}).format(new Date(v))} function dateOnly(v:string){return new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeZone:'UTC'}).format(new Date(v))} function futureDate(days:number){const d=new Date();d.setDate(d.getDate()+days);return d.toISOString().slice(0,10)}
 </script>
 
 <style scoped>
-.product-catalog-page{display:grid;gap:1.25rem}.catalog-hero,.results-heading,.filter-heading{display:flex;justify-content:space-between;align-items:center;gap:1rem}.catalog-hero h1{margin:.15rem 0}.eyebrow{font-size:.72rem;font-weight:800;letter-spacing:.12em;color:#64748b}.catalog-import-button input{display:none}.catalog-search-panel{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:.75rem;padding:1rem 1.1rem;background:#fff;border:1px solid #dbe3ec;border-radius:14px;box-shadow:0 8px 24px rgba(15,23,42,.06)}.catalog-search-panel input{border:0;outline:0;font-size:1rem;width:100%}.suggestion-row{display:flex;align-items:center;gap:.5rem;flex-wrap:wrap;color:#64748b}.suggestion-row button{border:1px solid #cbd5e1;background:#fff;border-radius:999px;padding:.35rem .7rem;color:#334155}.import-summary-card{display:grid;grid-template-columns:repeat(6,1fr);gap:.75rem}.import-summary-card div{background:#fff;border:1px solid #dbe3ec;border-radius:12px;padding:.85rem}.import-summary-card strong,.import-summary-card span{display:block}.import-summary-card strong{font-size:1.25rem}.import-summary-card span{font-size:.75rem;color:#64748b}.catalog-layout{display:grid;grid-template-columns:240px minmax(0,1fr);gap:1rem}.catalog-filters,.catalog-results{background:#fff;border:1px solid #dbe3ec;border-radius:14px}.catalog-filters{padding:1rem;align-self:start;display:grid;gap:1rem}.filter-heading h2,.results-heading h2{margin:0}.filter-heading button{border:0;background:none;color:#2563eb}.catalog-filters fieldset{border:0;padding:0;margin:0;display:grid;gap:.4rem}.catalog-filters legend{font-size:.78rem;font-weight:700;color:#475569;margin-bottom:.4rem}.catalog-filters select,.catalog-filters input,.results-heading select{width:100%;border:1px solid #cbd5e1;border-radius:8px;padding:.55rem;background:#fff}.range-fields{display:grid;grid-template-columns:1fr 1fr;gap:.4rem}.apply-filters{justify-content:center}.catalog-results{min-width:0}.results-heading{padding:1rem 1.1rem;border-bottom:1px solid #e2e8f0}.results-heading p{margin:.2rem 0 0;color:#64748b;font-size:.82rem}.catalog-table-wrap{overflow:auto}.catalog-table{width:100%;border-collapse:collapse;font-size:.82rem}.catalog-table th{position:sticky;top:0;background:#f8fafc;text-align:left;color:#475569;font-size:.72rem;text-transform:uppercase;letter-spacing:.04em}.catalog-table th,.catalog-table td{padding:.78rem;border-bottom:1px solid #eef2f7}.catalog-table tbody tr{cursor:pointer}.catalog-table tbody tr:hover{background:#f8fbff}.part-number{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;color:#1d4ed8}.catalog-badge{display:inline-flex;padding:.2rem .45rem;border-radius:999px;font-size:.72rem}.catalog-badge.success{background:#dcfce7;color:#166534}.catalog-badge.muted{background:#f1f5f9;color:#64748b}.catalog-empty{padding:4rem;text-align:center;color:#64748b}.error-state{color:#b91c1c}.pagination{display:flex;justify-content:center;align-items:center;gap:1rem;padding:1rem}.pagination button{border:1px solid #cbd5e1;background:#fff;border-radius:8px;padding:.45rem .8rem}.pagination button:disabled{opacity:.45}@media(max-width:900px){.catalog-layout{grid-template-columns:1fr}.import-summary-card{grid-template-columns:repeat(2,1fr)}.catalog-hero{align-items:flex-start;flex-direction:column}}
-.catalog-import-controls{display:grid;gap:.55rem;justify-items:end}.catalog-import-controls>label:not(.upload-button){font-size:.78rem;color:#475569}.catalog-import-controls input[type=date]{margin-left:.35rem;padding:.35rem;border:1px solid #cbd5e1;border-radius:7px}.catalog-import-button.disabled{opacity:.5}.catalog-batch-panel{background:#fff;border:1px solid #dbe3ec;border-radius:14px;padding:1rem;display:grid;gap:.7rem}.catalog-batch-panel h2,.catalog-batch-panel p{margin:0}.catalog-batch-row{display:grid;grid-template-columns:minmax(220px,1fr) auto auto auto auto;align-items:center;gap:.75rem;border-top:1px solid #eef2f7;padding-top:.7rem}.catalog-batch-row small{display:block;color:#64748b}.catalog-batch-row input{padding:.45rem;border:1px solid #cbd5e1;border-radius:8px}
-.catalog-badge.expired{background:#fee2e2;color:#991b1b}
+.catalog-page{display:grid;gap:1rem;min-width:0}.hero,.panel-head{display:flex;align-items:center;justify-content:space-between;gap:1rem}.hero h1,.panel h2{margin:.1rem 0}.hero p,.panel-head p{margin:.2rem 0;color:#64748b}.eyebrow{font-size:.7rem;font-weight:800;letter-spacing:.12em;color:#64748b}.tabs{display:flex;border-bottom:1px solid #dbe3ec;gap:1.5rem}.tabs button{border:0;background:none;padding:.8rem .15rem;color:#64748b;font-weight:700;border-bottom:3px solid transparent}.tabs button.active{color:#1d4ed8;border-color:#2563eb}.tabs span{margin-left:.4rem;background:#e2e8f0;border-radius:99px;padding:.1rem .4rem}.metrics{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:.7rem}.metrics article{background:#fff;border:1px solid #dbe3ec;border-top:3px solid #94a3b8;border-radius:10px;padding:.85rem}.metrics strong,.metrics span{display:block}.metrics strong{font-size:1.45rem}.metrics span{font-size:.72rem;color:#64748b}.metrics .green{border-top-color:#22c55e}.metrics .amber{border-top-color:#f59e0b}.metrics .red{border-top-color:#ef4444}.metrics .blue{border-top-color:#3b82f6}.search{display:grid;grid-template-columns:auto 1fr auto;align-items:center;gap:.7rem;background:#fff;border:1px solid #cbd5e1;border-radius:12px;padding:.7rem 1rem;box-shadow:0 6px 20px #0f172a0d}.search input{border:0;outline:0;font-size:.95rem}.filters,.change-filters{display:flex;align-items:end;gap:.7rem;flex-wrap:wrap}.filters>*{min-width:150px}.filters label,.change-filters label{display:grid;gap:.3rem;font-size:.72rem;font-weight:700;color:#475569}.filters select,.change-filters select,.change-filters input,.panel-head select,.row-actions input{border:1px solid #cbd5e1;border-radius:7px;padding:.48rem;background:#fff}.clear{border:0;background:none;color:#2563eb}.panel{background:#fff;border:1px solid #dbe3ec;border-radius:12px;min-width:0;overflow:hidden}.panel-head{padding:1rem;border-bottom:1px solid #e2e8f0}.table-wrap{overflow:auto;max-width:100%}table{width:100%;border-collapse:collapse;font-size:.78rem;white-space:nowrap}th,td{padding:.7rem;border-bottom:1px solid #edf2f7;text-align:left}th{background:#f8fafc;color:#475569;font-size:.68rem;text-transform:uppercase;letter-spacing:.03em}tbody tr{cursor:pointer}tbody tr:hover{background:#f8fbff}.description{max-width:310px;overflow:hidden;text-overflow:ellipsis}.part{font-family:ui-monospace,monospace;color:#1d4ed8}.badge{display:inline-flex;border-radius:99px;padding:.22rem .5rem;font-weight:700}.verified{background:#dcfce7;color:#166534}.expiring{background:#fef3c7;color:#92400e}.expired{background:#fee2e2;color:#991b1b}.unverified{background:#e2e8f0;color:#475569}.pagination{display:flex;justify-content:center;gap:1rem;align-items:center;padding:.8rem}.pagination button,.row-actions button,.drawer-actions button,.change-filters button{border:1px solid #cbd5e1;background:#fff;border-radius:7px;padding:.45rem .7rem}.pagination button:disabled{opacity:.45}.empty{padding:4rem;text-align:center;color:#64748b}.error,.warning{color:#b91c1c}.upload input{display:none}.import-options,.summary{display:flex;gap:1rem;padding:.8rem 1rem;background:#f8fafc}.summary span{padding-right:1rem;border-right:1px solid #cbd5e1}.summary b{font-size:1.1rem}.notice{margin:.7rem 1rem}.row-actions{display:flex;gap:.4rem}.significant{background:#fff7ed}.increase{color:#b91c1c}.decrease{color:#15803d}.backdrop{position:fixed;inset:0;background:#0f172a55;z-index:100;display:flex;justify-content:flex-end}.drawer{width:min(560px,94vw);height:100%;overflow:auto;background:#fff;padding:1.5rem;box-shadow:-10px 0 30px #0f172a33}.drawer-close{float:right;border:0;background:none;font-size:2rem}.drawer dl{display:grid;grid-template-columns:1fr 1fr;gap:.8rem}.drawer dl div{border-bottom:1px solid #e2e8f0;padding:.5rem 0}.drawer dt{font-size:.7rem;text-transform:uppercase;color:#64748b}.drawer dd{margin:.25rem 0;font-weight:600}.drawer-actions{display:flex;gap:.5rem;margin:1rem 0}.history{display:flex;justify-content:space-between;border-top:1px solid #e2e8f0;padding:.7rem 0;font-size:.8rem}.history span:last-child{color:#64748b}.warning{background:#fef2f2;border:1px solid #fecaca;padding:.75rem;border-radius:8px}@media(max-width:1100px){.metrics{grid-template-columns:repeat(3,1fr)}}@media(max-width:700px){.metrics{grid-template-columns:repeat(2,1fr)}.tabs{overflow:auto}.hero{align-items:flex-start;flex-direction:column}}
 </style>

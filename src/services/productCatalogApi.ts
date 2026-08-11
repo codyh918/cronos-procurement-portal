@@ -29,22 +29,28 @@ export type CatalogProduct = {
   source_file: string
   active: boolean
   updated_at: string
+  pricing_status: 'Verified' | 'Expiring Soon' | 'Expired' | 'Unverified'
+  current_pricing: CatalogPricing | null
 }
+
+export type CatalogPricing = { id: string; product_id: string; new_cost: number; vendor: string; source_file: string; pricing_status: string; display_status: 'Verified' | 'Expiring Soon' | 'Expired' | 'Unverified'; expiration_date: string | null; effective_date: string; verified_at: string | null; days_until_expiration: number | null }
 
 export type CatalogSearch = {
   q?: string; page?: number; pageSize?: number; manufacturer?: string[]; category?: string[]; supplier?: string[]
   minPrice?: number | null; maxPrice?: number | null; leadTimeDays?: number | null; purchasable?: boolean | null
   inStock?: boolean | null; taaCompliant?: boolean | null; serialRequired?: boolean | null; active?: boolean | null
+  pricingStatus?: string; sort?: string; direction?: 'asc' | 'desc'
 }
 
 export type ImportSummary = {
   batchId: string; sourceFile: string; totalRows: number; newProducts: number; updatedProducts: number
-  duplicateRecords: number; errors: Array<{ row: number; error: string }>; skippedRows: number; priceChanges: number
+  duplicateRecords: number; errors: Array<{ row: number; error: string }>; skippedRows: number; priceChanges: number; unchangedProducts: number; metadataUpdatedProducts: number
 }
 
 export type CatalogImportBatch = {
   id: string; source_file: string; status: string; total_rows: number; new_products: number; updated_products: number
-  imported_at: string; pricing_verification_status: 'Verified' | 'Unverified'; pricing_verified_at: string | null; pricing_expiration_date: string | null
+  unchanged_products: number; metadata_updated_products: number; duplicate_records: number; error_rows: number; skipped_rows: number; price_changes: number
+  imported_at: string; imported_by: string | null; pricing_verification_status: 'Verified' | 'Unverified'; pricing_verified_at: string | null; pricing_expiration_date: string | null
 }
 
 export type VerifiedCatalogPrice = {
@@ -77,6 +83,9 @@ export function searchCatalog(filters: CatalogSearch) {
 export function loadCatalogFacets() {
   return catalogRequest<{ manufacturers: Array<{ value: string; count: number }>; categories: Array<{ value: string; count: number }>; suppliers: Array<{ value: string; count: number }> }>('/api/catalog/facets')
 }
+export function loadCatalogMetrics() { return catalogRequest<{ totalProducts: number; verifiedProducts: number; expiringSoon: number; expiredProducts: number; unverifiedProducts: number; recentPriceChanges: number }>('/api/catalog/metrics') }
+export function loadNeedsVerification() { return catalogRequest<{ records: Array<CatalogPricing & { atlas_products: { manufacturer: string; manufacturer_part_number: string; description: string }; days_until_expiration: number | null }> }>('/api/catalog/needs-verification') }
+export function loadPriceChanges(filters: Record<string, string> = {}) { return catalogRequest<{ changes: Array<Record<string, any>>; total: number }>(`/api/catalog/pricing-changes?${new URLSearchParams(filters)}`) }
 
 export function loadCatalogProduct(id: string) {
   return catalogRequest<{ product: CatalogProduct; pricingHistory: Array<Record<string, unknown>>; auditTrail: Array<Record<string, unknown>>; relatedProducts: CatalogProduct[] }>(`/api/catalog/products/${id}`)
