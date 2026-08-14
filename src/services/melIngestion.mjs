@@ -1,4 +1,4 @@
-export const MEL_FIELDS = ['ignore', 'quantity', 'description', 'partNumber', 'manufacturer', 'alternatePartNumber', 'category', 'location', 'room', 'system', 'notes', 'clin']
+export const MEL_FIELDS = ['ignore', 'quantity', 'description', 'partNumber', 'manufacturer', 'unitCost', 'alternatePartNumber', 'category', 'location', 'room', 'system', 'notes', 'clin']
 export const MEL_CONFIDENCE_THRESHOLDS = Object.freeze({ high: 0.9, review: 0.7 })
 
 const ALIASES = {
@@ -6,15 +6,24 @@ const ALIASES = {
   manufacturer: ['manufacturer', 'mfg', 'mfr', 'make', 'oem', 'brand', 'vendor manufacturer'],
   quantity: ['quantity', 'qty', 'qty.', 'quantity required', 'qty to order', 'ordered qty', 'count', 'quantiy'],
   description: ['description', 'item description', 'product description', 'equipment description', 'p/n desc', 'part description', 'material description', 'item', 'equipment'],
+  unitCost: ['budget unit price', 'unit cost', 'unit price', 'net price', 'quoted price', 'price', 'cost'],
   alternatePartNumber: ['alternate part number', 'alternate part', 'alt part', 'alt pn', 'alternate sku'],
   category: ['category', 'section', 'equipment type', 'type'], location: ['location', 'site'], room: ['room', 'room number'], system: ['system', 'system name'], notes: ['notes', 'comments', 'remarks'], clin: ['clin', 'customer line number', 'line number', 'line no', 'item no'],
 }
 
 export function analyzeMelWorkbook(workbook, options = {}) {
   const sheets = (workbook?.sheets || []).map(sheet => analyzeSheet(sheet, options)).sort((a, b) => b.score - a.score)
-  const selected = sheets.filter(sheet => sheet.score >= 0.55 && sheet.items.length)
-  const usable = selected.length ? selected : sheets.filter(sheet => sheet.items.length && sheet.score >= 0.35).slice(0, 1)
+  const bestScore = sheets[0]?.score || 0
+  const selectionFloor = Math.max(0.55, bestScore - 0.18)
+  const selected = sheets.filter(sheet => sheet.score >= selectionFloor && sheet.items.length)
+  const usable = selected.length ? distinctEquipmentSheets(selected) : sheets.filter(sheet => sheet.items.length && sheet.score >= 0.35).slice(0, 1)
   const items = usable.flatMap(sheet => sheet.items)
+  const supplementalPrices = collectSupplementalPrices(sheets)
+  for (const item of items) {
+    if (item.unitCost > 0 || !item.partNumber) continue
+    const price = supplementalPrices.get(normalize(item.partNumber))
+    if (price) { item.unitCost = price.unitCost; item.pricingSource = { sheet: price.sheet, row: price.row } }
+  }
   markDuplicates(items)
   return {
     filename: String(workbook?.filename || ''), inspectedAt: new Date().toISOString(), worksheetsInspected: sheets.length,
@@ -95,14 +104,15 @@ function extractRegion(sheet, rows, region, options) {
     const quantity = parseQuantity(values.quantity)
     const partNumber = preservePartNumber(values.partNumber || values.alternatePartNumber)
     const description = text(values.description)
-    if (!isEquipmentRow({ partNumber, description, quantity, rowText })) continue
+    const unitCost = parseMoney(values.unitCost) ?? 0
+    if (!isEquipmentRow({ partNumber, description, manufacturer: text(values.manufacturer), quantity, rowText })) continue
     const confidence = {
       quantity: fieldConfidence(region, 'quantity', quantity !== null ? 0.92 : 0.2), partNumber: fieldConfidence(region, 'partNumber', partNumberScore(partNumber)),
       description: fieldConfidence(region, 'description', descriptionScore(description)), manufacturer: fieldConfidence(region, 'manufacturer', manufacturerScore(values.manufacturer)),
     }
     confidence.overall = average([confidence.quantity, confidence.partNumber, confidence.description, confidence.manufacturer].filter(value => value > 0.25))
     items.push({
-      id: `${safeId(sheet.name)}-${rowIndex + 1}-${items.length + 1}`, included: true, quantity: quantity ?? 1, partNumber, manufacturer: text(values.manufacturer), description,
+      id: `${safeId(sheet.name)}-${rowIndex + 1}-${items.length + 1}`, included: true, quantity: quantity ?? 1, partNumber, manufacturer: text(values.manufacturer), description, unitCost,
       alternatePartNumber: preservePartNumber(values.alternatePartNumber), category: text(values.category) || section, location: text(values.location), room: text(values.room), system: text(values.system), notes: text(values.notes), clin: text(values.clin),
       manufacturerSuggested: false, duplicate: false, confidence,
       source: { filename: String(options.filename || ''), sheet: String(sheet.name || 'Worksheet'), row: rowIndex + 1, headerRow: region.headerRow + 1, parsingMethod: 'deterministic-semantic', originalValues: Object.fromEntries(row.map((value, column) => [columnName(column), text(value)])) },
@@ -125,7 +135,7 @@ function aliasScore(value, aliases) {
 
 function semanticValueScore(field, values) {
   if (!values.length) return 0
-  const scorers = { quantity: value => parseQuantity(value) !== null ? 1 : 0, partNumber: partNumberScore, description: descriptionScore, manufacturer: manufacturerScore }
+  const scorers = { quantity: value => parseQuantity(value) !== null ? 1 : 0, unitCost: value => parseMoney(value) !== null ? 1 : 0, partNumber: partNumberScore, description: descriptionScore, manufacturer: manufacturerScore }
   const scorer = scorers[field]
   return scorer ? average(values.map(scorer)) : 0.25
 }
@@ -134,12 +144,37 @@ function descriptionScore(value) { const v = text(value); if (!v) return 0; cons
 function manufacturerScore(value) { const v = text(value); if (!v || v.length > 60 || /\d{4,}/.test(v)) return 0; return /^[a-z][a-z0-9 &+.'()-]{1,}$/i.test(v) ? 0.82 : 0.15 }
 function scoreRowsBelow(rows, headerRow, mapping) { const sample = rows.slice(headerRow + 1, headerRow + 16); if (!sample.length) return 0; return average(sample.map(row => { const values = Object.entries(mapping).map(([column, field]) => field === 'quantity' ? parseQuantity(row[Number(column)]) !== null : populated(row[Number(column)])); return values.filter(Boolean).length / Math.max(values.length, 1) })) }
 
-function isEquipmentRow({ partNumber, description, quantity, rowText }) { if (quantity === null || quantity <= 0) return false; if (!partNumber && !description) return false; return !/\b(sub\s*total|grand\s*total|labor total|shipping total|price total|signature|revision|instructions?)\b/i.test(rowText) }
+function isEquipmentRow({ partNumber, description, manufacturer, quantity, rowText }) { if (quantity === null || quantity <= 0) return false; if (!partNumber && !(description && manufacturer)) return false; return !/\b(sub\s*total|grand\s*total|labor total|shipping total|price total|signature|revision|instructions?)\b/i.test(rowText) }
 function isStructuralRow(rowText, values) { if (/\b(sub\s*total|grand\s*total|labor total|shipping total|price total|signature|revision|instructions?)\b/i.test(rowText)) return true; return isSectionRow([], values) }
 function isSectionRow(row, values) { const populatedFields = Object.values(values).filter(populated); return !values.partNumber && !values.quantity && populatedFields.length <= 1 && (text(values.description).length > 0 || row.filter(populated).length === 1) }
 function parseQuantity(value) { const cleaned = text(value).replace(/,/g, ''); if (!/^-?\d+(?:\.\d+)?$/.test(cleaned)) return null; const number = Number(cleaned); return Number.isFinite(number) && number > 0 ? number : null }
+function parseMoney(value) { const cleaned = text(value).replace(/[$,\s]/g, '').replace(/^\((.+)\)$/, '-$1'); if (!/^-?\d+(?:\.\d+)?$/.test(cleaned)) return null; const number = Number(cleaned); return Number.isFinite(number) && number > 0 ? Math.round(number * 100) / 100 : null }
 function preservePartNumber(value) { return text(value) }
 function fieldConfidence(region, field, fallback) { return clamp(region.fieldConfidence?.[field] ?? fallback) }
+function distinctEquipmentSheets(sheets) {
+  const accepted = []
+  const acceptedParts = new Set()
+  for (const sheet of sheets) {
+    const parts = [...new Set(sheet.items.map(item => normalize(item.partNumber)).filter(Boolean))]
+    const overlap = parts.length ? parts.filter(part => acceptedParts.has(part)).length / parts.length : 0
+    if (accepted.length && overlap >= 0.8) continue
+    accepted.push(sheet); parts.forEach(part => acceptedParts.add(part))
+  }
+  return accepted
+}
+function collectSupplementalPrices(sheets) {
+  const prices = new Map()
+  for (const sheet of sheets) for (const region of sheet.regions || []) {
+    const partColumn = Number(Object.keys(region.mapping).find(column => region.mapping[column] === 'partNumber'))
+    const costColumn = Number(Object.keys(region.mapping).find(column => region.mapping[column] === 'unitCost'))
+    if (!Number.isInteger(partColumn) || !Number.isInteger(costColumn)) continue
+    for (let rowIndex = region.headerRow + 1; rowIndex < sheet.rows.length; rowIndex += 1) {
+      const partNumber = preservePartNumber(sheet.rows[rowIndex]?.[partColumn]); const unitCost = parseMoney(sheet.rows[rowIndex]?.[costColumn])
+      if (partNumber && unitCost !== null && !prices.has(normalize(partNumber))) prices.set(normalize(partNumber), { unitCost, sheet: sheet.name, row: rowIndex + 1 })
+    }
+  }
+  return prices
+}
 function markDuplicates(items) { const counts = new Map(); for (const item of items) { if (!item.partNumber) continue; const key = `${normalize(item.manufacturer)}::${normalize(item.partNumber)}`; counts.set(key, (counts.get(key) || 0) + 1) } for (const item of items) { const key = `${normalize(item.manufacturer)}::${normalize(item.partNumber)}`; item.duplicate = Boolean(item.partNumber && counts.get(key) > 1) } }
 function candidateColumns(rows, headerRow) { const width = Math.max(0, ...(rows.slice(headerRow, headerRow + 10).map(row => row.length))); return Array.from({ length: width }, (_, index) => ({ index, label: `Column ${columnName(index)}`, sample: rows.slice(headerRow, headerRow + 6).map(row => text(row[index])).filter(Boolean).slice(0, 3) })) }
 function diagnosticMessage(sheets, items) { if (items.length) return `${items.length} equipment line item${items.length === 1 ? '' : 's'} detected across ${new Set(items.map(item => item.source.sheet)).size} worksheet${new Set(items.map(item => item.source.sheet)).size === 1 ? '' : 's'}.`; const possible = sheets.slice(0, 3).map(sheet => `${sheet.name} — ${Math.round(sheet.score * 100)}% confidence`).join('; '); return `No equipment table was confidently detected. Atlas inspected ${sheets.length} worksheet${sheets.length === 1 ? '' : 's'}.${possible ? ` Possible data: ${possible}.` : ''}` }

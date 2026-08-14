@@ -36,11 +36,13 @@ export async function parseQuoteImportFile(file: File): Promise<ImportedQuoteLin
 export async function analyzeMelImportFile(file: File): Promise<MelAnalysis> {
   const extension = file.name.toLowerCase().slice(file.name.lastIndexOf('.'))
   if (!['.csv', '.tsv', '.txt', '.xlsx', '.xls', '.xlsm'].includes(extension)) throw new Error('MEL analysis supports XLSX, XLS, XLSM, CSV, TSV, and TXT files.')
-  const { default: XLSX } = await import('xlsx')
+  const XLSXModule = await import('xlsx')
+  const XLSX = XLSXModule.default || XLSXModule
   const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellFormula: true, cellDates: false, dense: false })
-  const visibility = new Map((workbook.Workbook?.Sheets || []).map((entry, index) => [workbook.SheetNames[index], Boolean(entry.Hidden)]))
+  const visibility = new Map((workbook.Workbook?.Sheets || []).map((entry, index) => [workbook.SheetNames[index], Boolean(entry?.Hidden)]))
   const sheets: MelSheetInput[] = workbook.SheetNames.map(name => {
     const sheet = workbook.Sheets[name]
+    if (!sheet) return { name, rows: [], hidden: visibility.get(name), hiddenRows: [], hiddenColumns: [] }
     const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: false, defval: '', blankrows: true }).map(row => row.map(value => String(value ?? '')))
     propagateMergedValues(rows, sheet['!merges'] || [])
     return { name, rows, hidden: visibility.get(name), hiddenRows: (sheet['!rows'] || []).flatMap((row, index) => row?.hidden ? [index] : []), hiddenColumns: (sheet['!cols'] || []).flatMap((column, index) => column?.hidden ? [index] : []) }
@@ -49,7 +51,7 @@ export async function analyzeMelImportFile(file: File): Promise<MelAnalysis> {
 }
 
 export function melItemToQuoteLine(item: MelItem): ImportedQuoteLine {
-  return { clin: item.clin, partNumber: item.partNumber, manufacturer: item.manufacturer, description: item.description, quantity: item.quantity, unitCost: 0, pricingMode: 'markup', markupPercent: 15, marginPercent: 20, vendor: '', quoteNumber: '', leadTime: '', pricingStatus: 'Unverified', catalogProductId: item.catalogProductId || null, melImport: { sourceFilename: item.source.filename, uploadedAt: new Date().toISOString(), importedBy: '', worksheet: item.source.sheet, sourceRow: item.source.row, headerRow: item.source.headerRow, parsingMethod: item.source.parsingMethod, originalValues: item.source.originalValues, normalizedValues: { quantity: item.quantity, partNumber: item.partNumber, manufacturer: item.manufacturer, description: item.description }, confidence: item.confidence } }
+  return { clin: item.clin, partNumber: item.partNumber, manufacturer: item.manufacturer, description: item.description, quantity: item.quantity, unitCost: item.unitCost || 0, pricingMode: 'markup', markupPercent: 15, marginPercent: 20, vendor: '', quoteNumber: '', leadTime: '', pricingStatus: 'Unverified', catalogProductId: item.catalogProductId || null, melImport: { sourceFilename: item.source.filename, uploadedAt: new Date().toISOString(), importedBy: '', worksheet: item.source.sheet, sourceRow: item.source.row, headerRow: item.source.headerRow, parsingMethod: item.source.parsingMethod, originalValues: item.source.originalValues, normalizedValues: { quantity: item.quantity, partNumber: item.partNumber, manufacturer: item.manufacturer, description: item.description }, confidence: item.confidence } }
 }
 
 function propagateMergedValues(rows: string[][], merges: Array<{ s: { r: number; c: number }; e: { r: number; c: number } }>) {

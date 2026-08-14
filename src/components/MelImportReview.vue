@@ -23,12 +23,12 @@
       <button v-if="duplicateCount" class="secondary-action" type="button" @click="combineDuplicates">Combine Safe Duplicates</button>
     </div>
     <div class="quote-lines-scroll"><table class="quote-lines-table mel-review-table">
-      <thead><tr><th>Import</th><th>Qty</th><th>Part Number</th><th>Manufacturer</th><th>Description</th><th>Catalog</th><th>Source</th><th>Confidence</th></tr></thead>
+      <thead><tr><th>Import</th><th>Qty</th><th>Part Number</th><th>Manufacturer</th><th>Description</th><th>Unit Cost</th><th>Catalog</th><th>Source</th><th>Confidence</th></tr></thead>
       <tbody><tr v-for="item in items" :key="item.id" :class="{ 'needs-attention': item.confidence.overall < thresholds.review }">
         <td><input v-model="item.included" type="checkbox" /></td><td><input v-model.number="item.quantity" class="cell-input w-20" type="number" min="0.01" step="0.01" /></td>
         <td><input v-model="item.partNumber" class="cell-input w-36" /><small v-if="item.confidence.partNumber < thresholds.review">⚠ Possible Part Number</small></td>
         <td><input v-model="item.manufacturer" class="cell-input w-36" /><small v-if="item.confidence.manufacturer < thresholds.review">⚠ Manufacturer uncertain</small></td>
-        <td><textarea v-model="item.description" class="cell-textarea" /></td><td>{{ item.catalogMatch || 'Not checked' }}</td><td>{{ item.source.sheet }} row {{ item.source.row }}</td>
+        <td><textarea v-model="item.description" class="cell-textarea" /></td><td><input v-model.number="item.unitCost" class="cell-input w-28" type="number" min="0" step="0.01" /><small v-if="item.pricingSource">{{ item.pricingSource.sheet }} row {{ item.pricingSource.row }}</small></td><td>{{ item.catalogMatch || 'Not checked' }}</td><td>{{ item.source.sheet }} row {{ item.source.row }}</td>
         <td><span :class="confidenceClass(item.confidence.overall)">{{ percent(item.confidence.overall) }}</span><small v-if="item.duplicate">Duplicate detected</small></td>
       </tr></tbody>
     </table></div>

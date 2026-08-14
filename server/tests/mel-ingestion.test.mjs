@@ -56,6 +56,15 @@ test('clean semantic equipment sheet outranks a larger template sheet', () => {
   assert.equal(result.selectedSheetNames[0], 'Sheet1'); assert.equal(result.items.length, 50)
 })
 
+test('canonical master lines receive supplemental unit prices from a supporting sheet', () => {
+  const master = [['Quantity', 'Description', 'Part Number', 'Manufacturer'], ['1', 'Displays', '', ''], ['2', 'Panoramic Display', 'POE28D', 'GPO Display'], ['1', 'Wall Mount', 'XTM1U-G', 'Chief']]
+  const pricing = [['Qty to Order', 'P/N Desc', 'Part No', 'Manufacturer', 'Budget Unit Price'], ['2', 'Panoramic Display', 'POE28D', 'GPO Display', '$2,051.00'], ['1', 'Wall Mount', 'XTM1U-G', 'Chief', '$194.17']]
+  const result = analyzeMelWorkbook(workbook(sheet('Master MEL', master), sheet('Pricing Template', pricing)))
+  assert.equal(result.items.length, 2)
+  assert.deepEqual(result.items.map(item => item.unitCost), [2051, 194.17])
+  assert.ok(result.items.every(item => item.source.sheet === 'Pricing Template' || item.pricingSource?.sheet === 'Pricing Template'))
+})
+
 test('manual mapping fallback extracts a possible equipment table', () => {
   const source = sheet('Unknown', [['Amount', 'What', 'Code', 'Who'], ['3', 'X-Large Fusion Tilt Wall Mount', 'XTM1U-G', 'Chief']])
   const items = remapMelSheet(source, { 0: 'quantity', 1: 'description', 2: 'partNumber', 3: 'manufacturer' }, 0, { filename: 'manual.xlsx' })
