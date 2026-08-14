@@ -56,7 +56,7 @@
       </div>
     </section>
 
-    <section v-if="pricingReview.length" class="pricing-review-panel">
+    <section v-if="pricingReview.length" ref="pricingReviewPanel" class="pricing-review-panel">
       <div class="quote-draft-heading">
         <div><h2>Pricing Verification Review</h2><p>No quote or catalog pricing changes until you apply selected results.</p></div>
         <button class="secondary-action" type="button" @click="cancelPricingReview">Cancel</button>
@@ -273,6 +273,14 @@
             :quantity="quantity"
             @apply="applyVerifiedCatalogPrice"
           />
+          <button
+            class="secondary-action inline-pricing-lookup"
+            type="button"
+            :disabled="!lineForm.partNumber.trim() || pricingVerificationLoading"
+            @click="verifyEntryPricing"
+          >
+            {{ pricingVerificationLoading ? 'Checking TD SYNNEX...' : unitCost > 0 ? 'Verify with TD SYNNEX' : 'Get TD SYNNEX Pricing' }}
+          </button>
         </label>
         <FormField v-model="lineForm.manufacturer" label="Manufacturer" placeholder="Enter manufacturer" />
         <label class="form-field">
@@ -359,7 +367,7 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { BadgeDollarSign, CheckCircle2, Download, FileSpreadsheet, FileUp, Plus, Save, Send, Upload, XCircle } from '@lucide/vue'
 import FormField from '../components/FormField.vue'
@@ -416,6 +424,8 @@ const selectedVerificationIds = ref<string[]>([])
 const pricingVerificationLoading = ref(false)
 const pricingVerificationError = ref('')
 const showOnlyPricingIssues = ref(false)
+const pricingReviewPanel = ref<HTMLElement>()
+const newLineId = ref(crypto.randomUUID())
 const newLinePricing = reactive<{ pricingStatus: QuoteLine['pricingStatus']; pricingSource?: string; pricingVerifiedAt?: string; catalogProductId?: string | null; catalogCost?: number | null }>({ pricingStatus: 'Unverified' })
 let catalogLookupTimer: ReturnType<typeof setTimeout> | undefined
 
@@ -455,7 +465,7 @@ const summary = computed(() => calculateQuoteSummaryWithContractFee(draftLines.v
 const pricingSummary = computed(() => pricingVerificationSummary(draftLines.value))
 const canUpdateCatalog = computed(() => getEffectiveRole(fetchSession()) === 'Admin')
 const previewLine = computed(() =>
-  buildDraftLine({
+  ({ ...buildDraftLine({
     clin: nextClin.value,
     partNumber: lineForm.partNumber,
     manufacturer: lineForm.manufacturer,
@@ -470,7 +480,7 @@ const previewLine = computed(() =>
     quoteNumber: lineForm.quoteNumber,
     leadTime: lineForm.leadTime,
     ...newLinePricing,
-  }),
+  }), id: newLineId.value }),
 )
 const previewTotals = computed(() => calculateLineTotals(previewLine.value))
 const rfqReadiness = computed(() => {
@@ -544,6 +554,20 @@ async function verifyQuotePricing(lineId?: string) {
     const response = await previewPricing(lines)
     pricingReview.value = response.results
     selectedVerificationIds.value = response.results.filter(item => item.distributorCost !== null && ['Verified', 'Price Changed'].includes(item.status)).map(item => item.lineId)
+    await nextTick(); pricingReviewPanel.value?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  } catch (error) {
+    pricingVerificationError.value = error instanceof Error ? error.message : 'TD SYNNEX pricing is temporarily unavailable.'
+  } finally { pricingVerificationLoading.value = false }
+}
+
+async function verifyEntryPricing() {
+  if (!lineForm.partNumber.trim() || pricingVerificationLoading.value) return
+  pricingVerificationLoading.value = true; pricingVerificationError.value = ''
+  try {
+    const response = await previewPricing([previewLine.value])
+    pricingReview.value = response.results
+    selectedVerificationIds.value = response.results.filter(item => item.distributorCost !== null && ['Verified', 'Price Changed'].includes(item.status)).map(item => item.lineId)
+    await nextTick(); pricingReviewPanel.value?.scrollIntoView({ behavior: 'smooth', block: 'center' })
   } catch (error) {
     pricingVerificationError.value = error instanceof Error ? error.message : 'TD SYNNEX pricing is temporarily unavailable.'
   } finally { pricingVerificationLoading.value = false }
@@ -552,6 +576,7 @@ async function verifyQuotePricing(lineId?: string) {
 async function applyPricingReview(updateCatalog: boolean) {
   const selected = new Set(selectedVerificationIds.value)
   const lines = draftLines.value.filter(line => selected.has(line.id))
+  if (selected.has(newLineId.value)) lines.push(previewLine.value)
   if (!lines.length || pricingVerificationLoading.value) return
   pricingVerificationLoading.value = true; pricingVerificationError.value = ''
   try {
@@ -563,6 +588,16 @@ async function applyPricingReview(updateCatalog: boolean) {
       if (!result || result.distributorCost === null || !result.verifiedAt) return line
       return { ...line, unitCost: result.distributorCost, vendor: result.source || line.vendor, pricingStatus: 'Verified' as const, pricingSource: result.source, pricingVerifiedAt: result.verifiedAt, catalogProductId: result.catalogProductId, catalogCost: updateCatalog ? result.distributorCost : result.catalogCost, pricingVerificationHistory: [...(line.pricingVerificationHistory || []), { id: crypto.randomUUID(), quoteId: quote.value?.id || null, quoteLineId: line.id, partNumber: line.partNumber, previousCost: line.unitCost, verifiedCost: result.distributorCost, pricingSource: result.source, verifiedAt: result.verifiedAt, appliedBy: actor, catalogUpdated: updateCatalog }] }
     })
+    const entryResult = results.get(newLineId.value)
+    if (entryResult?.distributorCost !== null && entryResult?.distributorCost !== undefined && entryResult.verifiedAt) {
+      unitCost.value = entryResult.distributorCost
+      lineForm.vendor = entryResult.source || lineForm.vendor
+      newLinePricing.pricingStatus = 'Verified'
+      newLinePricing.pricingSource = entryResult.source
+      newLinePricing.pricingVerifiedAt = entryResult.verifiedAt
+      newLinePricing.catalogProductId = entryResult.catalogProductId
+      newLinePricing.catalogCost = updateCatalog ? entryResult.distributorCost : entryResult.catalogCost
+    }
     pricingReview.value = []; selectedVerificationIds.value = []
   } catch (error) {
     pricingVerificationError.value = error instanceof Error ? error.message : 'Pricing could not be applied. Existing quote pricing was preserved.'
@@ -840,6 +875,7 @@ function resetLineForm() {
   remotePartSuggestions.value = []
   quantity.value = 1
   unitCost.value = 0
+  newLineId.value = crypto.randomUUID()
   newLinePricing.pricingStatus = 'Unverified'; newLinePricing.pricingSource = undefined; newLinePricing.pricingVerifiedAt = undefined; newLinePricing.catalogProductId = null; newLinePricing.catalogCost = null
 }
 </script>

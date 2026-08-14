@@ -6482,3 +6482,4 @@ textarea {
 .pricing-review-table { min-width: 900px; }
 .pricing-review-status { font-weight: 700; }
 .pricing-review-actions { display: flex; justify-content: flex-end; gap: .75rem; margin-top: 1rem; flex-wrap: wrap; }
+.inline-pricing-lookup { width: max-content; margin-top: .55rem; }
