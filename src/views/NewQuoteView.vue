@@ -428,6 +428,9 @@ const pricingReviewPanel = ref<HTMLElement>()
 const newLineId = ref(crypto.randomUUID())
 const newLinePricing = reactive<{ pricingStatus: QuoteLine['pricingStatus']; pricingSource?: string; pricingVerifiedAt?: string; catalogProductId?: string | null; catalogCost?: number | null }>({ pricingStatus: 'Unverified' })
 let catalogLookupTimer: ReturnType<typeof setTimeout> | undefined
+let tdPricingLookupTimer: ReturnType<typeof setTimeout> | undefined
+let tdPricingRequestId = 0
+const tdPricingCache = new Map<string, PricingVerificationResult[]>()
 
 const lineForm = reactive({
   partNumber: '',
@@ -505,6 +508,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   if (catalogLookupTimer) clearTimeout(catalogLookupTimer)
+  if (tdPricingLookupTimer) clearTimeout(tdPricingLookupTimer)
   window.removeEventListener('cronos:projects-changed', reloadQuoteDraftAfterSync)
 })
 
@@ -561,16 +565,44 @@ async function verifyQuotePricing(lineId?: string) {
 }
 
 async function verifyEntryPricing() {
-  if (!lineForm.partNumber.trim() || pricingVerificationLoading.value) return
+  await runEntryPricingLookup({ scrollToReview: true, force: true })
+}
+
+function scheduleAutomaticTdLookup(partNumber: string) {
+  if (tdPricingLookupTimer) clearTimeout(tdPricingLookupTimer)
+  tdPricingRequestId += 1
+  if (partNumber.trim().length < 4) return
+  tdPricingLookupTimer = setTimeout(() => void runEntryPricingLookup({ scrollToReview: false, force: false }), 800)
+}
+
+async function runEntryPricingLookup({ scrollToReview, force }: { scrollToReview: boolean; force: boolean }) {
+  if (!lineForm.partNumber.trim()) return
+  const cacheKey = `${lineForm.manufacturer.trim().toLowerCase()}::${lineForm.partNumber.trim().toLowerCase()}`
+  const cached = force ? undefined : tdPricingCache.get(cacheKey)
+  if (cached) { showEntryPricingResults(cached.map(item => ({ ...item, lineId: newLineId.value, currentQuoteCost: unitCost.value })), scrollToReview); return }
+  const requestId = ++tdPricingRequestId
   pricingVerificationLoading.value = true; pricingVerificationError.value = ''
   try {
     const response = await previewPricing([previewLine.value])
-    pricingReview.value = response.results
-    selectedVerificationIds.value = response.results.filter(item => item.distributorCost !== null && ['Verified', 'Price Changed'].includes(item.status)).map(item => item.lineId)
-    await nextTick(); pricingReviewPanel.value?.scrollIntoView({ behavior: 'smooth', block: 'center' })
+    if (requestId !== tdPricingRequestId) return
+    tdPricingCache.set(cacheKey, response.results)
+    showEntryPricingResults(response.results, scrollToReview)
   } catch (error) {
-    pricingVerificationError.value = error instanceof Error ? error.message : 'TD SYNNEX pricing is temporarily unavailable.'
-  } finally { pricingVerificationLoading.value = false }
+    if (requestId === tdPricingRequestId) pricingVerificationError.value = error instanceof Error ? error.message : 'TD SYNNEX pricing is temporarily unavailable.'
+  } finally { if (requestId === tdPricingRequestId) pricingVerificationLoading.value = false }
+}
+
+function showEntryPricingResults(results: PricingVerificationResult[], scrollToReview: boolean) {
+  pricingReview.value = results
+  selectedVerificationIds.value = results.filter(item => item.distributorCost !== null && ['Verified', 'Price Changed'].includes(item.status)).map(item => item.lineId)
+  const pricedResult = results.find(item => item.distributorCost !== null && ['Verified', 'Price Changed'].includes(item.status))
+  if (pricedResult) {
+    lineForm.vendor = pricedResult.source || 'TD SYNNEX'
+    catalogStatus.value = `TD SYNNEX pricing found: ${currency(pricedResult.distributorCost || 0)} with ${pricedResult.availableQuantity ?? 'unknown'} available. The pricing review is ready for approval.`
+  } else if (results.some(item => item.status === 'Product Not Found')) {
+    catalogStatus.value = 'This manufacturer part number was not found at TD SYNNEX.'
+  }
+  if (scrollToReview) void nextTick(() => pricingReviewPanel.value?.scrollIntoView({ behavior: 'smooth', block: 'center' }))
 }
 
 async function applyPricingReview(updateCatalog: boolean) {
@@ -654,6 +686,7 @@ function scheduleCatalogLookup(value: string) {
   newLinePricing.pricingStatus = 'Unverified'; newLinePricing.pricingSource = undefined; newLinePricing.pricingVerifiedAt = undefined; newLinePricing.catalogProductId = null; newLinePricing.catalogCost = null
   applyCatalogPart(value)
   if (catalogLookupTimer) clearTimeout(catalogLookupTimer)
+  scheduleAutomaticTdLookup(value)
   if (value.trim().length < 2) { remotePartSuggestions.value = []; return }
   catalogLookupTimer = setTimeout(async () => {
     try {
@@ -864,6 +897,8 @@ function stripPoLineId(id: string) {
 }
 
 function resetLineForm() {
+  tdPricingRequestId += 1
+  if (tdPricingLookupTimer) clearTimeout(tdPricingLookupTimer)
   lineForm.partNumber = ''
   lineForm.manufacturer = ''
   lineForm.description = ''
