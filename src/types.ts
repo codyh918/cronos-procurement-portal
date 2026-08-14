@@ -208,6 +208,20 @@ export type QuoteLine = {
   catalogProductId?: string | null
   catalogCost?: number | null
   pricingVerificationHistory?: PricingVerificationAudit[]
+  melImport?: MelImportProvenance
+}
+
+export type MelImportProvenance = {
+  sourceFilename: string
+  uploadedAt: string
+  importedBy: string
+  worksheet: string
+  sourceRow: number
+  headerRow: number
+  parsingMethod: string
+  originalValues: Record<string, string>
+  normalizedValues: { quantity: number; partNumber: string; manufacturer: string; description: string }
+  confidence: { quantity: number; partNumber: number; manufacturer: number; description: number; overall: number }
 }
 
 export type PricingVerificationStatus = 'Verified' | 'Stale' | 'Unverified' | 'Price Changed' | 'Product Not Found' | 'Distributor Error'

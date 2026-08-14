@@ -6483,3 +6483,19 @@ textarea {
 .pricing-review-status { font-weight: 700; }
 .pricing-review-actions { display: flex; justify-content: flex-end; gap: .75rem; margin-top: 1rem; flex-wrap: wrap; }
 .inline-pricing-lookup { width: max-content; margin-top: .55rem; }
+.mel-review-panel { margin: 1rem 0 1.5rem; padding: 1rem; border: 1px solid var(--border-color, #d8dee9); border-radius: 14px; background: var(--surface-color, #fff); }
+.mel-review-heading, .mel-review-actions, .mel-review-toolbar { display: flex; justify-content: space-between; align-items: center; gap: .75rem; flex-wrap: wrap; }
+.mel-review-heading h2, .mel-mapping-panel h3 { margin: 0 0 .35rem; }
+.mel-sheet-summary { display: flex; gap: .5rem; flex-wrap: wrap; margin: 1rem 0; }
+.mel-sheet-summary span { padding: .35rem .65rem; border: 1px solid var(--border-color, #d8dee9); border-radius: 999px; font-size: .78rem; }
+.mel-sheet-summary span.selected { border-color: #3157a4; background: #edf3ff; color: #244689; }
+.mel-mapping-panel { margin: 1rem 0; padding: 1rem; border-radius: 10px; background: #f7f9fc; }
+.mel-mapping-controls, .mel-column-map-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: .75rem; margin: .75rem 0; }
+.mel-mapping-controls label, .mel-column-map-grid label { display: grid; gap: .35rem; font-size: .78rem; }
+.mel-mapping-controls input, .mel-mapping-controls select, .mel-column-map-grid select { min-height: 38px; border: 1px solid var(--border-color, #d8dee9); border-radius: 7px; background: #fff; padding: .45rem; }
+.mel-review-toolbar { justify-content: flex-start; margin: .75rem 0; }
+.mel-review-table { min-width: 1120px; }
+.mel-review-table small { display: block; margin-top: .25rem; color: #9a6700; }
+.mel-review-table tr.needs-attention { background: #fffaf0; }
+.confidence-high { color: #18794e; font-weight: 700; }.confidence-review { color: #9a6700; font-weight: 700; }.confidence-low { color: #b42318; font-weight: 700; }
+.mel-review-actions { justify-content: flex-end; margin-top: 1rem; }

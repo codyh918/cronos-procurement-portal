@@ -180,6 +180,7 @@
       </label>
       <p v-if="importStatus">{{ importStatus }}</p>
     </section>
+    <MelImportReview v-if="melImportAnalysis" :analysis="melImportAnalysis" @cancel="cancelMelImport" @import="approveMelImport" />
 
     <section class="import-panel manufacturer-import-panel">
       <div>
@@ -371,6 +372,7 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { BadgeDollarSign, CheckCircle2, Download, FileSpreadsheet, FileUp, Plus, Save, Send, Upload, XCircle } from '@lucide/vue'
 import FormField from '../components/FormField.vue'
+import MelImportReview from '../components/MelImportReview.vue'
 import QuoteLinesEditor from '../components/QuoteLinesEditor.vue'
 import QuoteSummaryTile from '../components/QuoteSummaryTile.vue'
 import RfqStep from '../components/RfqStep.vue'
@@ -382,7 +384,8 @@ import { applyManufacturerUpdateFile } from '../services/manufacturerImport'
 import { findLatestPartPrice, findPartPriceSuggestions } from '../services/partCatalog'
 import { suggestCatalogProducts, type CatalogProduct, type VerifiedCatalogPrice } from '../services/productCatalogApi'
 import { exportCustomerQuotePdf } from '../services/pdfExports'
-import { parseQuoteImportFile } from '../services/quoteImport'
+import { analyzeMelImportFile, melItemToQuoteLine, parseQuoteImportFile } from '../services/quoteImport'
+import type { MelAnalysis, MelItem } from '../services/melIngestion.mjs'
 import { applyVendorRfqResponseFile } from '../services/vendorRfqResponses'
 import { getOemSuggestions, recommendVendorForPart } from '../services/vendorIntelligence'
 import { getVendorOptions } from '../services/vendors'
@@ -411,6 +414,7 @@ const expirationDays = ref<ExpirationDays>(30)
 const contractFeeEnabled = ref(false)
 const shippingCost = ref(0)
 const importStatus = ref('')
+const melImportAnalysis = ref<MelAnalysis>()
 const manufacturerImportStatus = ref('')
 const rfqStatus = ref('')
 const routeQuoteId = computed(() => String(route.params.quoteId ?? route.params.quoteNumber ?? ''))
@@ -773,26 +777,54 @@ async function handleImport(event: Event) {
   }
 
   try {
-    importStatus.value = `Reading ${file.name}...`
-    const importedLines = await parseQuoteImportFile(file)
-    const materialLines = importedLines.map(line =>
-      inferQuoteLineVendor(buildDraftLine({
-        ...line,
-        pricingMode: showPricingControls.value ? line.pricingMode ?? 'markup' : 'markup',
-        markupPercent: showPricingControls.value ? line.markupPercent : 0,
-        marginPercent: 0,
-      })),
-    )
-    draftLines.value = normalizePricingForProject(applySequentialClins([...draftLines.value, ...materialLines]), showPricingControls.value)
-    importStatus.value = materialLines.length
-      ? quote.value
-        ? `Added ${materialLines.length} imported line item(s) to this quote.`
-        : `Added ${materialLines.length} imported line item(s) to this quote draft.`
-      : 'No line items were found. Try an Excel/CSV table with headers like Part Number, Description, Qty, Unit Cost.'
+    importStatus.value = `Analyzing ${file.name}...`
+    if (/\.pdf$/i.test(file.name)) {
+      const importedLines = await parseQuoteImportFile(file)
+      const materialLines = importedLines.map(line => inferQuoteLineVendor(buildDraftLine({ ...line, pricingMode: showPricingControls.value ? line.pricingMode ?? 'markup' : 'markup', markupPercent: showPricingControls.value ? line.markupPercent : 0, marginPercent: 0 })))
+      draftLines.value = normalizePricingForProject(applySequentialClins([...draftLines.value, ...materialLines]), showPricingControls.value)
+      importStatus.value = `Added ${materialLines.length} PDF line item(s). Spreadsheet imports provide the full review workflow.`
+      return
+    }
+    const analysis = await analyzeMelImportFile(file)
+    await matchMelItemsToCatalog(analysis.items)
+    melImportAnalysis.value = analysis
+    importStatus.value = analysis.diagnostics
   } catch (error) {
     importStatus.value = error instanceof Error ? error.message : 'Could not import this file.'
   }
 }
+
+async function matchMelItemsToCatalog(items: MelItem[]) {
+  const uniqueParts = [...new Set(items.map(item => item.partNumber.trim()).filter(Boolean))]
+  const matches = new Map<string, CatalogProduct[]>()
+  for (let index = 0; index < uniqueParts.length; index += 5) {
+    await Promise.all(uniqueParts.slice(index, index + 5).map(async partNumber => {
+      try { matches.set(partNumber.toLowerCase(), await suggestCatalogProducts(partNumber, 10)) } catch { matches.set(partNumber.toLowerCase(), []) }
+    }))
+  }
+  for (const item of items) {
+    const exact = (matches.get(item.partNumber.toLowerCase()) || []).filter(product => product.manufacturer_part_number.trim().toLowerCase() === item.partNumber.trim().toLowerCase())
+    const manufacturerExact = item.manufacturer ? exact.filter(product => product.manufacturer.trim().toLowerCase() === item.manufacturer.trim().toLowerCase()) : exact
+    const candidates = manufacturerExact.length ? manufacturerExact : exact
+    item.catalogMatch = candidates.length === 1 ? 'Catalog Match' : candidates.length > 1 ? 'Multiple Matches' : 'No Catalog Match'
+    item.catalogProductId = candidates.length === 1 ? candidates[0].id : null
+    if (!item.manufacturer && candidates.length === 1) { item.manufacturer = candidates[0].manufacturer; item.manufacturerSuggested = true; item.confidence.manufacturer = Math.max(item.confidence.manufacturer, 0.75) }
+  }
+}
+
+function approveMelImport(items: MelItem[]) {
+  const importedBy = fetchSession()?.name || fetchSession()?.email || 'Atlas user'
+  const materialLines = items.map(item => {
+    const line = melItemToQuoteLine(item)
+    if (line.melImport) line.melImport.importedBy = importedBy
+    return inferQuoteLineVendor(buildDraftLine({ ...line, clin: line.clin || String(draftLines.value.length + 1), pricingMode: showPricingControls.value ? line.pricingMode ?? 'markup' : 'markup', markupPercent: showPricingControls.value ? line.markupPercent : 0, marginPercent: 0 }))
+  })
+  draftLines.value = normalizePricingForProject(applySequentialClins([...draftLines.value, ...materialLines]), showPricingControls.value)
+  importStatus.value = `Imported ${materialLines.length} reviewed MEL line item${materialLines.length === 1 ? '' : 's'} into the quote draft.`
+  melImportAnalysis.value = undefined
+}
+
+function cancelMelImport() { melImportAnalysis.value = undefined; importStatus.value = 'MEL import cancelled. No quote lines were changed.' }
 
 async function handleRfqImport(event: Event) {
   const file = (event.target as HTMLInputElement).files?.[0]

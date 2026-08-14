@@ -1,4 +1,5 @@
 import type { QuoteLine } from '../types'
+import { analyzeMelWorkbook, type MelAnalysis, type MelItem, type MelSheetInput } from './melIngestion.mjs'
 
 export type ImportedQuoteLine = Omit<QuoteLine, 'id' | 'approved'>
 type ZipArchive = {
@@ -7,11 +8,11 @@ type ZipArchive = {
 
 export async function parseQuoteImportFile(file: File): Promise<ImportedQuoteLine[]> {
   const extension = file.name.toLowerCase().slice(file.name.lastIndexOf('.'))
-  if (!['.csv', '.txt', '.xlsx', '.xls', '.pdf'].includes(extension)) {
-    throw new Error('CSV, TXT, XLS, XLSX, and PDF imports are available in the Vue port.')
+  if (!['.csv', '.tsv', '.txt', '.xlsx', '.xls', '.xlsm', '.pdf'].includes(extension)) {
+    throw new Error('CSV, TSV, TXT, XLS, XLSX, XLSM, and PDF imports are supported.')
   }
 
-  if (extension === '.xlsx') {
+  if (['.xlsx', '.xlsm'].includes(extension)) {
     const rows = await parseWorkbook(file)
     return rowsToMaterialLines(rows).slice(0, 1000)
   }
@@ -19,9 +20,7 @@ export async function parseQuoteImportFile(file: File): Promise<ImportedQuoteLin
   if (extension === '.xls') {
     const rows = parseLegacySpreadsheetText(await file.text())
     const lines = rowsToMaterialLines(rows).slice(0, 1000)
-    if (!lines.length) {
-      throw new Error('This legacy XLS file could not be read in the browser. Save it as XLSX, CSV, or PDF and import again.')
-    }
+    if (!lines.length) throw new Error('This legacy XLS file could not be read in the browser. Use the MEL review importer or save it as XLSX.')
     return lines
   }
 
@@ -32,6 +31,33 @@ export async function parseQuoteImportFile(file: File): Promise<ImportedQuoteLin
 
   const text = await file.text()
   return rowsToMaterialLines(parseDelimited(text)).slice(0, 1000)
+}
+
+export async function analyzeMelImportFile(file: File): Promise<MelAnalysis> {
+  const extension = file.name.toLowerCase().slice(file.name.lastIndexOf('.'))
+  if (!['.csv', '.tsv', '.txt', '.xlsx', '.xls', '.xlsm'].includes(extension)) throw new Error('MEL analysis supports XLSX, XLS, XLSM, CSV, TSV, and TXT files.')
+  const { default: XLSX } = await import('xlsx')
+  const workbook = XLSX.read(await file.arrayBuffer(), { type: 'array', cellFormula: true, cellDates: false, dense: false })
+  const visibility = new Map((workbook.Workbook?.Sheets || []).map((entry, index) => [workbook.SheetNames[index], Boolean(entry.Hidden)]))
+  const sheets: MelSheetInput[] = workbook.SheetNames.map(name => {
+    const sheet = workbook.Sheets[name]
+    const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, raw: false, defval: '', blankrows: true }).map(row => row.map(value => String(value ?? '')))
+    propagateMergedValues(rows, sheet['!merges'] || [])
+    return { name, rows, hidden: visibility.get(name), hiddenRows: (sheet['!rows'] || []).flatMap((row, index) => row?.hidden ? [index] : []), hiddenColumns: (sheet['!cols'] || []).flatMap((column, index) => column?.hidden ? [index] : []) }
+  })
+  return analyzeMelWorkbook({ filename: file.name, sheets }, { filename: file.name })
+}
+
+export function melItemToQuoteLine(item: MelItem): ImportedQuoteLine {
+  return { clin: item.clin, partNumber: item.partNumber, manufacturer: item.manufacturer, description: item.description, quantity: item.quantity, unitCost: 0, pricingMode: 'markup', markupPercent: 15, marginPercent: 20, vendor: '', quoteNumber: '', leadTime: '', pricingStatus: 'Unverified', catalogProductId: item.catalogProductId || null, melImport: { sourceFilename: item.source.filename, uploadedAt: new Date().toISOString(), importedBy: '', worksheet: item.source.sheet, sourceRow: item.source.row, headerRow: item.source.headerRow, parsingMethod: item.source.parsingMethod, originalValues: item.source.originalValues, normalizedValues: { quantity: item.quantity, partNumber: item.partNumber, manufacturer: item.manufacturer, description: item.description }, confidence: item.confidence } }
+}
+
+function propagateMergedValues(rows: string[][], merges: Array<{ s: { r: number; c: number }; e: { r: number; c: number } }>) {
+  for (const merge of merges) {
+    const value = rows[merge.s.r]?.[merge.s.c] || ''
+    if (!value) continue
+    for (let row = merge.s.r; row <= merge.e.r; row += 1) for (let column = merge.s.c; column <= merge.e.c; column += 1) { rows[row] ||= []; rows[row][column] ||= value }
+  }
 }
 
 function parseLegacySpreadsheetText(text: string) {
