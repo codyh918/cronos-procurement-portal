@@ -57,6 +57,71 @@
       <p v-if="syncMessage" class="sync-message" :class="{ success: syncOk }">{{ syncMessage }}</p>
     </section>
 
+    <section class="admin-card admin-sync-card td-synnex-card">
+      <div class="admin-card-heading">
+        <div>
+          <p class="integration-eyebrow">Settings / Integrations</p>
+          <h2>TD SYNNEX</h2>
+          <p>Secure Sandbox authentication and Price &amp; Availability testing.</p>
+        </div>
+        <span class="integration-status" :class="tdStatusClass">{{ tdStatus?.connectionStatus || 'Not Connected' }}</span>
+      </div>
+
+      <div class="integration-detail-grid">
+        <div><span>Environment</span><strong>Sandbox</strong></div>
+        <div><span>Integration</span><strong>{{ tdStatus?.enabled ? 'Enabled' : 'Disabled' }}</strong></div>
+        <div><span>Credentials</span><strong>{{ tdStatus?.configured ? 'Configured' : 'Missing' }}</strong></div>
+        <div><span>Token</span><strong>{{ tdStatus?.tokenStatus || 'Not Cached' }}</strong></div>
+        <div><span>API base URL</span><strong>{{ tdStatus?.apiBaseUrl || 'https://api-uat.us.tdsynnex.com' }}</strong></div>
+        <div><span>Last successful connection</span><strong>{{ formatIntegrationDate(tdStatus?.lastSuccessfulConnection) }}</strong></div>
+        <div><span>Last failed connection</span><strong>{{ formatIntegrationDate(tdStatus?.lastFailedConnection) }}</strong></div>
+        <div><span>Last pricing lookup</span><strong>{{ formatIntegrationDate(tdStatus?.lastPricingLookup) }}</strong></div>
+      </div>
+
+      <button class="secondary-action admin-save-button" type="button" :disabled="testingTdConnection" @click="runTdConnectionTest">
+        {{ testingTdConnection ? 'Testing…' : 'Test Connection' }}
+      </button>
+      <p v-if="tdMessage" class="sync-message" :class="{ success: tdMessageOk }">{{ tdMessage }}</p>
+
+      <div class="integration-lookup">
+        <div class="admin-card-heading">
+          <h3>Test Product Lookup</h3>
+          <p>Search Sandbox Price &amp; Availability by manufacturer part number. This does not update the Atlas catalog.</p>
+        </div>
+        <label class="admin-field">
+          <span>Manufacturer Part Number</span>
+          <input v-model="tdPartNumber" autocomplete="off" placeholder="XTM1U-G" @keyup.enter="runTdLookup" />
+        </label>
+        <button class="primary-action admin-create-button" type="button" :disabled="searchingTd || !tdPartNumber.trim()" @click="runTdLookup">
+          {{ searchingTd ? 'Searching…' : 'Search TD SYNNEX' }}
+        </button>
+        <p v-if="tdLookupMessage" class="sync-message" :class="{ success: tdLookupResults.length > 0 }">{{ tdLookupMessage }}</p>
+
+        <article v-for="result in tdLookupResults" :key="`${result.tdSynnexSku}-${result.manufacturerPartNumber}`" class="integration-result">
+          <div class="admin-card-heading">
+            <h3>TD SYNNEX Price &amp; Availability</h3>
+            <span class="integration-status" :class="{ connected: result.pricingStatus === 'Verified' }">{{ result.pricingStatus }}</span>
+          </div>
+          <div class="integration-detail-grid">
+            <div><span>Manufacturer</span><strong>{{ result.manufacturer || 'Not returned' }}</strong></div>
+            <div><span>Part Number</span><strong>{{ result.manufacturerPartNumber || 'Not returned' }}</strong></div>
+            <div><span>TD SYNNEX SKU</span><strong>{{ result.tdSynnexSku || 'Not returned' }}</strong></div>
+            <div><span>Your Cost</span><strong>{{ result.unitCost === null ? 'Not returned' : formatMoney(result.unitCost) }}</strong></div>
+            <div><span>Available</span><strong>{{ result.availableQuantity ?? 'Not returned' }}</strong></div>
+            <div><span>Availability</span><strong>{{ result.availabilityStatus || 'Not returned' }}</strong></div>
+            <div><span>Source</span><strong>{{ result.source }}</strong></div>
+            <div><span>Verified</span><strong>{{ formatIntegrationDate(result.verifiedAt) }}</strong></div>
+          </div>
+          <p class="integration-description">{{ result.description || 'TD SYNNEX did not return a description.' }}</p>
+          <div v-if="result.warehouseAvailability.length" class="warehouse-list">
+            <span v-for="warehouse in result.warehouseAvailability" :key="`${result.tdSynnexSku}-${warehouse.warehouseNumber}`">
+              Warehouse {{ warehouse.warehouseNumber ?? '—' }}: {{ warehouse.quantity ?? '—' }}<template v-if="warehouse.city"> · {{ warehouse.city }}</template>
+            </span>
+          </div>
+        </article>
+      </div>
+    </section>
+
     <section class="admin-card admin-sync-card">
       <div class="admin-card-heading">
         <h2>Project Data Recovery</h2>
@@ -206,6 +271,7 @@ import {
 } from '../services/auth'
 import { createAtlasUser, initiateAtlasPasswordReset, listAtlasUsers, updateAtlasUser, type CreateAtlasUserInput } from '../services/authAdminApi'
 import { getRemoteConfigStatus, listLocalCollectionBackups, restoreLocalCollectionBackup, testRemoteConnection } from '../services/remoteRecords'
+import { getTdSynnexStatus, searchTdSynnex, testTdSynnexConnection, type TdSynnexIntegrationStatus, type TdSynnexPriceAvailability } from '../services/tdSynnexApi'
 import type { AppRole, UserProfile, UserSession } from '../types'
 
 const emptyUser: CreateAtlasUserInput = {
@@ -232,6 +298,14 @@ const syncOk = ref(false)
 const projectBackups = ref<ReturnType<typeof listLocalCollectionBackups>>([])
 const recoveryMessage = ref('')
 const recoveryOk = ref(false)
+const tdStatus = ref<TdSynnexIntegrationStatus | null>(null)
+const testingTdConnection = ref(false)
+const tdMessage = ref('')
+const tdMessageOk = ref(false)
+const tdPartNumber = ref('')
+const searchingTd = ref(false)
+const tdLookupMessage = ref('')
+const tdLookupResults = ref<TdSynnexPriceAvailability[]>([])
 
 const isAdmin = computed(() => session.value?.role === 'Admin')
 const activeUserCount = computed(() => users.value.filter(user => user.active).length)
@@ -239,9 +313,11 @@ const previewableRoles = computed(() => appRoles.filter(role => role !== 'Admin'
 const projectBackupCount = computed(() => projectBackups.value.length)
 const latestProjectBackup = computed(() => projectBackups.value[0])
 const latestProjectBackupRecords = computed(() => latestProjectBackup.value?.records ?? 0)
+const tdStatusClass = computed(() => ({ connected: tdStatus.value?.connectionStatus === 'Connected', error: tdStatus.value?.connectionStatus === 'Error' }))
 onMounted(() => {
   refreshAdminState()
   void refreshUsersFromServer()
+  void refreshTdStatus()
   window.addEventListener('cronos:session-changed', refreshAdminState)
   window.addEventListener('cronos:role-preview-changed', refreshAdminState)
   window.addEventListener('cronos:users-changed', refreshAdminState)
@@ -327,6 +403,61 @@ async function runSyncTest() {
   const result = await testRemoteConnection()
   syncOk.value = result.ok
   syncMessage.value = result.message
+}
+
+async function refreshTdStatus() {
+  if (!isAdmin.value) return
+  try {
+    tdStatus.value = await getTdSynnexStatus()
+  } catch (error) {
+    tdMessage.value = error instanceof Error ? error.message : 'Unable to load TD SYNNEX integration status.'
+  }
+}
+
+async function runTdConnectionTest() {
+  if (testingTdConnection.value) return
+  testingTdConnection.value = true
+  tdMessage.value = 'Testing TD SYNNEX Sandbox…'
+  tdMessageOk.value = false
+  try {
+    const result = await testTdSynnexConnection()
+    tdStatus.value = result.status
+    tdMessage.value = result.message
+    tdMessageOk.value = true
+  } catch (error) {
+    tdMessage.value = error instanceof Error ? error.message : 'TD SYNNEX connection test failed.'
+    await refreshTdStatus()
+  } finally {
+    testingTdConnection.value = false
+  }
+}
+
+async function runTdLookup() {
+  const partNumber = tdPartNumber.value.trim()
+  if (!partNumber || searchingTd.value) return
+  searchingTd.value = true
+  tdLookupResults.value = []
+  tdLookupMessage.value = 'Searching TD SYNNEX Sandbox…'
+  try {
+    const response = await searchTdSynnex(partNumber)
+    tdLookupResults.value = response.results
+    tdLookupMessage.value = response.results.length ? `${response.results.length} TD SYNNEX result${response.results.length === 1 ? '' : 's'} returned.` : 'Product not found in TD SYNNEX Sandbox.'
+    await refreshTdStatus()
+  } catch (error) {
+    tdLookupMessage.value = error instanceof Error ? error.message : 'TD SYNNEX product lookup failed.'
+  } finally {
+    searchingTd.value = false
+  }
+}
+
+function formatIntegrationDate(value?: string | null) {
+  if (!value) return 'Never'
+  const date = new Date(value)
+  return Number.isNaN(date.getTime()) ? 'Not available' : date.toLocaleString()
+}
+
+function formatMoney(value: number) {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(value)
 }
 
 async function restoreLatestProjectBackup() {

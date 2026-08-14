@@ -1402,6 +1402,124 @@ table {
   color: #047857;
 }
 
+.td-synnex-card .admin-card-heading,
+.integration-result .admin-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.td-synnex-card .integration-eyebrow {
+  margin: 0 0 4px;
+  color: #2563eb;
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.integration-status {
+  flex: 0 0 auto;
+  border: 1px solid #cbd5e1;
+  border-radius: 999px;
+  background: #f8fafc;
+  color: #475569;
+  padding: 6px 10px;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.integration-status.connected {
+  border-color: #86efac;
+  background: #ecfdf5;
+  color: #047857;
+}
+
+.integration-status.error {
+  border-color: #fecaca;
+  background: #fff1f2;
+  color: #be123c;
+}
+
+.integration-detail-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.integration-detail-grid > div {
+  min-width: 0;
+  border: 1px solid var(--app-border);
+  border-radius: 7px;
+  background: var(--app-bg);
+  padding: 11px 12px;
+}
+
+.integration-detail-grid span,
+.integration-detail-grid strong {
+  display: block;
+  overflow-wrap: anywhere;
+}
+
+.integration-detail-grid span {
+  color: var(--app-muted);
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.integration-detail-grid strong {
+  margin-top: 5px;
+  color: var(--app-heading);
+  font-size: 13px;
+}
+
+.integration-lookup {
+  display: grid;
+  gap: 14px;
+  margin-top: 6px;
+  border-top: 1px solid var(--app-border);
+  padding-top: 18px;
+}
+
+.integration-result {
+  display: grid;
+  gap: 14px;
+  border: 1px solid #bfdbfe;
+  border-radius: 8px;
+  background: #eff6ff;
+  padding: 16px;
+}
+
+.integration-description {
+  margin: 0 !important;
+  color: var(--app-text) !important;
+}
+
+.warehouse-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.warehouse-list span {
+  border-radius: 999px;
+  background: #dbeafe;
+  color: #1e40af;
+  padding: 6px 9px;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+@media (max-width: 720px) {
+  .integration-detail-grid { grid-template-columns: 1fr; }
+  .td-synnex-card .admin-card-heading,
+  .integration-result .admin-card-heading { align-items: stretch; flex-direction: column; }
+  .integration-status { align-self: flex-start; }
+}
+
 .admin-form-grid {
   display: grid;
   gap: 16px;
