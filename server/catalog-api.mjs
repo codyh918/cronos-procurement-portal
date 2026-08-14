@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import * as XLSX from 'xlsx'
 import { authenticateSewpRequest, requirePermission } from './sewp-auth.mjs'
+import { pricingFreshnessDays } from './pricing-verification.mjs'
 
 const PRODUCT_SELECT = 'id,manufacturer,manufacturer_part_number,description,additional_description,category,subcategory,keywords,budget_unit_price,current_cost,unit_of_measure,supplier,supplier_part_number,fsc,nsn,lead_time,lead_time_days,purchasable,procurement_status,dpas,serial_number_required,taa_compliant,in_stock,screen_size_inches,specifications,source_file,source_row,active,created_at,updated_at'
 const SEMANTIC_GROUPS = [
@@ -171,9 +172,11 @@ async function findVerifiedPrices({ request, response, sendJson, supabase }) {
 export function catalogPriceEligibility(row, quantity, now = Date.now()) {
   const expiration = row.expiration_date ? Date.parse(row.expiration_date) : null
   const expired = expiration !== null && expiration < now
+  const verifiedAt = row.verified_at ? Date.parse(row.verified_at) : null
+  const stale = row.pricing_status === 'Verified' && (!Number.isFinite(verifiedAt) || now - verifiedAt > pricingFreshnessDays() * 86400000)
   const quantityEligible = !row.quantity_basis || quantity >= Number(row.quantity_basis)
-  const applicable = row.pricing_status === 'Verified' && !expired && quantityEligible
-  return { display_status: expired ? 'Expired' : row.pricing_status, applicable, disabled_reason: applicable ? '' : expired ? 'Expired pricing cannot be applied.' : !quantityEligible ? `Minimum quantity is ${row.quantity_basis}.` : `${row.pricing_status} pricing cannot be applied.` }
+  const applicable = row.pricing_status === 'Verified' && !expired && !stale && quantityEligible
+  return { display_status: expired || stale ? 'Expired' : row.pricing_status, applicable, disabled_reason: applicable ? '' : stale ? `Pricing is older than ${pricingFreshnessDays()} days and must be verified.` : expired ? 'Expired pricing cannot be applied.' : !quantityEligible ? `Minimum quantity is ${row.quantity_basis}.` : `${row.pricing_status} pricing cannot be applied.` }
 }
 
 async function searchProducts({ request, response, sendJson, supabase }) {

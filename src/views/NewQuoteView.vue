@@ -42,6 +42,39 @@
       <QuoteSummaryTile label="Quote Total" :value="currency(summary.customerTotal)" />
     </section>
 
+    <section class="settings-strip pricing-verification-summary">
+      <div>
+        <h2>Pricing Verification</h2>
+        <p>{{ pricingSummary.allVerified ? 'All pricing verified' : `${pricingSummary.requiringVerification} of ${pricingSummary.total} items require pricing verification` }}</p>
+        <p v-if="pricingVerificationError" class="status-note price-error">{{ pricingVerificationError }}</p>
+      </div>
+      <div class="quote-detail-controls">
+        <label class="pricing-filter-toggle"><input v-model="showOnlyPricingIssues" type="checkbox" /> Show only items requiring verification</label>
+        <button class="primary-action" type="button" :disabled="!pricingSummary.requiringVerification || pricingVerificationLoading" @click="verifyQuotePricing()">
+          {{ pricingVerificationLoading ? 'Checking TD SYNNEX...' : 'Verify Pricing' }}
+        </button>
+      </div>
+    </section>
+
+    <section v-if="pricingReview.length" class="pricing-review-panel">
+      <div class="quote-draft-heading">
+        <div><h2>Pricing Verification Review</h2><p>No quote or catalog pricing changes until you apply selected results.</p></div>
+        <button class="secondary-action" type="button" @click="cancelPricingReview">Cancel</button>
+      </div>
+      <div class="quote-lines-scroll"><table class="quote-lines-table pricing-review-table">
+        <thead><tr><th></th><th>Part Number</th><th>Current Cost</th><th>Atlas Catalog</th><th>TD SYNNEX Cost</th><th>Delta</th><th>Availability</th><th>Status</th></tr></thead>
+        <tbody><tr v-for="result in pricingReview" :key="result.lineId">
+          <td><input v-model="selectedVerificationIds" type="checkbox" :value="result.lineId" :disabled="result.distributorCost === null" /></td>
+          <td>{{ result.partNumber }}</td><td>{{ moneyOrDash(result.currentQuoteCost) }}</td><td>{{ moneyOrDash(result.catalogCost) }}</td><td>{{ moneyOrDash(result.distributorCost) }}</td>
+          <td>{{ deltaLabel(result.delta, result.percentDelta) }}</td><td>{{ result.availableQuantity ?? result.availabilityStatus ?? '—' }}</td><td><span class="pricing-review-status">{{ result.status }}</span></td>
+        </tr></tbody>
+      </table></div>
+      <div class="pricing-review-actions">
+        <button class="primary-action" type="button" :disabled="!selectedVerificationIds.length || pricingVerificationLoading" @click="applyPricingReview(false)">Apply Selected</button>
+        <button v-if="canUpdateCatalog" class="secondary-action" type="button" :disabled="!selectedVerificationIds.length || pricingVerificationLoading" @click="applyPricingReview(true)">Update Catalog for Selected + Apply</button>
+      </div>
+    </section>
+
     <section class="settings-strip">
       <div>
         <h2>Quote Details</h2>
@@ -310,7 +343,9 @@
         :lines="draftLines"
         :empty-message="quote ? 'This quote has no lines.' : 'No lines in this quote yet.'"
         :show-pricing-controls="showPricingControls"
+        :show-only-pricing-issues="showOnlyPricingIssues"
         @change="draftLines = $event"
+        @verify="verifyQuotePricing($event)"
       />
     </section>
   </div>
@@ -344,6 +379,8 @@ import { applyVendorRfqResponseFile } from '../services/vendorRfqResponses'
 import { getOemSuggestions, recommendVendorForPart } from '../services/vendorIntelligence'
 import { getVendorOptions } from '../services/vendors'
 import { exportCustomerQuoteWorkbook, exportVendorRfqPackage } from '../services/workbookExports'
+import { fetchSession, getEffectiveRole } from '../services/auth'
+import { applyVerifiedPricing, previewPricing, pricingVerificationSummary, quoteLinePricingStatus, type PricingVerificationResult } from '../services/pricingVerification'
 import type { CustomerQuote, Project, QuoteLine } from '../types'
 
 type ExpirationDays = 30 | 60 | 90
@@ -374,6 +411,12 @@ const catalogStatus = ref('')
 const remotePartSuggestions = ref<CatalogProduct[]>([])
 const isSavingQuote = ref(false)
 const saveQuoteError = ref('')
+const pricingReview = ref<PricingVerificationResult[]>([])
+const selectedVerificationIds = ref<string[]>([])
+const pricingVerificationLoading = ref(false)
+const pricingVerificationError = ref('')
+const showOnlyPricingIssues = ref(false)
+const newLinePricing = reactive<{ pricingStatus: QuoteLine['pricingStatus']; pricingSource?: string; pricingVerifiedAt?: string; catalogProductId?: string | null; catalogCost?: number | null }>({ pricingStatus: 'Unverified' })
 let catalogLookupTimer: ReturnType<typeof setTimeout> | undefined
 
 const lineForm = reactive({
@@ -409,6 +452,8 @@ const partSuggestions = computed(() => {
 })
 const oemSuggestions = computed(() => getOemSuggestions(lineForm.partNumber))
 const summary = computed(() => calculateQuoteSummaryWithContractFee(draftLines.value, contractFeeEnabled.value, shippingCost.value))
+const pricingSummary = computed(() => pricingVerificationSummary(draftLines.value))
+const canUpdateCatalog = computed(() => getEffectiveRole(fetchSession()) === 'Admin')
 const previewLine = computed(() =>
   buildDraftLine({
     clin: nextClin.value,
@@ -424,6 +469,7 @@ const previewLine = computed(() =>
     supplierPartNumber: lineForm.supplierPartNumber,
     quoteNumber: lineForm.quoteNumber,
     leadTime: lineForm.leadTime,
+    ...newLinePricing,
   }),
 )
 const previewTotals = computed(() => calculateLineTotals(previewLine.value))
@@ -490,6 +536,43 @@ function applyBulkPricing() {
   }
 }
 
+async function verifyQuotePricing(lineId?: string) {
+  const lines = lineId ? draftLines.value.filter(line => line.id === lineId) : draftLines.value.filter(line => quoteLinePricingStatus(line) !== 'Verified')
+  if (!lines.length || pricingVerificationLoading.value) return
+  pricingVerificationLoading.value = true; pricingVerificationError.value = ''
+  try {
+    const response = await previewPricing(lines)
+    pricingReview.value = response.results
+    selectedVerificationIds.value = response.results.filter(item => item.distributorCost !== null && ['Verified', 'Price Changed'].includes(item.status)).map(item => item.lineId)
+  } catch (error) {
+    pricingVerificationError.value = error instanceof Error ? error.message : 'TD SYNNEX pricing is temporarily unavailable.'
+  } finally { pricingVerificationLoading.value = false }
+}
+
+async function applyPricingReview(updateCatalog: boolean) {
+  const selected = new Set(selectedVerificationIds.value)
+  const lines = draftLines.value.filter(line => selected.has(line.id))
+  if (!lines.length || pricingVerificationLoading.value) return
+  pricingVerificationLoading.value = true; pricingVerificationError.value = ''
+  try {
+    const response = await applyVerifiedPricing(lines, { quoteId: quote.value?.id, updateCatalog })
+    const results = new Map(response.results.map(item => [item.lineId, item]))
+    const actor = fetchSession()?.name || fetchSession()?.email || 'Atlas user'
+    draftLines.value = draftLines.value.map(line => {
+      const result = results.get(line.id)
+      if (!result || result.distributorCost === null || !result.verifiedAt) return line
+      return { ...line, unitCost: result.distributorCost, vendor: result.source || line.vendor, pricingStatus: 'Verified' as const, pricingSource: result.source, pricingVerifiedAt: result.verifiedAt, catalogProductId: result.catalogProductId, catalogCost: updateCatalog ? result.distributorCost : result.catalogCost, pricingVerificationHistory: [...(line.pricingVerificationHistory || []), { id: crypto.randomUUID(), quoteId: quote.value?.id || null, quoteLineId: line.id, partNumber: line.partNumber, previousCost: line.unitCost, verifiedCost: result.distributorCost, pricingSource: result.source, verifiedAt: result.verifiedAt, appliedBy: actor, catalogUpdated: updateCatalog }] }
+    })
+    pricingReview.value = []; selectedVerificationIds.value = []
+  } catch (error) {
+    pricingVerificationError.value = error instanceof Error ? error.message : 'Pricing could not be applied. Existing quote pricing was preserved.'
+  } finally { pricingVerificationLoading.value = false }
+}
+
+function cancelPricingReview() { pricingReview.value = []; selectedVerificationIds.value = [] }
+function moneyOrDash(value: number | null) { return value === null ? '—' : currency(value) }
+function deltaLabel(delta: number | null, percent: number | null) { return delta === null ? '—' : `${delta >= 0 ? '+' : ''}${currency(delta)}${percent === null ? '' : ` (${percent >= 0 ? '+' : ''}${percent.toFixed(2)}%)`}` }
+
 function applyCatalogPart(partNumber: string) {
   const remote = remotePartSuggestions.value.find(item => item.manufacturer_part_number.trim().toLowerCase() === partNumber.trim().toLowerCase())
   if (remote) {
@@ -524,10 +607,16 @@ function applyVerifiedCatalogPrice(price: VerifiedCatalogPrice) {
   unitCost.value = Number(price.new_cost)
   lineForm.vendor = price.vendor || lineForm.vendor
   lineForm.manufacturer = price.manufacturer || lineForm.manufacturer
+  newLinePricing.pricingStatus = 'Verified'
+  newLinePricing.pricingSource = price.vendor || 'Atlas Catalog'
+  newLinePricing.pricingVerifiedAt = price.verified_at || new Date().toISOString()
+  newLinePricing.catalogProductId = price.product_id
+  newLinePricing.catalogCost = Number(price.new_cost)
   catalogStatus.value = `Applied verified catalog unit cost ${currency(price.new_cost)} from ${price.vendor || 'the selected pricing record'}.`
 }
 
 function scheduleCatalogLookup(value: string) {
+  newLinePricing.pricingStatus = 'Unverified'; newLinePricing.pricingSource = undefined; newLinePricing.pricingVerifiedAt = undefined; newLinePricing.catalogProductId = null; newLinePricing.catalogCost = null
   applyCatalogPart(value)
   if (catalogLookupTimer) clearTimeout(catalogLookupTimer)
   if (value.trim().length < 2) { remotePartSuggestions.value = []; return }
@@ -751,5 +840,6 @@ function resetLineForm() {
   remotePartSuggestions.value = []
   quantity.value = 1
   unitCost.value = 0
+  newLinePricing.pricingStatus = 'Unverified'; newLinePricing.pricingSource = undefined; newLinePricing.pricingVerifiedAt = undefined; newLinePricing.catalogProductId = null; newLinePricing.catalogCost = null
 }
 </script>

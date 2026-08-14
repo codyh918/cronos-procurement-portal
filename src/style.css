@@ -6472,3 +6472,13 @@ textarea {
 :root[data-theme='dark'] .po-status-shipped {
   background-color: var(--app-panel-soft) !important;
 }
+.pricing-line-status { display: flex; align-items: center; gap: .4rem; margin-top: .35rem; font-size: .74rem; font-weight: 700; white-space: nowrap; }
+.pricing-line-status button { border: 0; background: transparent; color: var(--color-primary, #3157a4); cursor: pointer; padding: 0; font: inherit; text-decoration: underline; }
+.pricing-line-status.is-verified { color: #18794e; }
+.pricing-line-status.is-stale, .pricing-line-status.is-price-changed { color: #9a6700; }
+.pricing-line-status.is-unverified, .pricing-line-status.is-product-not-found, .pricing-line-status.is-distributor-error { color: #b42318; }
+.pricing-filter-toggle { display: inline-flex; align-items: center; gap: .5rem; font-size: .86rem; }
+.pricing-review-panel { margin: 1rem 0; padding: 1rem; border: 1px solid var(--border-color, #d8dee9); border-radius: 12px; background: var(--surface-color, #fff); }
+.pricing-review-table { min-width: 900px; }
+.pricing-review-status { font-weight: 700; }
+.pricing-review-actions { display: flex; justify-content: flex-end; gap: .75rem; margin-top: 1rem; flex-wrap: wrap; }

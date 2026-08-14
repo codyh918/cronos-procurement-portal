@@ -202,6 +202,27 @@ export type QuoteLine = {
   quoteNumber: string
   leadTime: string
   approved: boolean
+  pricingStatus?: PricingVerificationStatus
+  pricingSource?: string
+  pricingVerifiedAt?: string
+  catalogProductId?: string | null
+  catalogCost?: number | null
+  pricingVerificationHistory?: PricingVerificationAudit[]
+}
+
+export type PricingVerificationStatus = 'Verified' | 'Stale' | 'Unverified' | 'Price Changed' | 'Product Not Found' | 'Distributor Error'
+
+export type PricingVerificationAudit = {
+  id: string
+  quoteId?: string | null
+  quoteLineId: string
+  partNumber: string
+  previousCost: number
+  verifiedCost: number
+  pricingSource: string
+  verifiedAt: string
+  appliedBy: string
+  catalogUpdated: boolean
 }
 
 export type CustomerQuote = {

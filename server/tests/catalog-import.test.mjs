@@ -53,10 +53,10 @@ test('catalog duplicate lookup delegates normalized matching to the database', (
 
 test('only current verified catalog prices meeting the quantity basis are applicable', () => {
   const now = Date.parse('2026-08-06T12:00:00Z')
-  assert.equal(catalogPriceEligibility({ pricing_status: 'Verified', expiration_date: '2026-08-10T00:00:00Z', quantity_basis: 5 }, 5, now).applicable, true)
+  assert.equal(catalogPriceEligibility({ pricing_status: 'Verified', verified_at: '2026-08-05T00:00:00Z', expiration_date: '2026-08-10T00:00:00Z', quantity_basis: 5 }, 5, now).applicable, true)
   for (const pricing_status of ['Unverified', 'Pending Verification', 'Rejected']) {
     assert.equal(catalogPriceEligibility({ pricing_status, expiration_date: '2026-08-10T00:00:00Z', quantity_basis: null }, 1, now).applicable, false)
   }
-  assert.equal(catalogPriceEligibility({ pricing_status: 'Verified', expiration_date: '2026-08-01T00:00:00Z', quantity_basis: null }, 1, now).display_status, 'Expired')
-  assert.equal(catalogPriceEligibility({ pricing_status: 'Verified', expiration_date: null, quantity_basis: 10 }, 2, now).applicable, false)
+  assert.equal(catalogPriceEligibility({ pricing_status: 'Verified', verified_at: '2026-08-05T00:00:00Z', expiration_date: '2026-08-01T00:00:00Z', quantity_basis: null }, 1, now).display_status, 'Expired')
+  assert.equal(catalogPriceEligibility({ pricing_status: 'Verified', verified_at: '2026-08-05T00:00:00Z', expiration_date: null, quantity_basis: 10 }, 2, now).applicable, false)
 })

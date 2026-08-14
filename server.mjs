@@ -8,6 +8,7 @@ import { getSupabasePasswordAuthClient } from './server/sewp-supabase.mjs'
 import { handleAtlasAuthApi } from './server/atlas-auth-api.mjs'
 import { handleCatalogApi } from './server/catalog-api.mjs'
 import { handleTdSynnexApi } from './server/td-synnex-api.mjs'
+import { handlePricingVerificationApi } from './server/pricing-verification-api.mjs'
 
 const port = Number(process.env.PORT || 4173)
 const root = join(process.cwd(), 'dist')
@@ -269,6 +270,7 @@ createServer(async (request, response) => {
   const pathname = decodeURIComponent(new URL(request.url || '/', 'http://localhost').pathname)
   if (await handleAtlasAuthApi({ request, response, pathname, sendJson, readJsonBody, supabase: getSewpSupabase(), passwordAuthClient: getSupabasePasswordAuthClient() })) return
   if (await handleTdSynnexApi({ request, response, pathname, sendJson, readJsonBody, authClient: getSupabasePasswordAuthClient() })) return
+  if (await handlePricingVerificationApi({ request, response, pathname, sendJson, readJsonBody, authClient: getSupabasePasswordAuthClient(), supabase: getSewpSupabase() })) return
   if (await handleCatalogApi({ request, response, pathname, sendJson, readJsonBody, readBufferBody, supabase: getSewpSupabase() })) return
   if (await handleDataApi({ request, response, pathname, sendJson, readJsonBody, supabase: getSewpSupabase() })) return
   if (await handleSewpApi({ request, response, pathname, sendJson, readJsonBody, readBufferBody })) return

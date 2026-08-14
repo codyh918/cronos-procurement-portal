@@ -16,7 +16,7 @@
           </tr>
         </thead>
         <tbody>
-          <tr v-for="line in lines" :key="line.id">
+          <tr v-for="line in visibleLines" :key="line.id">
             <td class="line-item-cell">
               <span class="clin-pill">{{ line.clin }}</span>
             </td>
@@ -33,6 +33,7 @@
                 :quantity="line.quantity"
                 :show-metadata="false"
                 @apply="applyVerifiedPrice(line.id, $event)"
+                @status="applyCatalogStatus(line.id, $event)"
               />
               <datalist :id="`quote-line-part-suggestions-${line.id}`">
                 <option v-for="record in findPartPriceSuggestions(line.partNumber)" :key="record.id" :value="record.partNumber">
@@ -52,8 +53,12 @@
                 min="0"
                 step="0.01"
                 :value="line.unitCost"
-                @input="updateLine(line.id, { unitCost: numberValue($event) })"
+                @input="updateLine(line.id, { unitCost: numberValue($event), pricingStatus: 'Unverified', pricingVerifiedAt: undefined, pricingSource: undefined })"
               />
+              <div class="pricing-line-status" :class="`is-${statusClass(line)}`">
+                <span>{{ statusIcon(line) }} {{ pricingStatus(line) }}</span>
+                <button v-if="pricingStatus(line) !== 'Verified'" type="button" @click="$emit('verify', line.id)">{{ line.unitCost > 0 ? 'Verify with TD SYNNEX' : 'Get TD SYNNEX Pricing' }}</button>
+              </div>
             </td>
             <template v-if="showPricingControls">
               <td>
@@ -120,6 +125,7 @@ import type { VerifiedCatalogPrice } from '../services/productCatalogApi'
 import { recommendVendorForPart } from '../services/vendorIntelligence'
 import { getVendorOptions } from '../services/vendors'
 import type { QuoteLine } from '../types'
+import { quoteLinePricingStatus } from '../services/pricingVerification'
 import VerifiedCatalogPricing from './VerifiedCatalogPricing.vue'
 
 const props = withDefaults(
@@ -127,13 +133,17 @@ const props = withDefaults(
     lines: QuoteLine[]
     emptyMessage: string
     showPricingControls?: boolean
+    showOnlyPricingIssues?: boolean
   }>(),
-  { showPricingControls: true },
+  { showPricingControls: true, showOnlyPricingIssues: false },
 )
 
 const emit = defineEmits<{
   change: [lines: QuoteLine[]]
+  verify: [lineId: string]
 }>()
+
+const visibleLines = computed(() => props.showOnlyPricingIssues ? props.lines.filter(line => pricingStatus(line) !== 'Verified') : props.lines)
 
 const topScroller = ref<HTMLDivElement>()
 const tableScroller = ref<HTMLDivElement>()
@@ -225,13 +235,24 @@ function syncHorizontalScroll(source: 'top' | 'table') {
 
 function updatePartNumber(id: string, partNumber: string) {
   const currentLine = props.lines.find(line => line.id === id)
-  updateLine(id, { partNumber, vendor: currentLine?.vendor || recommendVendorForPart(partNumber, currentLine?.manufacturer, currentLine?.description) })
+  updateLine(id, { partNumber, vendor: currentLine?.vendor || recommendVendorForPart(partNumber, currentLine?.manufacturer, currentLine?.description), pricingStatus: 'Unverified', pricingVerifiedAt: undefined, pricingSource: undefined })
 }
 
 function applyVerifiedPrice(id: string, price: VerifiedCatalogPrice) {
   if (!price.applicable || price.display_status !== 'Verified') return
-  updateLine(id, { unitCost: Number(price.new_cost), vendor: price.vendor || props.lines.find(line => line.id === id)?.vendor || '' })
+  updateLine(id, { unitCost: Number(price.new_cost), vendor: price.vendor || props.lines.find(line => line.id === id)?.vendor || '', pricingStatus: 'Verified', pricingVerifiedAt: price.verified_at || new Date().toISOString(), pricingSource: price.vendor || 'Atlas Catalog', catalogProductId: price.product_id, catalogCost: Number(price.new_cost) })
 }
+
+function applyCatalogStatus(id: string, price: VerifiedCatalogPrice | null) {
+  const line = props.lines.find(item => item.id === id)
+  if (!line || line.pricingSource) return
+  if (!price) { if (line.pricingStatus !== 'Unverified') updateLine(id, { pricingStatus: 'Unverified' }); return }
+  updateLine(id, { pricingStatus: price.display_status === 'Expired' ? 'Stale' : 'Unverified', pricingVerifiedAt: price.verified_at || undefined, catalogProductId: price.product_id, catalogCost: Number(price.new_cost) })
+}
+
+function pricingStatus(line: QuoteLine) { return quoteLinePricingStatus(line) }
+function statusIcon(line: QuoteLine) { return pricingStatus(line) === 'Verified' ? '✓' : pricingStatus(line) === 'Stale' ? '⚠' : pricingStatus(line) === 'Price Changed' ? '!' : '?' }
+function statusClass(line: QuoteLine) { return pricingStatus(line).toLowerCase().replaceAll(' ', '-') }
 
 function removeLine(id: string) {
   emit('change', applySequentialClins(props.lines.filter(line => line.id !== id)))

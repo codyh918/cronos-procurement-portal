@@ -16,9 +16,10 @@ const ROLE_PERMISSIONS = {
     'sewp.rfq.manage_tasks',
     'sewp.rfq.view_audit',
     'atlas.catalog.view',
+    'atlas.pricing.verify',
   ],
   engineering: ['atlas.data.view', 'atlas.catalog.view'],
-  sales: ['atlas.data.view', 'atlas.catalog.view'],
+  sales: ['atlas.data.view', 'atlas.catalog.view', 'atlas.pricing.verify'],
 }
 
 export async function authenticateSewpRequest(request, authClient) {

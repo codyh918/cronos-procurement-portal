@@ -42,7 +42,7 @@ import { currency } from '../services/calculations'
 import { findVerifiedCatalogPrices, type VerifiedCatalogPrice } from '../services/productCatalogApi'
 
 const props = withDefaults(defineProps<{ partNumber: string; manufacturer?: string; quantity?: number; showMetadata?: boolean }>(), { manufacturer: '', quantity: 0, showMetadata: true })
-const emit = defineEmits<{ apply: [price: VerifiedCatalogPrice] }>()
+const emit = defineEmits<{ apply: [price: VerifiedCatalogPrice]; status: [price: VerifiedCatalogPrice | null] }>()
 const prices = ref<VerifiedCatalogPrice[]>([]); const loading = ref(false); const error = ref(''); const selectedId = ref('')
 const applicablePrices = computed(() => prices.value.filter(price => price.applicable))
 const unavailablePrices = computed(() => prices.value.filter(price => !price.applicable))
@@ -61,7 +61,7 @@ async function load(part: string) {
   const current = ++requestId; loading.value = true
   try {
     const result = await findVerifiedCatalogPrices(part, props.manufacturer, props.quantity)
-    if (current === requestId) { prices.value = result.prices; selectedId.value = result.prices.find(price => price.applicable)?.id || '' }
+    if (current === requestId) { prices.value = result.prices; selectedId.value = result.prices.find(price => price.applicable)?.id || ''; emit('status', result.prices[0] || null) }
   } catch (cause) { if (current === requestId) error.value = cause instanceof Error ? cause.message : 'Unable to check catalog pricing.' }
   finally { if (current === requestId) loading.value = false }
 }
