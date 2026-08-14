@@ -4,6 +4,7 @@ import { getCheckbookSummary } from './checkbook'
 import { documentContactLines, getProjectDocumentContact } from './documentContacts'
 import { formatCustomerAddressLines, structuredCustomerFromProject } from './customerFormatting'
 import { loadProject } from './localProjects'
+import { createPdfDocument } from './pdfRuntime.mjs'
 import {
   createDocumentAudit,
   documentValue,
@@ -58,7 +59,7 @@ export async function exportCustomerQuotePdf(quote: CustomerQuote, project?: Pro
     recordDocumentIssue(audit, 'error', 'Shipping Address', 'Quote PDF requires a project shipping address.')
     finishDocumentAudit(audit)
     window.alert('Add a shipping address to this project before generating the customer quote PDF.')
-    return
+    return false
   }
 
   const poc = getProjectDocumentContact(currentProject)
@@ -103,6 +104,7 @@ export async function exportCustomerQuotePdf(quote: CustomerQuote, project?: Pro
   AtlasDocumentFooter(doc)
   finishDocumentAudit(audit)
   doc.save(`${quote.quoteNumber}.pdf`)
+  return true
 }
 
 export async function exportPurchaseOrderPdf(po: PurchaseOrder | ProjectPurchaseOrder, project?: Project) {
@@ -599,8 +601,7 @@ export async function exportCheckbookReportPdf(project: Project) {
 export async function exportCustomerConsolidatedTrackingReportPdf(project: Project) {
   const audit = createDocumentAudit('Customer Consolidated Tracking PDF', project.projectNumber)
   validateProjectDocumentFields(audit, project)
-  const { default: jsPDF } = await import('jspdf')
-  const doc = new jsPDF({ unit: 'pt', format: 'letter', orientation: 'landscape' })
+  const doc = await createPdfDocument({ unit: 'pt', format: 'letter', orientation: 'landscape' })
   const poc = getProjectDocumentContact(project)
   const rows = project.purchaseOrders.flatMap(po =>
     po.lines.map((line, index) => ({
@@ -688,8 +689,7 @@ export async function exportCustomerConsolidatedTrackingReportPdf(project: Proje
 }
 
 async function createDocument() {
-  const { default: jsPDF } = await import('jspdf')
-  return new jsPDF({ unit: 'pt', format: 'letter' })
+  return createPdfDocument({ unit: 'pt', format: 'letter' })
 }
 
 async function AtlasDocumentHeader(doc: JsPdf, title: string) {

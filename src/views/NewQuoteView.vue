@@ -7,9 +7,9 @@
       </div>
       <div class="page-actions">
         <RouterLink class="secondary-action" :to="`/projects/${project.id}`">Back to Project</RouterLink>
-        <button v-if="quote" class="secondary-action" type="button" @click="exportPdf">
+        <button v-if="quote" class="secondary-action" type="button" :disabled="isExportingPdf" @click="exportPdf">
           <Download :size="17" />
-          <span>Download Quote PDF</span>
+          <span>{{ isExportingPdf ? 'Generating PDF...' : 'Download Quote PDF' }}</span>
         </button>
         <button v-if="quote" class="secondary-action" type="button" @click="exportExcel">
           <FileSpreadsheet :size="17" />
@@ -417,6 +417,7 @@ const importStatus = ref('')
 const melImportAnalysis = ref<MelAnalysis>()
 const manufacturerImportStatus = ref('')
 const rfqStatus = ref('')
+const isExportingPdf = ref(false)
 const routeQuoteId = computed(() => String(route.params.quoteId ?? route.params.quoteNumber ?? ''))
 const isEditMode = computed(() => Boolean(routeQuoteId.value))
 const catalogStatus = ref('')
@@ -747,10 +748,22 @@ function toggleApproval() {
 }
 
 async function exportPdf() {
-  if (!quote.value) return
+  if (!quote.value || isExportingPdf.value) return
 
-  await exportCustomerQuotePdf({ ...quote.value, lines: draftLines.value }, project.value)
-  rfqStatus.value = `${quote.value.quoteNumber} PDF exported.`
+  isExportingPdf.value = true
+  rfqStatus.value = 'Generating quote PDF...'
+  try {
+    const exported = await exportCustomerQuotePdf({ ...quote.value, lines: draftLines.value }, project.value)
+    rfqStatus.value = exported
+      ? `${quote.value.quoteNumber} PDF exported.`
+      : 'PDF not exported. Add the project shipping address, save the project, and try again.'
+  } catch (error) {
+    rfqStatus.value = error instanceof Error
+      ? `PDF could not be generated: ${error.message}`
+      : 'PDF could not be generated. Refresh the page and try again.'
+  } finally {
+    isExportingPdf.value = false
+  }
 }
 
 async function exportExcel() {
