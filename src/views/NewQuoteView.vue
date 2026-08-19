@@ -19,6 +19,10 @@
           <FileSpreadsheet :size="17" />
           <span>Vendor RFQ Workbooks</span>
         </button>
+        <button v-if="quote" class="secondary-action danger-outline-action" type="button" @click="removeQuote">
+          <Trash2 :size="17" />
+          <span>Delete Quote</span>
+        </button>
         <button class="primary-action" type="button" :disabled="!draftLines.length || isSavingQuote" @click="saveQuote">
           <Save :size="17" />
           <span>{{ isSavingQuote ? 'Saving...' : quote ? 'Save Changes' : 'Save Quote' }}</span>
@@ -370,7 +374,7 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { BadgeDollarSign, CheckCircle2, Download, FileSpreadsheet, FileUp, Plus, Save, Send, Upload, XCircle } from '@lucide/vue'
+import { BadgeDollarSign, CheckCircle2, Download, FileSpreadsheet, FileUp, Plus, Save, Send, Trash2, Upload, XCircle } from '@lucide/vue'
 import FormField from '../components/FormField.vue'
 import MelImportReview from '../components/MelImportReview.vue'
 import QuoteLinesEditor from '../components/QuoteLinesEditor.vue'
@@ -379,7 +383,7 @@ import RfqStep from '../components/RfqStep.vue'
 import VerifiedCatalogPricing from '../components/VerifiedCatalogPricing.vue'
 import { calculateLineTotals, calculateQuoteSummaryWithContractFee, currency, type PricingMode } from '../services/calculations'
 import { applyPricingToAllLines } from '../services/bulkPricing.mjs'
-import { createQuoteForProjectStrict, loadProject, setQuoteApprovalStatus, updateQuoteForProjectStrict } from '../services/localProjects'
+import { createQuoteForProjectStrict, deleteQuoteForProject, loadProject, setQuoteApprovalStatus, updateQuoteForProjectStrict } from '../services/localProjects'
 import { applyManufacturerUpdateFile } from '../services/manufacturerImport'
 import { findLatestPartPrice, findPartPriceSuggestions } from '../services/partCatalog'
 import { suggestCatalogProducts, type CatalogProduct, type VerifiedCatalogPrice } from '../services/productCatalogApi'
@@ -745,6 +749,22 @@ function toggleApproval() {
   const result = setQuoteApprovalStatus(project.value.id, quote.value.id, approved)
   project.value = result.project
   quote.value = result.quote
+}
+
+function removeQuote() {
+  if (!project.value || !quote.value) return
+  const linkedPoCount = project.value.purchaseOrders.filter(po => po.quoteId === quote.value?.id).length
+  const linkedPoWarning = linkedPoCount
+    ? ` This will also delete ${linkedPoCount} linked purchase order${linkedPoCount === 1 ? '' : 's'}.`
+    : ''
+  if (!window.confirm(`Delete quote ${quote.value.quoteNumber}?${linkedPoWarning} This action cannot be undone.`)) return
+
+  try {
+    deleteQuoteForProject(project.value.id, quote.value.id)
+    void router.push(`/projects/${project.value.id}`)
+  } catch (error) {
+    window.alert(error instanceof Error ? error.message : 'Unable to delete the quote.')
+  }
 }
 
 async function exportPdf() {

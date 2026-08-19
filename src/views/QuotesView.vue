@@ -74,10 +74,6 @@
                       <Pencil :size="14" />
                       <span>Edit</span>
                     </RouterLink>
-                    <button class="mini-action danger" type="button" title="Delete quote" @click="removeQuote(quote)">
-                      <Trash2 :size="14" />
-                      <span>Delete</span>
-                    </button>
                   </div>
                 </td>
               </tr>
@@ -97,11 +93,11 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import { FileText, Pencil, Plus, Trash2 } from '@lucide/vue'
+import { FileText, Pencil, Plus } from '@lucide/vue'
 import StatusBadge from '../components/StatusBadge.vue'
 import { calculateQuoteSummary, currency } from '../services/calculations'
 import { formatDisplayDate } from '../services/dateFormat'
-import { deleteQuoteForProject, loadProject, loadQuotes } from '../services/localProjects'
+import { loadQuotes } from '../services/localProjects'
 import type { CustomerQuote } from '../types'
 
 const quotes = ref<CustomerQuote[]>(loadQuotes())
@@ -158,21 +154,6 @@ const totals = computed(() =>
 
 function refreshQuotes() {
   quotes.value = loadQuotes()
-}
-
-function removeQuote(quote: CustomerQuote) {
-  const linkedPoCount = loadProject(quote.projectId)?.purchaseOrders.filter(po => po.quoteId === quote.id).length ?? 0
-  const linkedPoWarning = linkedPoCount
-    ? ` This will also delete ${linkedPoCount} linked purchase order${linkedPoCount === 1 ? '' : 's'}.`
-    : ''
-  if (!window.confirm(`Delete quote ${quote.quoteNumber}?${linkedPoWarning} This action cannot be undone.`)) return
-
-  try {
-    deleteQuoteForProject(quote.projectId, quote.id)
-    refreshQuotes()
-  } catch (error) {
-    window.alert(error instanceof Error ? error.message : 'Unable to delete the quote.')
-  }
 }
 
 function quoteTotals(quote: CustomerQuote) {
