@@ -1,538 +1,174 @@
 <template>
-  <div v-if="project && (!isEditMode || quote)" class="quote-builder-page">
+  <div class="quotes-page">
     <header class="page-heading">
       <div>
-        <h1>{{ quote ? `Edit Quote ${quote.quoteNumber}` : 'Create Project Quote' }}</h1>
-        <p>{{ project.projectNumber }} - {{ project.projectName }}</p>
+        <h1>Quotes</h1>
+        <p>Customer-facing quotes created from project records.</p>
       </div>
-      <div class="page-actions">
-        <RouterLink class="secondary-action" :to="`/projects/${project.id}`">Back to Project</RouterLink>
-        <button v-if="quote" class="secondary-action" type="button" @click="exportPdf">
-          <Download :size="17" />
-          <span>Export PDF</span>
-        </button>
-        <button v-if="quote" class="secondary-action" type="button" :disabled="!draftLines.length" @click="exportRfqPackage">
-          <FileSpreadsheet :size="17" />
-          <span>Vendor RFQ Workbooks</span>
-        </button>
-        <button class="primary-action" type="button" :disabled="!draftLines.length" @click="saveQuote">
-          <Save :size="17" />
-          <span>{{ quote ? 'Save Changes' : 'Save Quote' }}</span>
-        </button>
-        <button v-if="!quote" class="secondary-action" type="button" :disabled="!draftLines.length" @click="exportRfqPackage">
-          <FileSpreadsheet :size="17" />
-          <span>Vendor RFQ Workbooks</span>
-        </button>
-      </div>
+      <RouterLink class="primary-action" to="/projects">
+        <Plus :size="17" />
+        <span>Create from Project</span>
+      </RouterLink>
     </header>
 
-    <section class="quote-summary-grid">
-      <QuoteSummaryTile label="Lines" :value="String(draftLines.length)" />
-      <QuoteSummaryTile label="Total Cost" :value="currency(summary.totalCost)" />
-      <QuoteSummaryTile label="Line Item Total" :value="currency(summary.totalSellPrice)" />
-      <QuoteSummaryTile label="Contract Fee" :value="currency(summary.contractFee)" />
-      <QuoteSummaryTile label="Shipping" :value="currency(summary.shippingCost)" />
-      <QuoteSummaryTile label="Quote Total" :value="currency(summary.customerTotal)" />
-    </section>
-
-    <section class="settings-strip">
-      <div>
-        <h2>Contract Fee</h2>
-        <p>
-          {{
-            contractFeeEnabled
-              ? 'Contract fee is active. Quote total is line item total divided by .889.'
-              : 'Add a contract fee calculated as line item total divided by .889.'
-          }}
-        </p>
+    <section class="summary-grid">
+      <div class="summary-card">
+        <p>Total Quotes</p>
+        <strong>{{ totals.count }}</strong>
       </div>
-      <button class="primary-action" :class="{ 'light-action': contractFeeEnabled }" type="button" @click="contractFeeEnabled = !contractFeeEnabled">
-        <BadgeDollarSign :size="17" />
-        <span>{{ contractFeeEnabled ? 'Remove Contract Fee' : 'Add Contract Fee' }}</span>
-      </button>
-    </section>
-
-    <section v-if="showPricingControls" class="quote-profit-grid">
-      <QuoteSummaryTile label="Gross Profit" :value="currency(summary.totalGrossProfit)" />
-      <QuoteSummaryTile label="Gross Margin" :value="`${summary.totalGrossMarginPercent}%`" />
-    </section>
-
-    <section class="settings-strip">
-      <div>
-        <h2>Shipping Cost</h2>
-        <p>Add a customer-facing shipping charge to the quote total.</p>
+      <div class="summary-card">
+        <p>Total Sell Value</p>
+        <strong>{{ currency(totals.totalSell) }}</strong>
       </div>
-      <label class="mini-field">
-        <span>Shipping</span>
-        <input v-model.number="shippingCost" type="number" min="0" step="0.01" />
-      </label>
-    </section>
-
-    <section class="settings-strip">
-      <div>
-        <h2>Quote Expiration</h2>
-        <p>Choose how long the customer quote remains valid.</p>
+      <div class="summary-card">
+        <p>Gross Profit</p>
+        <strong>{{ currency(totals.totalGrossProfit) }}</strong>
       </div>
-      <label class="mini-field">
-        <span>Expires In</span>
-        <select v-model.number="expirationDays">
-          <option :value="30">30 days</option>
-          <option :value="60">60 days</option>
-          <option :value="90">90 days</option>
-        </select>
-      </label>
     </section>
 
-    <section class="import-panel">
-      <div>
-        <h2>Import ROM / material list</h2>
-        <p>{{ quote ? 'Upload an exported ROM Tool quote, Excel, CSV, TXT, or PDF to append material lines to this quote.' : 'Upload an exported ROM Tool quote, Excel, CSV, TXT, or PDF. Material lines are added to the draft and grouped by vendor for RFQs.' }}</p>
-      </div>
-      <label class="upload-button">
-        <FileUp :size="17" />
-        <span>Upload ROM / Quote</span>
-        <input type="file" @change="handleImport" />
-      </label>
-      <p v-if="importStatus">{{ importStatus }}</p>
-    </section>
-
-    <section class="rfq-panel">
-      <div class="rfq-panel-heading">
+    <section class="register-card">
+      <div class="register-header">
         <div>
-          <h2>Engineer MEL to Vendor RFQ Workflow</h2>
-          <p>{{ quote ? 'Verify catalog pricing through vendor RFQs before issuing purchase orders.' : 'Use catalog pricing as a starting point, but verify Design &amp; Install pricing through vendor RFQs before issuing POs.' }}</p>
+          <h2>Quote Register</h2>
+          <p>Search by quote number, project, customer, or status.</p>
         </div>
-        <div class="page-actions">
-          <button class="primary-action" type="button" :disabled="!draftLines.length" @click="exportRfqPackage">
-            <Send :size="17" />
-            <span>Generate Vendor RFQs</span>
-          </button>
-          <label class="secondary-action upload-inline">
-            <Upload :size="17" />
-            <span>Import Vendor Pricing</span>
-            <input type="file" @change="handleRfqImport" />
-          </label>
+        <input v-model="search" type="search" placeholder="Search quotes..." />
+      </div>
+
+      <div v-if="filteredQuotes.length" class="data-table-frame">
+        <div class="table-scroll">
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th v-for="column in columns" :key="column" :class="{ nowrap: isIdentifierColumn(column) }">
+                  {{ column }}
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="quote in filteredQuotes" :key="quote.id">
+                <td class="nowrap">
+                  <RouterLink class="table-link" :to="`/projects/${quote.projectId}/quotes/${quote.id}/edit`">
+                    {{ quote.quoteNumber }}
+                  </RouterLink>
+                </td>
+                <td class="nowrap">
+                  <RouterLink class="table-link project-cell-link" :to="`/projects/${quote.projectId}`">
+                    <strong>{{ quote.projectNumber }}</strong>
+                    <span>{{ quote.projectName || '-' }}</span>
+                  </RouterLink>
+                </td>
+                <td>{{ quote.customer || '-' }}</td>
+                <td><StatusBadge :status="quote.status" /></td>
+                <td>{{ quote.lines.length }}</td>
+                <td>{{ quote.expirationDays ?? 30 }} days</td>
+                <td>{{ currency(quoteTotals(quote).totalCost) }}</td>
+                <td>{{ currency(quoteTotals(quote).totalSellPrice) }}</td>
+                <td>{{ currency(quoteTotals(quote).contractFee) }}</td>
+                <td>{{ currency(quoteTotals(quote).shippingCost) }}</td>
+                <td>{{ currency(quoteTotals(quote).customerTotal) }}</td>
+                <td class="nowrap">{{ formatDate(quote.createdAt) }}</td>
+                <td>
+                  <div class="row-actions">
+                    <RouterLink class="mini-action link" :to="`/projects/${quote.projectId}/quotes/${quote.id}/edit`" title="Edit quote">
+                      <Pencil :size="14" />
+                      <span>Edit</span>
+                    </RouterLink>
+                  </div>
+                </td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 
-      <div class="rfq-step-grid">
-        <RfqStep :complete="draftLines.length > 0" title="1. MEL Imported" :detail="`${draftLines.length} line${draftLines.length === 1 ? '' : 's'}`" />
-        <RfqStep
-          :complete="rfqReadiness.missingVendorCount === 0 && draftLines.length > 0"
-          title="2. Vendors Assigned"
-          :detail="`${rfqReadiness.assignedVendorCount}/${rfqReadiness.totalLines} assigned`"
-        />
-        <RfqStep :complete="rfqStatus.includes('exported') || rfqStatus.includes('Updated')" title="3. RFQs Sent" detail="Vendor workbooks" />
-        <RfqStep
-          :complete="rfqReadiness.missingVerifiedPricingCount === 0 && draftLines.length > 0"
-          title="4. Pricing Verified"
-          :detail="`${rfqReadiness.verifiedPricingCount}/${rfqReadiness.totalLines} verified`"
-        />
-        <RfqStep
-          :complete="rfqReadiness.readyForCustomerQuote"
-          :title="quote ? '5. Ready for PO' : '5. Ready for Quote'"
-          :detail="rfqReadiness.readyForCustomerQuote ? (quote ? 'Pricing verified' : 'Save quote') : 'Need responses'"
-        />
+      <div v-else class="register-empty">
+        <FileText :size="30" />
+        <p>{{ quotes.length ? 'No quotes match that search.' : 'No quotes have been created yet.' }}</p>
+        <RouterLink class="primary-action" to="/projects">Go to Projects</RouterLink>
       </div>
-
-      <div v-if="rfqReadiness.missingVerifiedPricingCount" class="warning-note">
-        {{ rfqReadiness.missingVerifiedPricingCount }} line{{ rfqReadiness.missingVerifiedPricingCount === 1 ? '' : 's' }} still need vendor quote number and verified unit cost{{ quote ? '.' : ' before PO generation.' }}
-      </div>
-      <p v-if="rfqStatus" class="status-note">{{ rfqStatus }}</p>
     </section>
-
-    <form class="quote-entry-grid" @submit.prevent="addLine">
-      <section class="quote-line-form">
-        <label class="form-field">
-          <span>CLIN</span>
-          <input class="readonly-input" :value="nextClin" readonly />
-        </label>
-        <label class="form-field">
-          <span>Part Number</span>
-          <input
-            v-model="lineForm.partNumber"
-            list="part-number-suggestions"
-            required
-            placeholder="Type part number for catalog pricing"
-            @input="applyCatalogPart(lineForm.partNumber)"
-          />
-          <datalist id="part-number-suggestions">
-            <option
-              v-for="record in partSuggestions"
-              :key="record.id"
-              :value="record.partNumber"
-            >
-              {{ record.description }} - {{ record.vendor }} - {{ currency(record.unitCost) }}
-            </option>
-            <option
-              v-for="suggestion in oemSuggestions"
-              :key="`${suggestion.vendor}-${suggestion.oem}`"
-              :value="suggestion.oem"
-            >
-              {{ suggestion.vendor }} - {{ suggestion.products }}
-            </option>
-          </datalist>
-          <small v-if="catalogStatus" class="field-help">{{ catalogStatus }}</small>
-        </label>
-        <FormField v-model="lineForm.manufacturer" label="Manufacturer" placeholder="Enter manufacturer" />
-        <label class="form-field">
-          <span>Vendor / Source</span>
-          <select v-model="lineForm.vendor">
-            <option value="">Select vendor</option>
-            <option v-for="vendor in getVendorOptions(lineForm.vendor)" :key="vendor" :value="vendor">{{ vendor }}</option>
-          </select>
-        </label>
-        <FormField v-model.number="quantity" label="Quantity" placeholder="1" type="number" min="1" required />
-        <FormField v-model.number="unitCost" label="Unit Cost" placeholder="0.00" type="number" min="0" step="0.01" required />
-
-        <template v-if="showPricingControls">
-          <label class="form-field">
-            <span>Pricing Mode</span>
-            <select v-model="pricingMode">
-              <option value="markup">Apply Markup</option>
-              <option value="margin">Apply Margin</option>
-            </select>
-          </label>
-          <FormField
-            v-if="pricingMode === 'markup'"
-            v-model.number="markupPercent"
-            label="Markup %"
-            placeholder="15"
-            type="number"
-            min="0"
-            step="0.01"
-          />
-          <FormField
-            v-else
-            v-model.number="marginPercent"
-            label="Margin %"
-            placeholder="20"
-            type="number"
-            min="0"
-            step="0.01"
-          />
-        </template>
-        <div v-else class="pricing-info span-2">
-          Design &amp; Install project: line pricing uses verified vendor cost only. Markup and margin controls are hidden.
-        </div>
-
-        <FormField v-model="lineForm.quoteNumber" label="Vendor Quote Number" placeholder="Optional" />
-        <FormField v-model="lineForm.leadTime" label="Lead Time" placeholder="Example: 14 days" />
-        <label class="form-field span-2">
-          <span>Description</span>
-          <textarea v-model="lineForm.description" required placeholder="Enter customer-facing line item description" />
-        </label>
-
-        <div class="span-2">
-          <button class="primary-action" type="submit">
-            <Plus :size="17" />
-            <span>{{ quote ? 'Add Line' : 'Add Line to Quote' }}</span>
-          </button>
-        </div>
-      </section>
-
-      <aside class="line-preview-panel">
-        <h2>Line Preview</h2>
-        <div class="preview-row"><span>Sell Price</span><strong>{{ currency(previewTotals.sellPrice) }}</strong></div>
-        <div class="preview-row"><span>Extended Cost</span><strong>{{ currency(previewTotals.extendedCost) }}</strong></div>
-        <div class="preview-row"><span>Extended Sell</span><strong>{{ currency(previewTotals.extendedSellPrice) }}</strong></div>
-        <template v-if="showPricingControls">
-          <div class="preview-row"><span>Gross Profit</span><strong>{{ currency(previewTotals.grossProfit) }}</strong></div>
-          <div class="preview-row"><span>Gross Margin</span><strong>{{ previewTotals.grossMarginPercent }}%</strong></div>
-        </template>
-      </aside>
-    </form>
-
-    <section class="quote-draft-panel">
-      <div class="quote-draft-heading">
-        <div>
-          <h2>{{ quote ? 'Quote Lines' : 'Quote Draft Lines' }}</h2>
-          <p>{{ quote ? 'Modify any line item field, remove lines, or add new ones before saving changes.' : 'Modify any line item field before saving the quote.' }}</p>
-        </div>
-        <div class="page-actions">
-          <button class="primary-action" type="button" :disabled="!draftLines.length" @click="saveQuote">
-            <Save :size="17" />
-            <span>{{ quote ? 'Save Changes' : 'Save Quote' }}</span>
-          </button>
-          <button class="secondary-action" type="button" :disabled="!draftLines.length" @click="exportRfqPackage">
-            <FileSpreadsheet :size="17" />
-            <span>Vendor RFQ Workbooks</span>
-          </button>
-        </div>
-      </div>
-      <QuoteLinesEditor
-        :lines="draftLines"
-        :empty-message="quote ? 'This quote has no lines.' : 'No lines in this quote yet.'"
-        :show-pricing-controls="showPricingControls"
-        @change="draftLines = $event"
-      />
-    </section>
-  </div>
-
-  <div v-else-if="loaded" class="not-found-page">
-    <h1>{{ isEditMode ? 'Quote not found' : 'Project not found' }}</h1>
-    <RouterLink class="text-link" :to="isEditMode ? `/projects/${String(route.params.id)}` : '/projects'">
-      {{ isEditMode ? 'Back to Project' : 'Back to Projects' }}
-    </RouterLink>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { BadgeDollarSign, Download, FileSpreadsheet, FileUp, Plus, Save, Send, Upload } from '@lucide/vue'
-import FormField from '../components/FormField.vue'
-import QuoteLinesEditor from '../components/QuoteLinesEditor.vue'
-import QuoteSummaryTile from '../components/QuoteSummaryTile.vue'
-import RfqStep from '../components/RfqStep.vue'
-import { calculateLineTotals, calculateQuoteSummaryWithContractFee, currency, type PricingMode } from '../services/calculations'
-import { createQuoteForProject, loadProject, updateQuoteForProject } from '../services/localProjects'
-import { findLatestPartPrice, findPartPriceSuggestions } from '../services/partCatalog'
-import { exportCustomerQuotePdf } from '../services/pdfExports'
-import { parseQuoteImportFile } from '../services/quoteImport'
-import { applyVendorRfqResponseFile } from '../services/vendorRfqResponses'
-import { getOemSuggestions, recommendVendorForPart } from '../services/vendorIntelligence'
-import { getVendorOptions } from '../services/vendors'
-import { exportVendorRfqPackage } from '../services/workbookExports'
-import type { CustomerQuote, Project, QuoteLine } from '../types'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { FileText, Pencil, Plus } from '@lucide/vue'
+import StatusBadge from '../components/StatusBadge.vue'
+import { calculateQuoteSummary, currency } from '../services/calculations'
+import { formatDisplayDate } from '../services/dateFormat'
+import { loadQuotes } from '../services/localProjects'
+import type { CustomerQuote } from '../types'
 
-type ExpirationDays = 30 | 60 | 90
+const quotes = ref<CustomerQuote[]>(loadQuotes())
+const search = ref('')
 
-const route = useRoute()
-const router = useRouter()
-const project = ref<Project>()
-const quote = ref<CustomerQuote>()
-const loaded = ref(false)
-const pricingMode = ref<PricingMode>('markup')
-const quantity = ref(1)
-const unitCost = ref(0)
-const markupPercent = ref(15)
-const marginPercent = ref(20)
-const draftLines = ref<QuoteLine[]>([])
-const expirationDays = ref<ExpirationDays>(30)
-const contractFeeEnabled = ref(false)
-const shippingCost = ref(0)
-const importStatus = ref('')
-const rfqStatus = ref('')
-const isEditMode = computed(() => Boolean(route.params.quoteId))
-const catalogStatus = ref('')
+const columns = [
+  'Quote #',
+  'Project',
+  'Customer',
+  'Status',
+  'Lines',
+  'Expires',
+  'Total Cost',
+  'Line Total',
+  'Contract Fee',
+  'Shipping',
+  'Quote Total',
+  'Created',
+  'Actions',
+]
 
-const lineForm = reactive({
-  partNumber: '',
-  manufacturer: '',
-  description: '',
-  vendor: '',
-  quoteNumber: '',
-  leadTime: '',
+onMounted(() => window.addEventListener('cronos:projects-changed', refreshQuotes))
+onUnmounted(() => window.removeEventListener('cronos:projects-changed', refreshQuotes))
+
+const filteredQuotes = computed(() => {
+  const term = search.value.trim().toLowerCase()
+  if (!term) return quotes.value
+
+  return quotes.value.filter(quote =>
+    [quote.quoteNumber, quote.projectNumber, quote.projectName, quote.customer, quote.status]
+      .join(' ')
+      .toLowerCase()
+      .includes(term),
+  )
 })
 
-const showPricingControls = computed(() => project.value?.projectType !== 'Design & Install')
-const nextClin = computed(() => String(draftLines.value.length + 1))
-const partSuggestions = computed(() => findPartPriceSuggestions(lineForm.partNumber))
-const oemSuggestions = computed(() => getOemSuggestions(lineForm.partNumber))
-const summary = computed(() => calculateQuoteSummaryWithContractFee(draftLines.value, contractFeeEnabled.value, shippingCost.value))
-const previewLine = computed(() =>
-  buildDraftLine({
-    clin: nextClin.value,
-    partNumber: lineForm.partNumber,
-    manufacturer: lineForm.manufacturer,
-    description: lineForm.description,
-    quantity: quantity.value,
-    unitCost: unitCost.value,
-    pricingMode: showPricingControls.value ? pricingMode.value : 'markup',
-    markupPercent: showPricingControls.value ? markupPercent.value : 0,
-    marginPercent: showPricingControls.value ? marginPercent.value : 0,
-    vendor: lineForm.vendor,
-    quoteNumber: lineForm.quoteNumber,
-    leadTime: lineForm.leadTime,
-  }),
+const totals = computed(() =>
+  quotes.value.reduce(
+    (summary, quote) => {
+      const quoteTotals = calculateQuoteSummary(
+        quote.lines,
+        quote.contractFeeEnabled,
+        quote.shippingCost ?? 0,
+      )
+      return {
+        count: summary.count + 1,
+        totalSell: summary.totalSell + quoteTotals.customerTotal,
+        totalGrossProfit: summary.totalGrossProfit + quoteTotals.totalGrossProfit,
+      }
+    },
+    { count: 0, totalSell: 0, totalGrossProfit: 0 },
+  ),
 )
-const previewTotals = computed(() => calculateLineTotals(previewLine.value))
-const rfqReadiness = computed(() => {
-  const totalLines = draftLines.value.length
-  const assignedVendorCount = draftLines.value.filter(line => line.vendor.trim()).length
-  const verifiedPricingCount = draftLines.value.filter(line => line.quoteNumber.trim() && line.unitCost > 0).length
 
-  return {
-    totalLines,
-    assignedVendorCount,
-    missingVendorCount: totalLines - assignedVendorCount,
-    verifiedPricingCount,
-    missingVerifiedPricingCount: totalLines - verifiedPricingCount,
-    readyForCustomerQuote: totalLines > 0 && assignedVendorCount === totalLines && verifiedPricingCount === totalLines,
-  }
-})
-
-onMounted(() => {
-  const loadedProject = loadProject(String(route.params.id))
-  const loadedQuote = loadedProject?.quotes.find(item => item.id === String(route.params.quoteId))
-  project.value = loadedProject
-  quote.value = loadedQuote
-
-  if (loadedQuote) {
-    draftLines.value = normalizePricingForProject(applySequentialClins(loadedQuote.lines ?? []), loadedProject?.projectType !== 'Design & Install')
-    expirationDays.value = loadedQuote.expirationDays ?? 30
-    contractFeeEnabled.value = loadedQuote.contractFeeEnabled ?? false
-    shippingCost.value = loadedQuote.shippingCost ?? 0
-  }
-
-  loaded.value = true
-})
-
-function addLine() {
-  draftLines.value = applySequentialClins([...draftLines.value, previewLine.value])
-  resetLineForm()
+function refreshQuotes() {
+  quotes.value = loadQuotes()
 }
 
-function applyCatalogPart(partNumber: string) {
-  const match = findLatestPartPrice(partNumber)
-  if (!match) {
-    const inferredVendor = recommendVendorForPart(partNumber, lineForm.manufacturer, lineForm.description)
-    lineForm.vendor ||= inferredVendor
-    catalogStatus.value = partNumber.trim()
-      ? inferredVendor
-        ? `Vendor inferred from OEM/product mapping: ${inferredVendor}.`
-        : 'No catalog match found yet. Keep typing for suggestions.'
-      : ''
-    return
-  }
-
-  lineForm.manufacturer = match.manufacturer || lineForm.manufacturer
-  lineForm.description = match.description || lineForm.description
-  lineForm.vendor = match.vendor || lineForm.vendor
-  unitCost.value = match.unitCost
-  catalogStatus.value = `Catalog match: ${match.partNumber} at ${currency(match.unitCost)} from ${match.poNumber}.`
+function quoteTotals(quote: CustomerQuote) {
+  return calculateQuoteSummary(
+    quote.lines,
+    quote.contractFeeEnabled,
+    quote.shippingCost ?? 0,
+  )
 }
 
-function saveQuote() {
-  if (!draftLines.value.length || !project.value) return
-
-  const normalizedLines = normalizePricingForProject(applySequentialClins(draftLines.value), showPricingControls.value)
-  if (quote.value) {
-    const updatedQuote = updateQuoteForProject(project.value.id, quote.value.id, normalizedLines, {
-      contractFeeEnabled: contractFeeEnabled.value,
-      expirationDays: expirationDays.value,
-      shippingCost: shippingCost.value,
-    })
-    router.push(`/projects/${project.value.id}?quote=${encodeURIComponent(updatedQuote.quoteNumber)}`)
-    return
-  }
-
-  const newQuoteLines = normalizedLines.map(({ id: _id, approved: _approved, ...line }) => line)
-  const createdQuote = createQuoteForProject(project.value.id, newQuoteLines, {
-    contractFeeEnabled: contractFeeEnabled.value,
-    expirationDays: expirationDays.value,
-    shippingCost: shippingCost.value,
-  })
-
-  router.push(`/projects/${project.value.id}?quote=${encodeURIComponent(createdQuote.quoteNumber)}`)
+function formatDate(value: string) {
+  return formatDisplayDate(value)
 }
 
-async function exportPdf() {
-  if (!quote.value) return
-
-  await exportCustomerQuotePdf({ ...quote.value, lines: draftLines.value }, project.value)
-  rfqStatus.value = `${quote.value.quoteNumber} PDF exported.`
-}
-
-async function exportRfqPackage() {
-  if (!draftLines.value.length || !project.value) return
-
-  const inferredLines = applySequentialClins(draftLines.value).map(inferQuoteLineVendor)
-  draftLines.value = inferredLines
-  const exportedCount = await exportVendorRfqPackage(project.value, inferredLines)
-  rfqStatus.value = `${exportedCount} vendor RFQ workbook${exportedCount === 1 ? '' : 's'} exported. Send each vendor their matching Cronos RFQ workbook, then import completed responses here.`
-}
-
-async function handleImport(event: Event) {
-  const file = (event.target as HTMLInputElement).files?.[0]
-  if (!file) {
-    importStatus.value = ''
-    return
-  }
-
-  try {
-    importStatus.value = `Reading ${file.name}...`
-    const importedLines = await parseQuoteImportFile(file)
-    const materialLines = importedLines.map(line =>
-      inferQuoteLineVendor(buildDraftLine({
-        ...line,
-        pricingMode: showPricingControls.value ? line.pricingMode ?? 'markup' : 'markup',
-        markupPercent: showPricingControls.value ? line.markupPercent : 0,
-        marginPercent: showPricingControls.value ? line.marginPercent : 0,
-      })),
-    )
-    draftLines.value = normalizePricingForProject(applySequentialClins([...draftLines.value, ...materialLines]), showPricingControls.value)
-    importStatus.value = materialLines.length
-      ? quote.value
-        ? `Added ${materialLines.length} imported line item(s) to this quote.`
-        : `Added ${materialLines.length} imported line item(s) to this quote draft.`
-      : 'No line items were found. Try an Excel/CSV table with headers like Part Number, Description, Qty, Unit Cost.'
-  } catch (error) {
-    importStatus.value = error instanceof Error ? error.message : 'Could not import this file.'
-  }
-}
-
-async function handleRfqImport(event: Event) {
-  const file = (event.target as HTMLInputElement).files?.[0]
-  if (!file) {
-    rfqStatus.value = ''
-    return
-  }
-
-  try {
-    const result = await applyVendorRfqResponseFile(file, draftLines.value)
-    draftLines.value = normalizePricingForProject(applySequentialClins(result.updatedLines), showPricingControls.value)
-    rfqStatus.value = `Updated ${result.updatedCount} line${result.updatedCount === 1 ? '' : 's'} with vendor pricing. ${result.unmatchedCount} response line${result.unmatchedCount === 1 ? '' : 's'} did not match ${quote.value ? 'this quote' : 'the current draft'}.`
-  } catch (error) {
-    rfqStatus.value = error instanceof Error ? error.message : 'Could not import vendor RFQ response.'
-  }
-}
-
-function buildDraftLine(input: Omit<QuoteLine, 'id' | 'approved'>): QuoteLine {
-  return {
-    ...input,
-    id: crypto.randomUUID(),
-    quantity: Number.isFinite(input.quantity) ? input.quantity : 0,
-    unitCost: Number.isFinite(input.unitCost) ? input.unitCost : 0,
-    approved: false,
-  }
-}
-
-function applySequentialClins(lines: QuoteLine[]) {
-  return lines.map((line, index) => ({
-    ...line,
-    clin: String(index + 1),
-  }))
-}
-
-function inferQuoteLineVendor<T extends Pick<QuoteLine, 'partNumber' | 'manufacturer' | 'description' | 'vendor'>>(line: T): T {
-  return {
-    ...line,
-    vendor: line.vendor || recommendVendorForPart(line.partNumber, line.manufacturer, line.description),
-  }
-}
-
-function normalizePricingForProject(lines: QuoteLine[], controlsVisible: boolean) {
-  if (controlsVisible) return lines
-
-  return lines.map(line => ({
-    ...line,
-    pricingMode: 'markup' as const,
-    markupPercent: 0,
-    marginPercent: 0,
-  }))
-}
-
-function resetLineForm() {
-  lineForm.partNumber = ''
-  lineForm.manufacturer = ''
-  lineForm.description = ''
-  lineForm.vendor = ''
-  lineForm.quoteNumber = ''
-  lineForm.leadTime = ''
-  catalogStatus.value = ''
-  quantity.value = 1
-  unitCost.value = 0
+function isIdentifierColumn(column: string) {
+  return /(^|\s)(#|id|po|project|quote|date|eta|cost|value|total|actions)(\s|$)/i.test(column)
 }
 </script>
