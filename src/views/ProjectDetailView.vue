@@ -197,6 +197,10 @@
                       <FileSpreadsheet :size="14" />
                       <span>Excel</span>
                     </button>
+                    <button class="mini-action danger" type="button" @click="removeQuote(quote)">
+                      <Trash2 :size="14" />
+                      <span>Delete</span>
+                    </button>
                   </div>
                 </td>
               </tr>
@@ -572,6 +576,7 @@ import {
   Plus,
   ReceiptText,
   Truck,
+  Trash2,
   Upload,
 } from '@lucide/vue'
 import type { Component } from 'vue'
@@ -582,6 +587,7 @@ import { getCheckbookSummary } from '../services/checkbook'
 import { parseCheckbookPoFile } from '../services/checkbookImport'
 import { formatDisplayDate } from '../services/dateFormat'
 import {
+  deleteQuoteForProject,
   generatePurchaseOrdersForQuote,
   importCheckbookPurchaseOrders,
   importPurchaseOrderTracking,
@@ -769,6 +775,21 @@ function toggleQuoteApproval(quoteId: string, approved: boolean) {
 function generatePurchaseOrders(quoteId: string) {
   const result = generatePurchaseOrdersForQuote(String(route.params.id), quoteId)
   project.value = result.project
+}
+
+function removeQuote(quote: CustomerQuote) {
+  if (!project.value) return
+  const linkedPoCount = project.value.purchaseOrders.filter(po => po.quoteId === quote.id).length
+  const linkedPoWarning = linkedPoCount
+    ? ` This will also delete ${linkedPoCount} linked purchase order${linkedPoCount === 1 ? '' : 's'}.`
+    : ''
+  if (!window.confirm(`Delete quote ${quote.quoteNumber}?${linkedPoWarning} This action cannot be undone.`)) return
+
+  try {
+    project.value = deleteQuoteForProject(project.value.id, quote.id).project
+  } catch (error) {
+    window.alert(error instanceof Error ? error.message : 'Unable to delete the quote.')
+  }
 }
 
 function updateLineTracking(poId: string, lineId: string, updates: Parameters<typeof updatePurchaseOrderLineTracking>[3]) {

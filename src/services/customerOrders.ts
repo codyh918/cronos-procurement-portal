@@ -61,6 +61,13 @@ export function saveCustomerOrders(orders: CustomerOrder[]) {
   saveLocalAndRemoteCollection(ORDERS_KEY, REMOTE_TYPE, REMOTE_KEY, orders.map(normalizeOrder), 'cronos:customer-orders-changed')
 }
 
+export function deleteCustomerOrdersForQuote(projectId: string, quoteId: string) {
+  const orders = loadCustomerOrders()
+  const remainingOrders = orders.filter(order => order.sourceProjectId !== projectId || order.sourceQuoteId !== quoteId)
+  if (remainingOrders.length !== orders.length) saveCustomerOrders(remainingOrders)
+  return orders.length - remainingOrders.length
+}
+
 export function loadCustomerOrder(id: string) {
   return loadCustomerOrders().find(order => order.id === id)
 }

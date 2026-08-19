@@ -2,7 +2,7 @@ import type { CustomerQuote, Project, ProjectFormInput, ProjectPurchaseOrder, Pu
 import { TRACKING_25_100_ROWS } from '../data/tracking-25-100-data'
 import { generateVendorPurchaseOrders, groupQuoteLinesByVendor, marginPercentToMarkupPercent } from './calculations'
 import type { CheckbookPoImportInput } from './checkbookImport'
-import { syncCustomerOrdersFromApprovedProjects } from './customerOrders'
+import { deleteCustomerOrdersForQuote, syncCustomerOrdersFromApprovedProjects } from './customerOrders'
 import { recordPurchaseOrdersInCatalog } from './partCatalog'
 import { hydrateLocalCollection, readLocalCollection, saveLocalAndRemoteCollection, saveLocalAndRemoteCollectionStrict } from './remoteRecords'
 import type { TrackingImportInput } from './trackingImport'
@@ -189,6 +189,41 @@ export async function updateQuoteForProjectStrict(
   await saveProjectsStrict(projects, updatedProject.id)
   finalizeQuoteUpdateSync(updatedProject, updatedQuote, syncResult)
   return updatedQuote
+}
+
+export function deleteQuoteForProject(projectId: string, quoteId: string) {
+  const project = loadProject(projectId)
+  if (!project) {
+    throw new Error('Project not found.')
+  }
+
+  const quote = project.quotes?.find(item => item.id === quoteId)
+  if (!quote) {
+    throw new Error('Quote not found.')
+  }
+
+  const quotes = (project.quotes ?? []).filter(item => item.id !== quoteId)
+  const deletedPurchaseOrders = project.purchaseOrders.filter(po => po.quoteId === quoteId)
+  const remainingPurchaseOrders = project.purchaseOrders.filter(po => po.quoteId !== quoteId)
+  const hasApprovedQuotes = quotes.some(item => item.status === 'Customer Approved')
+  const updatedProject = normalizeProject({
+    ...project,
+    status: hasApprovedQuotes ? 'Customer Approved' : 'Quoted',
+    quotes,
+    quoteLines: quotes.flatMap(item => item.lines),
+    purchaseOrders: remainingPurchaseOrders,
+  })
+
+  // A full collection save is intentional: nested-record merging would otherwise
+  // restore the deleted quote or its linked purchase orders from the remote copy.
+  saveProjects(loadProjects().map(current => (current.id === project.id ? updatedProject : current)))
+  deleteCustomerOrdersForQuote(project.id, quote.id)
+
+  return {
+    project: updatedProject,
+    quote,
+    deletedPurchaseOrderCount: deletedPurchaseOrders.length,
+  }
 }
 
 function prepareQuoteUpdate(
