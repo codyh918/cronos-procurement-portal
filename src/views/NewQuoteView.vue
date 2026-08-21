@@ -803,7 +803,9 @@ async function exportRfqPackage() {
 }
 
 async function handleImport(event: Event) {
-  const file = (event.target as HTMLInputElement).files?.[0]
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
   if (!file) {
     importStatus.value = ''
     return
@@ -820,8 +822,16 @@ async function handleImport(event: Event) {
     }
     const analysis = await analyzeMelImportFile(file)
     await matchMelItemsToCatalog(analysis.items)
+    const includedItems = analysis.items.filter(item => item.included)
+    if (includedItems.length && !analysis.needsManualMapping) {
+      approveMelImport(includedItems)
+      return
+    }
+
     melImportAnalysis.value = analysis
-    importStatus.value = analysis.diagnostics
+    importStatus.value = includedItems.length
+      ? `${analysis.diagnostics} Review the detected rows below, confirm the column mapping, then select Import to Quote.`
+      : `${analysis.diagnostics} No importable rows were found. Review the column mapping below.`
   } catch (error) {
     importStatus.value = error instanceof Error ? error.message : 'Could not import this file.'
   }
