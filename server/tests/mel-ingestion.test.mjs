@@ -65,6 +65,22 @@ test('canonical master lines receive supplemental unit prices from a supporting 
   assert.ok(result.items.every(item => item.source.sheet === 'Pricing Template' || item.pricingSource?.sheet === 'Pricing Template'))
 })
 
+test('explicit Unit Cost takes precedence over a generic Cost column', () => {
+  const rows = [
+    ['Item No.', 'Description', 'Manufacturer', 'Part Number', 'Cost', 'QTY', 'Cronos Cost', 'Delta', 'Vendor', 'Unit Cost', 'Lead Time'],
+    [1, 'OWC 14-Port Thunderbolt Dock w/ Cable', 'OWC', 'OWCTB3DK14PSG', 48, 7, '', '', 'TD Synnex', 151.19, '2 week lead time'],
+  ]
+  const result = analyzeMelWorkbook(workbook(sheet('Sheet1', rows)))
+  assert.equal(result.items.length, 1)
+  assert.equal(result.items[0].unitCost, 151.19)
+})
+
+test('generic Cost remains supported when no explicit Unit Cost column exists', () => {
+  const rows = [['Description', 'Manufacturer', 'Part Number', 'Cost', 'QTY'], ['Dock', 'OWC', 'OWCTB3DK14PSG', 48, 7]]
+  const result = analyzeMelWorkbook(workbook(sheet('Sheet1', rows)))
+  assert.equal(result.items[0].unitCost, 48)
+})
+
 test('manual mapping fallback extracts a possible equipment table', () => {
   const source = sheet('Unknown', [['Amount', 'What', 'Code', 'Who'], ['3', 'X-Large Fusion Tilt Wall Mount', 'XTM1U-G', 'Chief']])
   const items = remapMelSheet(source, { 0: 'quantity', 1: 'description', 2: 'partNumber', 3: 'manufacturer' }, 0, { filename: 'manual.xlsx' })

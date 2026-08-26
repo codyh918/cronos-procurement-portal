@@ -1,39 +1,19 @@
-# Atlas Weekly Procurement Sync — Git Upload
+# Atlas Material Tracking Redesign
 
-This folder contains the files required for the Procurement Leader Dashboard and Weekly Procurement Sync release.
+Copy the contents of this folder into the repository root, preserving the included paths, then commit and deploy through the existing Railway workflow.
 
-Upload the **contents** of this folder into the production repository root while preserving the included paths. Do not upload this wrapper directory itself.
+This package includes:
 
-## Deployment order
+- Grouped Material Tracking interface and shipment drawer
+- Multiple and partial shipments per MEL line
+- Shared shipments across multiple MEL lines
+- Backward-compatible legacy tracking migration
+- Shipment-aware import and export behavior
+- Material Tracking regression tests
+- MEL Unit Cost precedence fix from the prior upload issue
 
-1. In the production Supabase SQL Editor, run `migrations/20260812_create_weekly_procurement_sync.sql`.
-2. Upload `src` and `server` into the corresponding repository directories.
-3. Commit and push the changes so Railway starts a deployment.
-4. Confirm `npm run type-check`, `npm run test:server`, and `npm run build` pass.
-5. Sign in as Cody Hibbard and verify that the Procurement Weekly Sync dashboard appears.
-6. Sign in as another procurement user and verify that the existing operational dashboard remains unchanged.
-7. Test creating a note, action, and discussion flag; refresh the page and confirm they persist.
+Validation completed before packaging:
 
-## Included files
-
-- `src/components/dashboard/ProcurementLeadershipDashboard.vue`
-- `src/services/weeklyProcurement.ts`
-- `src/services/auth.ts`
-- `src/views/DashboardView.vue`
-- `migrations/20260812_create_weekly_procurement_sync.sql`
-- `server/tests/weekly-procurement.test.mjs`
-
-## Access behavior
-
-Dashboard selection is centralized through `hasProcurementLeadershipDashboardAccess`. Cody's known Atlas email/username identities receive the leader dashboard. Other users continue to receive their existing dashboard.
-
-## Persistence
-
-Apply the migration before deployment for normalized production tables and indexes. The application service also uses Atlas's existing local-first `app_records` synchronization path, which keeps the dashboard usable during temporary remote connectivity failures.
-
-## Verification completed
-
-- TypeScript type-check: passed
-- Server tests: 46 passed, 0 failed
-- Production Vite build: passed
-
+- `npm run test:server`
+- `npm run type-check`
+- `npm run build`

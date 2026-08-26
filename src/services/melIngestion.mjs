@@ -77,7 +77,7 @@ function inferColumns(rows, headerRow) {
     const headerText = text(header[column])
     const values = rows.slice(headerRow + 1, headerRow + 16).map(row => text(row[column])).filter(Boolean)
     for (const field of Object.keys(ALIASES)) {
-      const headerScore = aliasScore(headerText, ALIASES[field])
+      const headerScore = aliasScore(headerText, ALIASES[field], field)
       const valueScore = semanticValueScore(field, values)
       const score = clamp(headerScore * 0.72 + valueScore * 0.28)
       if (score >= 0.42) proposals.push({ column, field, score })
@@ -121,12 +121,12 @@ function extractRegion(sheet, rows, region, options) {
   return items
 }
 
-function aliasScore(value, aliases) {
+function aliasScore(value, aliases, field = '') {
   const normalized = normalize(value); if (!normalized) return 0
   let best = 0
   for (const alias of aliases) {
     const target = normalize(alias)
-    if (normalized === target) best = Math.max(best, 1)
+    if (normalized === target) best = Math.max(best, field === 'unitCost' && target === 'cost' ? 0.86 : 1)
     else if (normalized.includes(target) || target.includes(normalized)) best = Math.max(best, 0.88)
     else { const similarity = 1 - levenshtein(normalized, target) / Math.max(normalized.length, target.length, 1); if (similarity >= 0.72) best = Math.max(best, similarity * 0.9) }
   }

@@ -9,6 +9,7 @@ import type { TrackingImportInput } from './trackingImport'
 import { loadVendorDirectory } from './vendorDirectory'
 import { normalizeCustomerFields } from './customerFormatting'
 import { createCustomerFromProject, findAddressById, findCustomerById, rememberCustomerUse, snapshotFromCustomerAddress, upsertAddressForProject } from './customerRecords'
+import { migrateLegacyMaterialTracking } from './materialTracking'
 
 const STORAGE_KEY = 'cronos.projects'
 const REMOTE_TYPE = 'projects'
@@ -44,6 +45,8 @@ export function saveProject(input: ProjectFormInput): Project {
     inventory: [],
     kitStatus: 'Quoted',
     shipmentStatus: 'Quoted',
+    materialShipments: [],
+    materialTrackingActivity: [],
   }
 
   const linkedProject = linkProjectCustomer(project)
@@ -53,6 +56,12 @@ export function saveProject(input: ProjectFormInput): Project {
 
 export function loadProject(id: string): Project | undefined {
   return loadProjects().find(project => project.id === id)
+}
+
+export function saveMaterialTrackingProject(project: Project) {
+  const normalized = normalizeProject(project)
+  saveProjects(loadProjects().map(current => (current.id === normalized.id ? normalized : current)), normalized.id)
+  return normalized
 }
 
 export function updateProjectFromInput(id: string, input: ProjectFormInput): Project | undefined {
@@ -835,7 +844,7 @@ export function importPurchaseOrderTracking(projectId: string, rows: TrackingImp
 
 function normalizeProject(project: Project): Project {
   const normalizedCustomer = normalizeCustomerFields(project)
-  return {
+  const normalized: Project = {
     ...normalizedCustomer,
     customerId: normalizedCustomer.customerId ?? '',
     customerAddressId: normalizedCustomer.customerAddressId ?? '',
@@ -860,6 +869,7 @@ function normalizeProject(project: Project): Project {
     kitStatus: project.kitStatus ?? 'Quoted',
     shipmentStatus: project.shipmentStatus ?? 'Quoted',
   }
+  return migrateLegacyMaterialTracking(normalized)
 }
 
 function linkProjectCustomer(project: Project): Project {
@@ -958,6 +968,8 @@ function mergeProjectPreservingNestedRecords(remoteItem: unknown, localItem: unk
     quoteLines,
     purchaseOrders: mergeNestedById(remoteProject.purchaseOrders, localProject.purchaseOrders),
     inventory: mergeNestedById(remoteProject.inventory, localProject.inventory),
+    materialShipments: mergeNestedById(remoteProject.materialShipments, localProject.materialShipments),
+    materialTrackingActivity: mergeNestedById(remoteProject.materialTrackingActivity, localProject.materialTrackingActivity),
   })
 }
 

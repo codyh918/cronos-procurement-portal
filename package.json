@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "type-check": "vue-tsc --noEmit -p tsconfig.json",
-    "test:server": "node --test server/tests/*.test.mjs",
+    "test:server": "node --experimental-strip-types --test server/tests/*.test.mjs",
     "validate:documents": "node scripts/validate-documents.mjs",
     "preview": "vite preview --host 0.0.0.0",
     "start": "node server.mjs"

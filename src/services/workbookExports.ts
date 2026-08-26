@@ -15,6 +15,7 @@ import {
   validateQuoteLines,
 } from './documentGeneration'
 import { loadVendorDirectory } from './vendorDirectory'
+import { shipmentLineExportRows } from './materialTracking'
 
 const CRONOS_CAGE_CODE = '8NPB1'
 
@@ -42,6 +43,10 @@ type TrackingWorkbookLine = PurchaseOrderLine & {
   poNumber: string
   poStatus: Status
   vendor: string
+  quantityShipped?: number
+  quantityRemaining?: number
+  actualShipDate?: string
+  deliveredDate?: string
 }
 
 export async function exportProjectTrackingWorkbook(project: Project) {
@@ -421,7 +426,7 @@ function buildTrackingSummarySheet(project: Project, lines: TrackingWorkbookLine
 function buildTrackingDetailSheet(project: Project, lines: TrackingWorkbookLine[], generatedDate: string): WorkbookSheet {
   const poc = getProjectDocumentContact(project)
   const customer = structuredCustomerFromProject(project)
-  const headers = ['Line Item', 'PO Number', 'Vendor', 'Part Number', 'Description', 'Quantity', 'Carrier', 'Tracking Number', 'Status', 'Ship Date', 'Estimated Delivery', 'Actual Delivery', 'Notes']
+  const headers = ['Line Item', 'PO Number', 'Vendor', 'Manufacturer', 'Part Number', 'Description', 'Qty Ordered', 'Qty Shipped', 'Qty Remaining', 'Expected Ship', 'Actual Ship', 'Carrier', 'Tracking Number', 'Expected Delivery', 'Delivered Date', 'Status']
   const tableHeaderRow = 11
   const rowsByPo = groupTrackingLinesByPo(lines)
   let lineItemNumber = 1
@@ -432,16 +437,19 @@ function buildTrackingDetailSheet(project: Project, lines: TrackingWorkbookLine[
         { value: lineItemNumber++, style: 19 },
         { value: group.poNumber, style: 19 },
         { value: group.vendor, style: 19 },
+        { value: line.manufacturer || '', style: 19 },
         { value: line.partNumber, style: 19 },
         { value: conciseTrackingDescription(line.description), style: 22 },
         { value: line.quantityOrdered, style: 19 },
+        { value: line.quantityShipped ?? 0, style: 19 },
+        { value: line.quantityRemaining ?? line.quantityOrdered, style: 19 },
+        { value: formatDateForWorkbook(line.estimatedShipDate), style: 19 },
+        { value: formatDateForWorkbook(line.actualShipDate), style: 19 },
         { value: line.carrier || 'Pending', style: 19 },
         { value: line.trackingNumber || 'Pending', style: 19 },
-        { value: trackingStatus, style: trackingStatusStyle(trackingStatus) },
-        { value: formatDateForWorkbook(line.estimatedShipDate), style: 19 },
         { value: formatDateForWorkbook(line.estimatedDeliveryDate), style: 19 },
-        { value: formatDateForWorkbook(line.receivedDate), style: 19 },
-        { value: line.notes ?? '', style: 22 },
+        { value: formatDateForWorkbook(line.deliveredDate || line.receivedDate), style: 19 },
+        { value: trackingStatus, style: trackingStatusStyle(trackingStatus) },
       ]
     }),
   )
@@ -486,31 +494,27 @@ function buildTrackingDetailSheet(project: Project, lines: TrackingWorkbookLine[
   return {
     name: 'Material Tracking',
     rows,
-    columnWidths: [12, 22, 24, 24, 42, 10, 18, 30, 20, 14, 18, 16, 38],
+    columnWidths: [10, 22, 22, 20, 22, 38, 11, 11, 12, 14, 14, 16, 28, 16, 16, 18],
     merges: ['D1:H1', 'D2:H2', 'C4:D4', 'F4:H4', 'C5:D5', 'F5:H5', 'C6:D6', 'F6:H6'],
     freezePane: 'A12',
-    autoFilter: `A${tableHeaderRow}:M${Math.max(tableHeaderRow, rows.length)}`,
+    autoFilter: `A${tableHeaderRow}:P${Math.max(tableHeaderRow, rows.length)}`,
     printTitleRows: '1:11',
     landscape: true,
   }
 }
 
 function getTrackingWorkbookLines(project: Project): TrackingWorkbookLine[] {
-  return project.purchaseOrders.flatMap(po =>
-    po.lines.map(line => ({
-      ...normalizePurchaseOrderLineForDocument(line),
-      poNumber: po.poNumber,
-      poStatus: po.status,
-      vendor: po.vendor,
-      vendorOrderNumber: line.vendorOrderNumber,
-      carrier: line.carrier ?? '',
-      trackingNumber: line.trackingNumber ?? '',
-      estimatedShipDate: line.estimatedShipDate ?? '',
-      estimatedDeliveryDate: line.estimatedDeliveryDate ?? '',
-      receivedDate: line.receivedDate ?? '',
-      notes: line.notes ?? '',
-    })),
-  )
+  return shipmentLineExportRows(project).map(row => ({
+    id: `${row.poNumber}-${row.partNumber}-${row.trackingNumber}-${row.actualShipDate}`,
+    clin: '', partNumber: row.partNumber, manufacturer: row.manufacturer, description: row.description,
+    quantityOrdered: row.quantityOrdered, quantityReceived: row.quantityDelivered, unitCost: 0,
+    status: row.status === 'Delivered' ? 'Delivered' : row.status === 'Partial' ? 'Partially Shipped' : row.status === 'In Transit' ? 'Shipped' : 'Ordered',
+    poNumber: row.poNumber, poStatus: 'Ordered', vendor: row.vendor,
+    quantityShipped: row.shipmentQuantity, quantityRemaining: row.quantityRemaining,
+    estimatedShipDate: row.expectedShipDate, actualShipDate: row.actualShipDate,
+    carrier: row.carrier, trackingNumber: row.trackingNumber,
+    estimatedDeliveryDate: row.expectedDeliveryDate, deliveredDate: row.deliveredDate,
+  }))
 }
 
 function groupTrackingLinesByPo(lines: TrackingWorkbookLine[]) {

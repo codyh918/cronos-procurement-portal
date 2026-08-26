@@ -315,6 +315,13 @@
     </section>
 
     <section v-if="activeTab === 'material-tracking'" id="project-equipment" class="project-tab-panel">
+      <MaterialTrackingPanel
+        :project="project"
+        @updated="project = $event"
+        @import="trackingFileInput?.click()"
+        @export="exportTrackingWorkbook"
+      />
+      <template v-if="false">
       <PanelHeading
         title="Material Tracking"
         description="Line-item procurement status, expected ship dates, carriers, and tracking."
@@ -434,6 +441,7 @@
       <section v-else class="large-empty-card compact-empty">
         <p>No purchased equipment has been generated yet.</p>
       </section>
+      </template>
     </section>
 
     <section v-if="activeTab === 'shipments'" class="project-tab-panel">
@@ -576,21 +584,23 @@ import {
 } from '@lucide/vue'
 import type { Component } from 'vue'
 import StatusBadge from '../components/StatusBadge.vue'
+import MaterialTrackingPanel from '../components/MaterialTrackingPanel.vue'
 import { calculateQuoteSummary, currency } from '../services/calculations'
-import { loadUsers } from '../services/auth'
+import { fetchSession, loadUsers } from '../services/auth'
 import { getCheckbookSummary } from '../services/checkbook'
 import { parseCheckbookPoFile } from '../services/checkbookImport'
 import { formatDisplayDate } from '../services/dateFormat'
 import {
   generatePurchaseOrdersForQuote,
   importCheckbookPurchaseOrders,
-  importPurchaseOrderTracking,
   loadProject,
+  saveMaterialTrackingProject,
   setQuoteApprovalStatus,
   updatePurchaseOrderLineTracking,
 } from '../services/localProjects'
 import { exportCheckbookReportPdf, exportCustomerConsolidatedTrackingReportPdf, exportCustomerQuotePdf as downloadCustomerQuotePdf, exportPurchaseOrderPdf as downloadPurchaseOrderPdf } from '../services/pdfExports'
 import { parseTrackingImportFile } from '../services/trackingImport'
+import { importMaterialTracking } from '../services/materialTracking'
 import { exportCheckbookFinancialWorkbook, exportCustomerQuoteWorkbook, exportProjectTrackingWorkbook } from '../services/workbookExports'
 import type { CustomerQuote, Project, PurchaseOrder, PurchaseOrderLine, Status } from '../types'
 
@@ -840,7 +850,7 @@ async function importCheckbookWorkbook(event: Event) {
   try {
     const rows = await parseCheckbookPoFile(file)
     const result = importCheckbookPurchaseOrders(String(route.params.id), rows)
-    project.value = result.project
+    project.value = saveMaterialTrackingProject(result.project)
     importMessage.value = `${result.importedCount} PO${result.importedCount === 1 ? '' : 's'} imported. ${result.skippedCount} skipped.`
   } catch (error) {
     window.alert(error instanceof Error ? error.message : 'Unable to import the workbook.')
@@ -855,9 +865,11 @@ async function importTrackingWorkbook(event: Event) {
 
   try {
     const rows = await parseTrackingImportFile(file)
-    const result = importPurchaseOrderTracking(String(route.params.id), rows)
+    if (!project.value) return
+    const session = fetchSession() || { id: 'atlas-user', name: 'Atlas User' }
+    const result = importMaterialTracking(project.value, rows, session)
     project.value = result.project
-    importMessage.value = `${result.importedCount} PO${result.importedCount === 1 ? '' : 's'} updated from tracking import. ${result.skippedCount} skipped.`
+    importMessage.value = `${result.importedCount} shipment line${result.importedCount === 1 ? '' : 's'} imported. ${result.skippedCount} row${result.skippedCount === 1 ? '' : 's'} require review.`
   } catch (error) {
     window.alert(error instanceof Error ? error.message : 'Unable to import the tracking file.')
   }
