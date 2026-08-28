@@ -1,6 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { analyzeMelWorkbook, remapMelSheet } from '../../src/services/melIngestion.mjs'
+import { melItemToQuoteLine } from '../../src/services/quoteImport.ts'
 
 const workbook = (...sheets) => ({ filename: 'customer-mel.xlsx', sheets })
 const sheet = (name, rows, extra = {}) => ({ name, rows, ...extra })
@@ -91,4 +92,13 @@ test('duplicate detection uses normalized manufacturer and part number without c
   const rows = [['Qty', 'Part Number', 'Description', 'Manufacturer', 'Room'], ['1', 'XTM1U-G', 'Mount', 'Chief', '101'], ['2', 'xtm1u-g', 'Mount', 'CHIEF', '102']]
   const result = analyzeMelWorkbook(workbook(sheet('MEL', rows)))
   assert.equal(result.items.filter(item => item.duplicate).length, 2); assert.notEqual(result.items[0].room, result.items[1].room)
+})
+
+test('MEL imports do not guess a vendor from manufacturer or generic product keywords', () => {
+  const imported = melItemToQuoteLine({
+    clin: '1', partNumber: 'CAT6-BLUE', manufacturer: 'Belden', description: 'Category 6 network cable', quantity: 2,
+    unitCost: 12, catalogProductId: null, confidence: { overall: 1, quantity: 1, partNumber: 1, description: 1, manufacturer: 1 },
+    source: { filename: 'material.xlsx', sheet: 'MEL', row: 2, headerRow: 1, parsingMethod: 'deterministic-semantic', originalValues: {} },
+  })
+  assert.equal(imported.vendor, '')
 })

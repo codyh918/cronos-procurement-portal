@@ -796,9 +796,9 @@ async function exportExcel() {
 async function exportRfqPackage() {
   if (!draftLines.value.length || !project.value) return
 
-  const inferredLines = applySequentialClins(draftLines.value).map(inferQuoteLineVendor)
-  draftLines.value = inferredLines
-  const exportedCount = await exportVendorRfqPackage(project.value, inferredLines)
+  const preparedLines = applySequentialClins(draftLines.value)
+  draftLines.value = preparedLines
+  const exportedCount = await exportVendorRfqPackage(project.value, preparedLines)
   rfqStatus.value = `${exportedCount} vendor RFQ workbook${exportedCount === 1 ? '' : 's'} exported. Send each vendor their matching Cronos RFQ workbook, then import completed responses here.`
 }
 
@@ -815,7 +815,7 @@ async function handleImport(event: Event) {
     importStatus.value = `Analyzing ${file.name}...`
     if (/\.pdf$/i.test(file.name)) {
       const importedLines = await parseQuoteImportFile(file)
-      const materialLines = importedLines.map(line => inferQuoteLineVendor(buildDraftLine({ ...line, pricingMode: showPricingControls.value ? line.pricingMode ?? 'markup' : 'markup', markupPercent: showPricingControls.value ? line.markupPercent : 0, marginPercent: 0 })))
+      const materialLines = importedLines.map(line => buildDraftLine({ ...line, pricingMode: showPricingControls.value ? line.pricingMode ?? 'markup' : 'markup', markupPercent: showPricingControls.value ? line.markupPercent : 0, marginPercent: 0 }))
       draftLines.value = normalizePricingForProject(applySequentialClins([...draftLines.value, ...materialLines]), showPricingControls.value)
       importStatus.value = `Added ${materialLines.length} PDF line item(s). Spreadsheet imports provide the full review workflow.`
       return
@@ -860,7 +860,7 @@ function approveMelImport(items: MelItem[]) {
   const materialLines = items.map(item => {
     const line = melItemToQuoteLine(item)
     if (line.melImport) line.melImport.importedBy = importedBy
-    return inferQuoteLineVendor(buildDraftLine({ ...line, clin: line.clin || String(draftLines.value.length + 1), pricingMode: showPricingControls.value ? line.pricingMode ?? 'markup' : 'markup', markupPercent: showPricingControls.value ? line.markupPercent : 0, marginPercent: 0 }))
+    return buildDraftLine({ ...line, clin: line.clin || String(draftLines.value.length + 1), pricingMode: showPricingControls.value ? line.pricingMode ?? 'markup' : 'markup', markupPercent: showPricingControls.value ? line.markupPercent : 0, marginPercent: 0 })
   })
   draftLines.value = normalizePricingForProject(applySequentialClins([...draftLines.value, ...materialLines]), showPricingControls.value)
   importStatus.value = `Imported ${materialLines.length} reviewed MEL line item${materialLines.length === 1 ? '' : 's'} into the quote draft.`
@@ -922,13 +922,6 @@ function applySequentialClins(lines: QuoteLine[]) {
     ...line,
     clin: String(index + 1),
   }))
-}
-
-function inferQuoteLineVendor<T extends Pick<QuoteLine, 'partNumber' | 'manufacturer' | 'description' | 'vendor'>>(line: T): T {
-  return {
-    ...line,
-    vendor: line.vendor || recommendVendorForPart(line.partNumber, line.manufacturer, line.description),
-  }
 }
 
 function normalizePricingForProject(lines: QuoteLine[], controlsVisible: boolean) {
