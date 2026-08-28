@@ -40,9 +40,16 @@ type WorkbookSheet = {
 }
 
 type TrackingWorkbookLine = PurchaseOrderLine & {
+  materialLineId?: string
   poNumber: string
   poStatus: Status
   vendor: string
+  quoteId?: string
+  quoteNumber?: string
+  quoteName?: string
+  lineNumber?: string
+  customerNote?: string
+  customerStatus?: 'PO Issued' | 'Processing' | 'In Transit' | 'Delivered'
   quantityShipped?: number
   quantityRemaining?: number
   actualShipDate?: string
@@ -55,13 +62,7 @@ export async function exportProjectTrackingWorkbook(project: Project) {
   const lines = getTrackingWorkbookLines(project)
   validatePurchaseOrderLines(audit, lines)
   const generatedDate = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric', year: 'numeric' }).format(new Date())
-  const isCheckbook = project.projectType === 'Checkbook'
-  const sheets = project.projectType === 'Design & Install'
-    ? [buildTrackingDetailSheet(project, lines, generatedDate)]
-    : [
-        buildTrackingDetailSheet(project, lines, generatedDate),
-        buildTrackingSummarySheet(project, lines, generatedDate, isCheckbook),
-      ]
+  const sheets = [buildTrackingSummarySheet(project, lines, generatedDate, false), buildTrackingDetailSheet(project, lines, generatedDate)]
 
   await downloadWorkbook(
     sheets,
@@ -355,166 +356,110 @@ function buildVendorRfqInstructionsSheet(): WorkbookSheet {
 }
 
 function buildTrackingSummarySheet(project: Project, lines: TrackingWorkbookLine[], generatedDate: string, includeCosts: boolean): WorkbookSheet {
-  const projectCost = includeCosts ? getCheckbookSummary(project).customerCost : 0
-  const headers = includeCosts
-    ? ['Project Tab', 'Line Items', 'Received', 'Tracking Provided', 'Scheduled', 'Pending Update', 'Project Cost']
-    : ['Project Tab', 'Line Items', 'Received', 'Tracking Provided', 'Scheduled', 'Pending Update']
-  const summaryRow: WorkbookCell[] = [
-    'Material Tracking',
-    lines.length,
-    countReceived(lines),
-    countTracking(lines),
-    countScheduled(lines),
-    countPending(lines),
-  ]
-  if (includeCosts) summaryRow.push({ value: projectCost, style: 20 })
-
+  void includeCosts
+  const uniqueLines = uniqueTrackingMaterialLines(lines)
+  const totals = customerStatusCounts(uniqueLines)
+  const quoteGroups = groupTrackingLinesByQuote(uniqueLines)
   const rows: WorkbookCell[][] = [
-    [{ value: `Tracking Report ${project.projectNumber}`, style: 14 }],
-    [{ value: `Customer procurement update | Generated ${generatedDate}`, style: 15 }],
+    [{ value: 'Customer Material Tracking Report', style: 14 }],
+    [{ value: `${project.projectName} | ${project.projectNumber}`, style: 15 }],
     [],
-    [
-      { value: lines.length, style: 16 },
-      '',
-      '',
-      { value: countReceived(lines), style: 16 },
-      '',
-      '',
-      { value: countTracking(lines), style: 16 },
-      '',
-      '',
-      { value: countScheduled(lines), style: 16 },
-      '',
-      '',
-      { value: countPending(lines), style: 16 },
-    ],
+    [{ value: 'Project Name', style: 1 }, { value: project.projectName, style: 4 }, '', { value: 'Project Number', style: 1 }, { value: project.projectNumber, style: 4 }],
+    [{ value: 'Customer', style: 1 }, { value: project.customer, style: 4 }, '', { value: 'Report Date', style: 1 }, { value: generatedDate, style: 4 }],
     [],
-    [
-      { value: 'Line Items', style: 17 },
-      '',
-      '',
-      { value: 'Received', style: 17 },
-      '',
-      '',
-      { value: 'Tracking Provided', style: 17 },
-      '',
-      '',
-      { value: 'Scheduled', style: 17 },
-      '',
-      '',
-      { value: 'Pending Update', style: 17 },
-    ],
+    ['Total Line Items', 'PO Issued', 'Processing', 'In Transit', 'Delivered'].map(value => ({ value, style: 17 })),
+    [uniqueLines.length, totals['PO Issued'], totals.Processing, totals['In Transit'], totals.Delivered].map(value => ({ value, style: 16 })),
     [],
-    [],
-    headers.map(value => ({ value, style: 18 })),
-    summaryRow.map(cell => (typeof cell === 'object' ? cell : { value: cell, style: 19 })),
+    [{ value: 'Quote / MEL Status', style: 14 }],
+    ['Quote / MEL', 'Total Lines', 'PO Issued', 'Processing', 'In Transit', 'Delivered'].map(value => ({ value, style: 18 })),
+    ...quoteGroups.map(group => { const counts = customerStatusCounts(group.lines); return [group.label, group.lines.length, counts['PO Issued'], counts.Processing, counts['In Transit'], counts.Delivered].map(value => ({ value, style: 19 })) }),
   ]
-
-  if (includeCosts) {
-    rows.push([], ['', '', '', '', '', { value: 'Total Cost', style: 21 }, { formula: 'SUM(G10:G10)', value: projectCost, style: 20 }])
-  }
-
-  return {
-    name: 'Summary',
-    rows,
-    columnWidths: [34, 14, 14, 20, 14, 18, 16, 14, 14, 18, 14, 14, 18, 14, 14],
-    merges: ['A1:O1', 'A2:O2', 'A4:B5', 'D4:E5', 'G4:H5', 'J4:K5', 'M4:N5', 'A6:B6', 'D6:E6', 'G6:H6', 'J6:K6', 'M6:N6'],
-    freezePane: 'A9',
-  }
+  return { name: 'Summary', rows, columnWidths: [38, 16, 16, 16, 16, 16], merges: ['A1:F1', 'A2:F2', 'A10:F10'], freezePane: 'A11' }
 }
 
 function buildTrackingDetailSheet(project: Project, lines: TrackingWorkbookLine[], generatedDate: string): WorkbookSheet {
-  const poc = getProjectDocumentContact(project)
-  const customer = structuredCustomerFromProject(project)
-  const headers = ['Line Item', 'PO Number', 'Vendor', 'Manufacturer', 'Part Number', 'Description', 'Qty Ordered', 'Qty Shipped', 'Qty Remaining', 'Expected Ship', 'Actual Ship', 'Carrier', 'Tracking Number', 'Expected Delivery', 'Delivered Date', 'Status']
-  const tableHeaderRow = 11
-  const rowsByPo = groupTrackingLinesByPo(lines)
-  let lineItemNumber = 1
-  const dataRows: WorkbookCell[][] = rowsByPo.flatMap(group =>
-    group.lines.map(line => {
-      const trackingStatus = getTrackingWorkbookStatus(line)
-      return [
-        { value: lineItemNumber++, style: 19 },
-        { value: group.poNumber, style: 19 },
-        { value: group.vendor, style: 19 },
-        { value: line.manufacturer || '', style: 19 },
-        { value: line.partNumber, style: 19 },
-        { value: conciseTrackingDescription(line.description), style: 22 },
-        { value: line.quantityOrdered, style: 19 },
-        { value: line.quantityShipped ?? 0, style: 19 },
-        { value: line.quantityRemaining ?? line.quantityOrdered, style: 19 },
-        { value: formatDateForWorkbook(line.estimatedShipDate), style: 19 },
-        { value: formatDateForWorkbook(line.actualShipDate), style: 19 },
-        { value: line.carrier || 'Pending', style: 19 },
-        { value: line.trackingNumber || 'Pending', style: 19 },
-        { value: formatDateForWorkbook(line.estimatedDeliveryDate), style: 19 },
-        { value: formatDateForWorkbook(line.deliveredDate || line.receivedDate), style: 19 },
-        { value: trackingStatus, style: trackingStatusStyle(trackingStatus) },
-      ]
-    }),
-  )
-
-  const totalPurchaseOrders = rowsByPo.length
-  const delivered = lines.filter(line => getTrackingWorkbookStatus(line) === 'Delivered').length
-  const partiallyShipped = lines.filter(line => getTrackingWorkbookStatus(line) === 'Partially Shipped').length
-  const inTransit = lines.filter(line => getTrackingWorkbookStatus(line) === 'In Transit').length
-  const delayed = lines.filter(line => getTrackingWorkbookStatus(line) === 'Delayed').length
-  const pending = lines.filter(line => getTrackingWorkbookStatus(line) === 'Pending').length
-  const rows: WorkbookCell[][] = [
-    ['', '', '', { value: 'Material Tracking Report', style: 14 }],
-    ['', '', '', { value: `Generated ${generatedDate}`, style: 15 }],
-    [],
-    ['', { value: 'Project Number', style: 1 }, { value: documentValue(project.projectNumber), style: 4 }, '', { value: 'Project Manager', style: 1 }, { value: documentValue(project.projectManager), style: 4 }],
-    ['', { value: 'Project Name', style: 1 }, { value: documentValue(project.projectName), style: 4 }, '', { value: 'Generated By', style: 1 }, { value: documentValue(poc.name), style: 4 }],
-    ['', { value: 'Customer', style: 1 }, { value: documentValue(customer.companyName), style: 4 }, '', { value: 'Date Generated', style: 1 }, { value: generatedDate, style: 4 }],
-    [],
-    [
-      { value: totalPurchaseOrders, style: 16 },
-      { value: lines.length, style: 16 },
-      { value: delivered, style: 16 },
-      { value: partiallyShipped, style: 16 },
-      { value: inTransit, style: 16 },
-      { value: pending, style: 16 },
-      { value: delayed, style: 16 },
-    ],
-    [
-      { value: 'Total POs', style: 17 },
-      { value: 'Line Items', style: 17 },
-      { value: 'Delivered', style: 17 },
-      { value: 'Partially Shipped', style: 17 },
-      { value: 'In Transit', style: 17 },
-      { value: 'Pending', style: 17 },
-      { value: 'Delayed', style: 17 },
-    ],
-    [],
-    headers.map(value => ({ value, style: 18 })),
-    ...dataRows,
-  ]
-
-  return {
-    name: 'Material Tracking',
-    rows,
-    columnWidths: [10, 22, 22, 20, 22, 38, 11, 11, 12, 14, 14, 16, 28, 16, 16, 18],
-    merges: ['D1:H1', 'D2:H2', 'C4:D4', 'F4:H4', 'C5:D5', 'F5:H5', 'C6:D6', 'F6:H6'],
-    freezePane: 'A12',
-    autoFilter: `A${tableHeaderRow}:P${Math.max(tableHeaderRow, rows.length)}`,
-    printTitleRows: '1:11',
-    landscape: true,
+  const headers = ['Line', 'Manufacturer', 'Part Number', 'Description', 'Qty Ordered', 'Qty Shipped', 'Status', 'Expected Ship Date', 'Carrier', 'Tracking Number', 'Delivered Date', 'Customer Note']
+  const groups = groupTrackingLinesByQuote(lines)
+  const merges: string[] = ['A1:L1', 'A2:L2']
+  let currentRow = 6
+  const groupedRows: WorkbookCell[][] = []
+  for (const group of groups) {
+    groupedRows.push([{ value: `Quote / MEL: ${group.label}`, style: 14 }]); merges.push(`A${currentRow}:L${currentRow}`); currentRow += 1
+    groupedRows.push([{ value: `Quote: ${group.quoteNumber}`, style: 15 }]); merges.push(`A${currentRow}:L${currentRow}`); currentRow += 1
+    groupedRows.push(headers.map(value => ({ value, style: 18 }))); currentRow += 1
+    for (const line of group.lines) {
+      groupedRows.push([
+        { value: line.lineNumber || line.itemNumber || line.clin || '', style: 19 }, { value: line.manufacturer || '', style: 19 },
+        { value: line.partNumber, style: 19 }, { value: conciseTrackingDescription(line.description), style: 22 },
+        { value: line.quantityOrdered, style: 19 }, { value: line.quantityShipped ?? 0, style: 19 },
+        { value: line.customerStatus || 'PO Issued', style: customerTrackingStatusStyle(line.customerStatus || 'PO Issued') }, { value: formatDateForWorkbook(line.estimatedShipDate), style: 19 },
+        { value: line.carrier || 'Pending', style: 19 }, { value: line.trackingNumber || 'Pending', style: 19 },
+        { value: formatDateForWorkbook(line.deliveredDate || line.receivedDate), style: 19 }, { value: line.customerNote || '', style: 22 },
+      ]); currentRow += 1
+    }
+    groupedRows.push([]); currentRow += 1
   }
+  const rows: WorkbookCell[][] = [
+    [{ value: 'Customer Material Tracking Detail', style: 14 }], [{ value: `${project.projectName} | ${project.projectNumber} | Generated ${generatedDate}`, style: 15 }], [], [], [], ...groupedRows,
+  ]
+  return { name: 'Material Tracking', rows, columnWidths: [10, 20, 22, 38, 12, 12, 16, 17, 16, 28, 16, 36], merges, freezePane: 'A6', printTitleRows: '1:5', landscape: true }
 }
 
 function getTrackingWorkbookLines(project: Project): TrackingWorkbookLine[] {
   return shipmentLineExportRows(project).map(row => ({
     id: `${row.poNumber}-${row.partNumber}-${row.trackingNumber}-${row.actualShipDate}`,
-    clin: '', partNumber: row.partNumber, manufacturer: row.manufacturer, description: row.description,
+    materialLineId: row.materialLineId, quoteId: row.quoteId, quoteNumber: row.quoteNumber, quoteName: row.quoteName,
+    lineNumber: row.lineNumber, clin: '', partNumber: row.partNumber, manufacturer: row.manufacturer, description: row.description,
     quantityOrdered: row.quantityOrdered, quantityReceived: row.quantityDelivered, unitCost: 0,
-    status: row.status === 'Delivered' ? 'Delivered' : row.status === 'Partial' ? 'Partially Shipped' : row.status === 'In Transit' ? 'Shipped' : 'Ordered',
+    status: row.status === 'Delivered' ? 'Delivered' : row.status === 'In Transit' ? 'Shipped' : row.status === 'Processing' ? 'Ordered' : 'PO Issued',
+    customerStatus: row.status, customerNote: row.customerNote,
     poNumber: row.poNumber, poStatus: 'Ordered', vendor: row.vendor,
-    quantityShipped: row.shipmentQuantity, quantityRemaining: row.quantityRemaining,
+    quantityShipped: row.quantityShipped, quantityRemaining: row.quantityRemaining,
     estimatedShipDate: row.expectedShipDate, actualShipDate: row.actualShipDate,
     carrier: row.carrier, trackingNumber: row.trackingNumber,
     estimatedDeliveryDate: row.expectedDeliveryDate, deliveredDate: row.deliveredDate,
   }))
+}
+
+function uniqueTrackingMaterialLines(lines: TrackingWorkbookLine[]) {
+  const unique = new Map<string, TrackingWorkbookLine>()
+  for (const line of lines) {
+    const key = line.materialLineId || `${line.quoteId || ''}|${line.poNumber}|${line.lineNumber || line.clin}|${line.partNumber}`
+    const current = unique.get(key)
+    if (!current) unique.set(key, { ...line })
+    else unique.set(key, {
+      ...current,
+      quantityShipped: Math.max(current.quantityShipped ?? 0, line.quantityShipped ?? 0),
+      deliveredDate: current.deliveredDate || line.deliveredDate,
+      customerStatus: line.customerStatus || current.customerStatus,
+    })
+  }
+  return Array.from(unique.values())
+}
+
+function groupTrackingLinesByQuote(lines: TrackingWorkbookLine[]) {
+  const groups = new Map<string, { id: string; label: string; quoteNumber: string; lines: TrackingWorkbookLine[] }>()
+  for (const line of lines) {
+    const id = line.quoteId || `unassigned-${line.poNumber}`
+    const quoteNumber = line.quoteNumber || 'Unassigned Quote / MEL'
+    const label = line.quoteName && line.quoteName !== quoteNumber ? `${quoteNumber} — ${line.quoteName}` : quoteNumber
+    const group = groups.get(id) || { id, label, quoteNumber, lines: [] }
+    group.lines.push(line); groups.set(id, group)
+  }
+  return Array.from(groups.values())
+}
+
+function customerStatusCounts(lines: TrackingWorkbookLine[]) {
+  const counts = { 'PO Issued': 0, Processing: 0, 'In Transit': 0, Delivered: 0 }
+  for (const line of lines) counts[line.customerStatus || 'PO Issued'] += 1
+  return counts
+}
+
+function customerTrackingStatusStyle(status: string) {
+  if (status === 'Delivered') return 24
+  if (status === 'In Transit') return 25
+  if (status === 'Processing') return 27
+  return 29
 }
 
 function groupTrackingLinesByPo(lines: TrackingWorkbookLine[]) {

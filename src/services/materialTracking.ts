@@ -2,6 +2,7 @@ import type { MaterialShipment, MaterialTrackingActivity, Project, PurchaseOrder
 import type { TrackingImportInput } from './trackingImport'
 
 export type MaterialLineStatus = 'Not Ordered' | 'Ordered' | 'Partial' | 'Shipped' | 'In Transit' | 'Delivered' | 'Cancelled'
+export type CustomerMaterialStatus = 'PO Issued' | 'Processing' | 'In Transit' | 'Delivered'
 export type ShipmentLineInput = { poId: string; melLineItemId: string; quantity: number }
 export type CreateShipmentInput = { poId: string; carrier: string; otherCarrier?: string; trackingNumber: string; actualShipDate: string; expectedDeliveryDate?: string; packingSlipNumber?: string; notes?: string; lines: ShipmentLineInput[] }
 type TrackingActor = Pick<UserSession, 'id' | 'name'> & Partial<Pick<UserSession, 'role'>>
@@ -17,7 +18,8 @@ export function migrateLegacyMaterialTracking(project: Project): Project {
     const shipped = legacyShippedQuantity(line)
     if (!trackingNumber && !shipped) continue
     const shipmentId = `legacy-${po.id}-${line.id}`
-    shipments.push({ id: shipmentId, projectId: project.id, poId: po.id, vendor: po.vendor, carrier: String(line.carrier || po.carrier || '').trim(), trackingNumber, actualShipDate: line.estimatedShipDate || po.estimatedShipDate || '', expectedDeliveryDate: line.estimatedDeliveryDate || po.expectedDeliveryDate || '', deliveredDate: line.receivedDate || '', notes: line.notes || 'Migrated from legacy line tracking.', createdBy: 'legacy-migration', createdByName: 'Atlas migration', createdAt: now, updatedAt: now, lines: [{ id: `${shipmentId}-${line.id}`, shipmentId, poId: po.id, melLineItemId: line.id, quantityShipped: shipped || line.quantityOrdered, quantityDelivered: line.receivedDate ? Math.min(line.quantityReceived || line.quantityOrdered, line.quantityOrdered) : 0 }] })
+    const quote = project.quotes.find(item => item.id === po.quoteId)
+    shipments.push({ id: shipmentId, projectId: project.id, poId: po.id, vendor: po.vendor, carrier: String(line.carrier || po.carrier || '').trim(), trackingNumber, actualShipDate: line.estimatedShipDate || po.estimatedShipDate || '', expectedDeliveryDate: line.estimatedDeliveryDate || po.expectedDeliveryDate || '', deliveredDate: line.receivedDate || '', notes: line.notes || 'Migrated from legacy line tracking.', createdBy: 'legacy-migration', createdByName: 'Atlas migration', createdAt: now, updatedAt: now, lines: [{ id: `${shipmentId}-${line.id}`, shipmentId, poId: po.id, quoteId: po.quoteId, quoteNumber: quote?.quoteNumber, quoteName: quote?.quoteName, melLineItemId: line.id, quantityShipped: shipped || line.quantityOrdered, quantityDelivered: line.receivedDate ? Math.min(line.quantityReceived || line.quantityOrdered, line.quantityOrdered) : 0, deliveredDate: line.receivedDate || '', deliveredByUserId: line.receivedDate ? 'legacy-migration' : undefined, deliveredByUserName: line.receivedDate ? 'Atlas migration' : undefined, deliveredAt: line.receivedDate ? now : undefined }] })
   }
   return { ...project, materialShipments: shipments, materialTrackingActivity: [] }
 }
@@ -39,7 +41,8 @@ export function createMaterialShipment(project: Project, input: CreateShipmentIn
     const quantity = Number(entry.quantity); const remaining = lineQuantityRemaining(project, po.id, line.id)
     if (!Number.isFinite(quantity) || quantity <= 0) throw new Error(`Shipment quantity for ${line.partNumber || line.description} must be greater than zero.`)
     if (quantity > remaining) throw new Error(`Shipment quantity for ${line.partNumber || line.description} exceeds the ${remaining} remaining.`)
-    return { id: crypto.randomUUID(), shipmentId, poId: po.id, melLineItemId: line.id, quantityShipped: quantity, quantityDelivered: 0 }
+    const quote = project.quotes.find(item => item.id === po.quoteId)
+    return { id: crypto.randomUUID(), shipmentId, poId: po.id, quoteId: po.quoteId, quoteNumber: quote?.quoteNumber, quoteName: quote?.quoteName, melLineItemId: line.id, quantityShipped: quantity, quantityDelivered: 0 }
   })
   let shipments = [...(project.materialShipments ?? [])]
   if (duplicate) shipments = shipments.map(item => item.id === duplicate.id ? { ...item, carrier, actualShipDate: input.actualShipDate, expectedDeliveryDate: input.expectedDeliveryDate || item.expectedDeliveryDate, packingSlipNumber: input.packingSlipNumber?.trim() || item.packingSlipNumber, notes: input.notes?.trim() || item.notes, updatedAt: now, lines: [...item.lines, ...shipmentLines] } : item)
@@ -60,9 +63,58 @@ export function markMaterialShipmentDelivered(project: Project, shipmentId: stri
   requireTrackingPermission(actor)
   if (!deliveredDate) throw new Error('Delivered date is required.')
   const shipment = (project.materialShipments ?? []).find(item => item.id === shipmentId); if (!shipment) throw new Error('Shipment not found.')
-  const now = new Date().toISOString(); const updated = (project.materialShipments ?? []).map(item => item.id === shipmentId ? { ...item, deliveredDate, updatedAt: now, lines: item.lines.map(line => ({ ...line, quantityDelivered: line.quantityShipped })) } : item)
+  const now = new Date().toISOString(); const updated = (project.materialShipments ?? []).map(item => item.id === shipmentId ? { ...item, deliveredDate, updatedAt: now, lines: item.lines.map(line => ({ ...line, quantityDelivered: line.quantityShipped, deliveredDate, deliveredByUserId: actor.id, deliveredByUserName: actor.name, deliveredAt: now })) } : item)
   const activity = shipment.lines.map(line => activityRow(project, shipment.poId, line.melLineItemId, shipmentId, 'Shipment delivered', actor, '', deliveredDate, now))
   return synchronizeLegacyTracking({ ...project, materialShipments: updated, materialTrackingActivity: [...(project.materialTrackingActivity ?? []), ...activity], updatedAt: now })
+}
+
+export function markMaterialLineDelivered(project: Project, poId: string, lineId: string, deliveredDate: string, actor: TrackingActor): Project {
+  requireTrackingPermission(actor)
+  if (!deliveredDate) throw new Error('Delivered date is required.')
+  const po = project.purchaseOrders.find(item => item.id === poId); const line = po?.lines.find(item => item.id === lineId)
+  if (!po || !line) throw new Error('MEL line not found.')
+  const now = new Date().toISOString(); const previous = customerMaterialStatus(project, po, line); let shipments = [...(project.materialShipments ?? [])]
+  const remaining = lineQuantityRemaining(project, poId, lineId)
+  if (remaining > 0) {
+    const quote = project.quotes.find(item => item.id === po.quoteId); const shipmentId = crypto.randomUUID()
+    shipments.push({ id: shipmentId, projectId: project.id, poId, vendor: po.vendor, carrier: 'Delivery confirmed', trackingNumber: '', actualShipDate: deliveredDate, deliveredDate, notes: 'Delivery confirmed directly at the MEL line level.', createdBy: actor.id, createdByName: actor.name, createdAt: now, updatedAt: now, lines: [{ id: crypto.randomUUID(), shipmentId, poId, quoteId: po.quoteId, quoteNumber: quote?.quoteNumber, quoteName: quote?.quoteName, melLineItemId: lineId, quantityShipped: remaining, quantityDelivered: remaining, deliveredDate, deliveredByUserId: actor.id, deliveredByUserName: actor.name, deliveredAt: now }] })
+  }
+  shipments = shipments.map(shipment => {
+    if (shipment.poId !== poId || !shipment.lines.some(item => item.melLineItemId === lineId)) return shipment
+    const lines = shipment.lines.map(item => item.melLineItemId === lineId ? { ...item, quantityDelivered: item.quantityShipped, deliveredDate, deliveredByUserId: actor.id, deliveredByUserName: actor.name, deliveredAt: now } : item)
+    return { ...shipment, deliveredDate: lines.every(item => item.quantityDelivered >= item.quantityShipped) ? deliveredDate : shipment.deliveredDate, updatedAt: now, lines }
+  })
+  const activity = activityRow(project, poId, lineId, undefined, 'Line marked delivered', actor, previous, `Delivered · ${line.quantityOrdered} units · ${deliveredDate}`, now)
+  return synchronizeLegacyTracking({ ...project, materialShipments: shipments, materialTrackingActivity: [...(project.materialTrackingActivity ?? []), activity], updatedAt: now })
+}
+
+export function reverseMaterialLineDelivery(project: Project, poId: string, lineId: string, actor: TrackingActor): Project {
+  requireTrackingPermission(actor)
+  const po = project.purchaseOrders.find(item => item.id === poId); const line = po?.lines.find(item => item.id === lineId)
+  if (!po || !line) throw new Error('MEL line not found.')
+  const now = new Date().toISOString(); const previous = customerMaterialStatus(project, po, line)
+  const shipments = (project.materialShipments ?? []).map(shipment => {
+    if (shipment.poId !== poId || !shipment.lines.some(item => item.melLineItemId === lineId)) return shipment
+    const lines = shipment.lines.map(item => item.melLineItemId === lineId ? { ...item, quantityDelivered: 0, deliveredDate: '', deliveredByUserId: undefined, deliveredByUserName: undefined, deliveredAt: undefined } : item)
+    const deliveredDates = lines.filter(item => item.quantityDelivered >= item.quantityShipped).map(item => item.deliveredDate || '').filter(Boolean)
+    return { ...shipment, deliveredDate: lines.every(item => item.quantityDelivered >= item.quantityShipped) ? deliveredDates.sort().at(-1) || shipment.deliveredDate : '', updatedAt: now, lines }
+  })
+  const activity = activityRow(project, poId, lineId, undefined, 'Delivery confirmation reversed', actor, previous, 'In Transit', now)
+  return synchronizeLegacyTracking({ ...project, materialShipments: shipments, materialTrackingActivity: [...(project.materialTrackingActivity ?? []), activity], updatedAt: now })
+}
+
+export function editMaterialLineDeliveredDate(project: Project, poId: string, lineId: string, deliveredDate: string, actor: TrackingActor): Project {
+  requireTrackingPermission(actor)
+  if (!deliveredDate) throw new Error('Delivered date is required.')
+  const now = new Date().toISOString(); let previousDate = ''
+  const shipments = (project.materialShipments ?? []).map(shipment => {
+    if (shipment.poId !== poId || !shipment.lines.some(item => item.melLineItemId === lineId && item.quantityDelivered > 0)) return shipment
+    const lines = shipment.lines.map(item => { if (item.melLineItemId !== lineId || item.quantityDelivered <= 0) return item; previousDate ||= item.deliveredDate || ''; return { ...item, deliveredDate, deliveredByUserId: actor.id, deliveredByUserName: actor.name, deliveredAt: now } })
+    const dates = lines.filter(item => item.quantityDelivered >= item.quantityShipped).map(item => item.deliveredDate || '').filter(Boolean)
+    return { ...shipment, deliveredDate: lines.every(item => item.quantityDelivered >= item.quantityShipped) ? dates.sort().at(-1) || deliveredDate : '', updatedAt: now, lines }
+  })
+  const activity = activityRow(project, poId, lineId, undefined, 'Delivered date corrected', actor, previousDate, deliveredDate, now)
+  return synchronizeLegacyTracking({ ...project, materialShipments: shipments, materialTrackingActivity: [...(project.materialTrackingActivity ?? []), activity], updatedAt: now })
 }
 
 export function importMaterialTracking(project: Project, rows: TrackingImportInput[], actor: TrackingActor) {
@@ -86,12 +138,14 @@ export function lineQuantityShipped(project: Project, poId: string, lineId: stri
 export function lineQuantityDelivered(project: Project, poId: string, lineId: string) { return lineShipments(project, poId, lineId).reduce((sum, shipment) => sum + shipment.lines.filter(line => line.melLineItemId === lineId).reduce((n, line) => n + line.quantityDelivered, 0), 0) }
 export function lineQuantityRemaining(project: Project, poId: string, lineId: string) { const line = project.purchaseOrders.find(po => po.id === poId)?.lines.find(item => item.id === lineId); return Math.max(0, (line?.quantityOrdered ?? 0) - lineQuantityShipped(project, poId, lineId)) }
 export function materialLineStatus(project: Project, po: PurchaseOrder, line: PurchaseOrderLine): MaterialLineStatus { if (line.status === 'Cancelled') return 'Cancelled'; const shipped = lineQuantityShipped(project, po.id, line.id), delivered = lineQuantityDelivered(project, po.id, line.id); if (delivered >= line.quantityOrdered && line.quantityOrdered > 0) return 'Delivered'; if (shipped > 0 && shipped < line.quantityOrdered) return 'Partial'; if (shipped >= line.quantityOrdered && line.quantityOrdered > 0) return lineShipments(project, po.id, line.id).some(item => !item.deliveredDate) ? 'In Transit' : 'Shipped'; return po.id ? 'Ordered' : 'Not Ordered' }
+export function customerMaterialStatus(project: Project, po: PurchaseOrder, line: PurchaseOrderLine): CustomerMaterialStatus { const delivered = lineQuantityDelivered(project, po.id, line.id); if (delivered >= line.quantityOrdered && line.quantityOrdered > 0) return 'Delivered'; if (lineQuantityShipped(project, po.id, line.id) > 0) return 'In Transit'; if (line.estimatedShipDate || line.vendorOrderNumber || ['Ordered', 'Awaiting Vendor Shipment'].includes(line.status)) return 'Processing'; return 'PO Issued' }
+export function materialQuoteIdentity(project: Project, po: PurchaseOrder) { const quote = project.quotes.find(item => item.id === po.quoteId); return { quoteId: quote?.id || po.quoteId || '', quoteNumber: quote?.quoteNumber || 'Unassigned Quote / MEL', quoteName: quote?.quoteName?.trim() || quote?.quoteNumber || 'Unassigned Quote / MEL', melId: quote?.id || po.quoteId || '' } }
 export function isMaterialLineLate(project: Project, po: PurchaseOrder, line: PurchaseOrderLine, today = new Date()) { const date = line.estimatedShipDate; return Boolean(date && new Date(`${date}T23:59:59`).getTime() < today.getTime() && lineQuantityRemaining(project, po.id, line.id) > 0) }
 export function materialLineNeedsTracking(project: Project, po: PurchaseOrder, line: PurchaseOrderLine) { const status = materialLineStatus(project, po, line); return (['Shipped', 'In Transit'].includes(status) || Boolean(line.receivedDate)) && lineShipments(project, po.id, line.id).some(shipment => !shipment.trackingNumber) }
 export function carrierTrackingUrl(carrier: string, tracking: string) { const value = tracking.trim(); if (!value) return ''; const name = carrier.toLowerCase(); if (name.includes('ups')) return `https://www.ups.com/track?tracknum=${encodeURIComponent(value)}`; if (name.includes('fedex')) return `https://www.fedex.com/fedextrack/?trknbr=${encodeURIComponent(value)}`; if (name.includes('usps')) return `https://tools.usps.com/go/TrackConfirmAction?tLabels=${encodeURIComponent(value)}`; if (name.includes('dhl')) return `https://www.dhl.com/us-en/home/tracking.html?tracking-id=${encodeURIComponent(value)}`; return '' }
 
 export function shipmentLineExportRows(project: Project) {
-  return project.purchaseOrders.flatMap(po => po.lines.flatMap(line => { const shipments = lineShipments(project, po.id, line.id); const base = { projectNumber: project.projectNumber, projectName: project.projectName, customer: project.customer, poNumber: po.poNumber, vendor: po.vendor, manufacturer: line.manufacturer || '', partNumber: line.partNumber, description: line.description, quantityOrdered: line.quantityOrdered, quantityShipped: lineQuantityShipped(project, po.id, line.id), quantityRemaining: lineQuantityRemaining(project, po.id, line.id), expectedShipDate: line.estimatedShipDate || '', status: materialLineStatus(project, po, line) }; return shipments.length ? shipments.flatMap(shipment => shipment.lines.filter(item => item.melLineItemId === line.id).map(item => ({ ...base, shipmentQuantity: item.quantityShipped, actualShipDate: shipment.actualShipDate, carrier: shipment.carrier, trackingNumber: shipment.trackingNumber, expectedDeliveryDate: shipment.expectedDeliveryDate || '', deliveredDate: shipment.deliveredDate || '', quantityDelivered: item.quantityDelivered }))) : [{ ...base, shipmentQuantity: 0, actualShipDate: '', carrier: '', trackingNumber: '', expectedDeliveryDate: '', deliveredDate: '', quantityDelivered: 0 }] }))
+  return project.purchaseOrders.flatMap(po => po.lines.flatMap((line, lineIndex) => { const shipments = lineShipments(project, po.id, line.id); const quote = materialQuoteIdentity(project, po); const base = { projectId: project.id, projectNumber: project.projectNumber, projectName: project.projectName, customer: project.customer, quoteId: quote.quoteId, quoteNumber: quote.quoteNumber, quoteName: quote.quoteName, melId: quote.melId, materialLineId: line.id, lineNumber: line.itemNumber || line.clin || String(lineIndex + 1), poNumber: po.poNumber, vendor: po.vendor, manufacturer: line.manufacturer || '', partNumber: line.partNumber, description: line.description, quantityOrdered: line.quantityOrdered, quantityShipped: lineQuantityShipped(project, po.id, line.id), quantityRemaining: lineQuantityRemaining(project, po.id, line.id), expectedShipDate: line.estimatedShipDate || '', status: customerMaterialStatus(project, po, line), customerNote: line.customerNote || '' }; return shipments.length ? shipments.flatMap(shipment => shipment.lines.filter(item => item.melLineItemId === line.id).map(item => ({ ...base, shipmentQuantity: item.quantityShipped, actualShipDate: shipment.actualShipDate, carrier: shipment.carrier, trackingNumber: shipment.trackingNumber, expectedDeliveryDate: shipment.expectedDeliveryDate || '', deliveredDate: item.deliveredDate || '', quantityDelivered: item.quantityDelivered }))) : [{ ...base, shipmentQuantity: 0, actualShipDate: '', carrier: '', trackingNumber: '', expectedDeliveryDate: '', deliveredDate: '', quantityDelivered: 0 }] }))
 }
 
 function synchronizeLegacyTracking(project: Project): Project { return { ...project, purchaseOrders: project.purchaseOrders.map(po => ({ ...po, lines: po.lines.map(line => { const shipments = lineShipments(project, po.id, line.id), shipped = lineQuantityShipped(project, po.id, line.id), delivered = lineQuantityDelivered(project, po.id, line.id), latest = shipments.slice().sort((a, b) => b.actualShipDate.localeCompare(a.actualShipDate))[0]; return { ...line, quantityReceived: Math.min(delivered, line.quantityOrdered), status: materialLineStatus(project, po, line) === 'Delivered' ? 'Delivered' : shipped >= line.quantityOrdered ? 'Shipped' : shipped > 0 ? 'Partially Shipped' : line.status, carrier: latest?.carrier || line.carrier, trackingNumber: latest?.trackingNumber || line.trackingNumber, trackingUrl: latest ? carrierTrackingUrl(latest.carrier, latest.trackingNumber) : line.trackingUrl, receivedDate: delivered ? latest?.deliveredDate || line.receivedDate : line.receivedDate } }) })) } }

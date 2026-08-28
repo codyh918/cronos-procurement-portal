@@ -369,9 +369,9 @@
             </thead>
             <tbody>
               <tr v-for="line in purchasedEquipmentLines" :key="`${line.poId}-${line.id}`">
-                <td class="nowrap">{{ project.projectNumber }}</td>
-                <td>{{ project.projectName }}</td>
-                <td>{{ project.customer }}</td>
+                <td class="nowrap">{{ project?.projectNumber }}</td>
+                <td>{{ project?.projectName }}</td>
+                <td>{{ project?.customer }}</td>
                 <td class="nowrap">
                   <button class="table-link inline-link-button" type="button" @click="openProjectPo(line.poId)">{{ line.poNumber }}</button>
                 </td>

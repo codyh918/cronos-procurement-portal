@@ -269,7 +269,7 @@ export type Project = ProjectFormInput & {
   materialTrackingActivity?: MaterialTrackingActivity[]
 }
 
-export type MaterialShipmentLine = { id: string; shipmentId: string; poId: string; melLineItemId: string; quantityShipped: number; quantityDelivered: number }
+export type MaterialShipmentLine = { id: string; shipmentId: string; poId: string; quoteId?: string; quoteNumber?: string; quoteName?: string; melLineItemId: string; quantityShipped: number; quantityDelivered: number; deliveredDate?: string; deliveredByUserId?: string; deliveredByUserName?: string; deliveredAt?: string }
 export type MaterialShipment = { id: string; projectId: string; poId: string; vendor: string; carrier: string; trackingNumber: string; actualShipDate: string; expectedDeliveryDate?: string; deliveredDate?: string; packingSlipNumber?: string; notes?: string; createdBy: string; createdByName: string; createdAt: string; updatedAt: string; lines: MaterialShipmentLine[] }
 export type MaterialTrackingActivity = { id: string; projectId: string; poId: string; melLineItemId?: string; shipmentId?: string; action: string; actorId: string; actorName: string; occurredAt: string; previousValue?: string; newValue?: string }
 
@@ -291,6 +291,7 @@ export type PurchaseOrderLine = {
   carrier?: string
   trackingNumber?: string
   trackingUrl?: string
+  customerNote?: string
   notes?: string
 }
 

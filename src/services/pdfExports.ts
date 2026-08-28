@@ -5,6 +5,7 @@ import { documentContactLines, getProjectDocumentContact } from './documentConta
 import { formatCustomerAddressLines, structuredCustomerFromProject } from './customerFormatting'
 import { loadProject } from './localProjects'
 import { createPdfDocument } from './pdfRuntime.mjs'
+import { shipmentLineExportRows } from './materialTracking'
 import {
   createDocumentAudit,
   documentValue,
@@ -602,88 +603,70 @@ export async function exportCustomerConsolidatedTrackingReportPdf(project: Proje
   const audit = createDocumentAudit('Customer Consolidated Tracking PDF', project.projectNumber)
   validateProjectDocumentFields(audit, project)
   const doc = await createPdfDocument({ unit: 'pt', format: 'letter', orientation: 'landscape' })
-  const poc = getProjectDocumentContact(project)
-  const rows = project.purchaseOrders.flatMap(po =>
-    po.lines.map((line, index) => ({
-      itemNumber: line.itemNumber || String(index + 1),
-      poNumber: po.poNumber,
-      vendor: po.vendor,
-      vendorOrderNumber: line.vendorOrderNumber ?? '',
-      partNumber: line.partNumber,
-      description: line.description,
-      quantity: line.quantityOrdered,
-      carrier: line.carrier ?? '',
-      trackingNumber: line.trackingNumber ?? '',
-      estimatedShipDate: line.estimatedShipDate ?? '',
-      deliveryDate: line.receivedDate || line.estimatedDeliveryDate || '',
-      status: line.status,
-    })),
-  )
+  const rows = shipmentLineExportRows(project)
+  const unique = new Map<string, (typeof rows)[number]>()
+  rows.forEach(row => unique.set(row.materialLineId, unique.get(row.materialLineId) || row))
+  const uniqueRows = Array.from(unique.values())
+  const statuses = ['PO Issued', 'Processing', 'In Transit', 'Delivered'] as const
+  const count = (source: typeof uniqueRows, status: typeof statuses[number]) => source.filter(row => row.status === status).length
+  const groups = new Map<string, { label: string; rows: typeof rows }>()
+  rows.forEach(row => {
+    const key = row.quoteId || `unassigned-${row.poNumber}`
+    const label = row.quoteName && row.quoteName !== row.quoteNumber ? `${row.quoteNumber} — ${row.quoteName}` : row.quoteNumber
+    const group = groups.get(key) || { label, rows: [] }
+    group.rows.push(row); groups.set(key, group)
+  })
 
-  await drawLandscapeReportHeader(doc, 'Tracking Report')
+  await drawLandscapeReportHeader(doc, 'Customer Material Tracking Report')
   doc.setFontSize(10)
-  doc.text(`Project: ${project.projectNumber}`, 42, 112)
-  doc.text(`Customer: ${project.customer}`, 42, 128)
-  doc.text(`Cronos POC: ${poc.name}${poc.email ? ` | ${poc.email}` : ''}`, 42, 144)
-
-  const tracking = rows.filter(row => row.trackingNumber).length
-  const scheduled = rows.filter(row => row.estimatedShipDate).length
-  const pendingUpdates = rows.filter(row => !row.trackingNumber && !row.estimatedShipDate).length
-  const summary = [
-    ['Tracked Lines', String(rows.length)],
-    ['Tracking Entered', String(tracking)],
-    ['Scheduled', String(scheduled)],
-    ['Pending Updates', String(pendingUpdates)],
-  ]
+  doc.text(`Project Name: ${project.projectName}`, 42, 116)
+  doc.text(`Project Number: ${project.projectNumber}`, 42, 132)
+  doc.text(`Customer: ${project.customer}`, 390, 116)
+  doc.text(`Report Date: ${new Intl.DateTimeFormat('en-US').format(new Date())}`, 390, 132)
+  const summary = [['Total Lines', String(uniqueRows.length)], ...statuses.map(status => [status, String(count(uniqueRows, status))])]
 
   doc.setDrawColor(222, 229, 238)
   doc.setFillColor(248, 251, 255)
-  doc.roundedRect(42, 166, 720, 58, 4, 4, 'FD')
+  doc.roundedRect(42, 150, 720, 58, 4, 4, 'FD')
   summary.forEach(([label, value], index) => {
-    const x = 58 + index * 172
+    const x = 56 + index * 140
     doc.setFontSize(8)
     doc.setTextColor(82, 97, 121)
-    doc.text(label, x, 188)
+    doc.text(label, x, 172)
     doc.setFontSize(15)
     doc.setTextColor(6, 22, 61)
-    doc.text(value, x, 210)
+    doc.text(value, x, 194)
   })
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.text('Quote / MEL Status', 42, 232)
+  let sy = 248
+  doc.setFontSize(7.5); doc.text('Quote / MEL', 48, sy); statuses.forEach((status, index) => doc.text(status, 430 + index * 72, sy)); sy += 12
+  for (const group of groups.values()) {
+    const groupUnique = Array.from(new Map(group.rows.map(row => [row.materialLineId, row])).values())
+    doc.setFont('helvetica', 'normal'); doc.text(AtlasCurrencyCell(doc, group.label, 360, 7.5), 48, sy)
+    statuses.forEach((status, index) => doc.text(String(count(groupUnique, status)), 450 + index * 72, sy, { align: 'center' })); sy += 12
+    if (sy > 530) break
+  }
 
-  let y = drawTrackingReportHeader(doc, 250)
-  rows.forEach((row, index) => {
-    const descriptionLines = AtlasWrappedText(doc, row.description || '-', 118)
-    const partLines = [AtlasCurrencyCell(doc, row.partNumber || '-', 82, 7.5)]
-    const trackingLines = [AtlasCurrencyCell(doc, row.trackingNumber || 'Pending', 104, 7.5)]
-    const dateLines = [`ESD: ${formatMaybeDate(row.estimatedShipDate)}`, `Del: ${formatMaybeDate(row.deliveryDate)}`]
-    const rowHeight = Math.max(42, 18 + Math.max(descriptionLines.length, partLines.length, trackingLines.length, dateLines.length) * 10)
-
-    if (y + rowHeight > 548) {
-      drawTrackingReportFooter(doc)
-      doc.addPage()
-      y = drawTrackingReportHeader(doc, 52)
-    }
-
-    doc.setFillColor(index % 2 ? 249 : 255, index % 2 ? 251 : 255, index % 2 ? 253 : 255)
-    doc.rect(42, y, 720, rowHeight, 'F')
-    doc.setDrawColor(230, 235, 243)
-    doc.line(42, y + rowHeight, 762, y + rowHeight)
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(7.5)
-    doc.setTextColor(7, 27, 73)
-    doc.text(row.itemNumber, 48, y + 17)
-    doc.text(AtlasCurrencyCell(doc, row.poNumber, 82, 7.5), 68, y + 17)
-    doc.text(AtlasWrappedText(doc, row.vendor, 58), 158, y + 17)
-    doc.text(AtlasCurrencyCell(doc, row.vendorOrderNumber || 'Pending', 66, 7.5), 222, y + 17)
-    doc.text(partLines, 296, y + 17)
-    doc.text(descriptionLines, 384, y + 17)
-    doc.text(String(row.quantity), 516, y + 17, { align: 'center' })
-    doc.text(AtlasCurrencyCell(doc, row.carrier || 'Pending', 50, 7.5), 534, y + 17)
-    doc.text(trackingLines, 590, y + 17)
-    doc.text(dateLines, 708, y + 17)
-    y += rowHeight
-  })
-
-  drawTrackingReportFooter(doc)
+  const headers = ['Line', 'Manufacturer', 'Part Number', 'Description', 'Qty Ordered', 'Qty Shipped', 'Status', 'Expected Ship Date', 'Carrier', 'Tracking Number', 'Delivered Date', 'Customer Note']
+  const widths = [26, 54, 64, 128, 40, 40, 58, 58, 48, 76, 56, 72]
+  const drawHeader = (title: string) => {
+    doc.setFillColor(6, 22, 61); doc.rect(42, 42, 720, 28, 'F'); doc.setTextColor(255, 255, 255); doc.setFont('helvetica', 'bold'); doc.setFontSize(11); doc.text(`Quote / MEL: ${title}`, 50, 60)
+    let x = 42; doc.setFontSize(6.3)
+    headers.forEach((header, i) => { doc.setFillColor(28, 116, 222); doc.rect(x, 74, widths[i], 26, 'F'); doc.text(doc.splitTextToSize(header, widths[i] - 6), x + 3, 84); x += widths[i] })
+    return 100
+  }
+  for (const group of groups.values()) {
+    doc.addPage(); let y = drawHeader(group.label)
+    group.rows.forEach((row, index) => {
+      const values = [row.lineNumber, row.manufacturer, row.partNumber, row.description, row.quantityOrdered, row.quantityShipped, row.status, formatMaybeDate(row.expectedShipDate), row.carrier || 'Pending', row.trackingNumber || 'Pending', formatMaybeDate(row.deliveredDate), row.customerNote]
+      const split = values.map((value, i) => doc.splitTextToSize(String(value ?? ''), widths[i] - 6))
+      const height = Math.max(24, 10 + Math.max(...split.map(lines => lines.length)) * 8)
+      if (y + height > 560) { doc.addPage(); y = drawHeader(group.label) }
+      let x = 42; doc.setFont('helvetica', 'normal'); doc.setFontSize(6.5); doc.setTextColor(7, 27, 73)
+      split.forEach((value, i) => { doc.setFillColor(index % 2 ? 248 : 255, index % 2 ? 251 : 255, index % 2 ? 255 : 255); doc.rect(x, y, widths[i], height, 'F'); doc.text(value, x + 3, y + 11); x += widths[i] })
+      y += height
+    })
+  }
   finishDocumentAudit(audit)
   doc.save(`Cronos-${sanitizeFileName(project.projectNumber)}-Customer-Tracking-Report.pdf`)
 }

@@ -1,19 +1,13 @@
-# Atlas Material Tracking Redesign
+# Atlas Material Tracking Git Upload
 
-Copy the contents of this folder into the repository root, preserving the included paths, then commit and deploy through the existing Railway workflow.
+Upload the contents of this folder to the root of the existing Atlas repository, preserving the included paths.
 
-This package includes:
+This package includes the Material Tracking redesign, four customer-facing statuses, explicit delivery confirmation and audit history, Quote/MEL grouping, customer Excel/PDF report updates, and MEL ingestion regression coverage.
 
-- Grouped Material Tracking interface and shipment drawer
-- Multiple and partial shipments per MEL line
-- Shared shipments across multiple MEL lines
-- Backward-compatible legacy tracking migration
-- Shipment-aware import and export behavior
-- Material Tracking regression tests
-- MEL Unit Cost precedence fix from the prior upload issue
+Verification completed before packaging:
 
-Validation completed before packaging:
-
-- `npm run test:server`
 - `npm run type-check`
+- `npm run test:server` — 107 tests passed
 - `npm run build`
+
+Do not upload this outer folder as a nested application directory. Merge its contents into the repository root.
