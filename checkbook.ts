@@ -1,76 +1,92 @@
-import { createRouter, createWebHistory } from 'vue-router'
-import CatalogView from '../views/CatalogView.vue'
-import CustomerOrderDetailView from '../views/CustomerOrderDetailView.vue'
-import CustomerOrdersView from '../views/CustomerOrdersView.vue'
-import CustomersView from '../views/CustomersView.vue'
-import AdminView from '../views/AdminView.vue'
-import DashboardView from '../views/DashboardView.vue'
-import EditProjectView from '../views/EditProjectView.vue'
-import KittingView from '../views/KittingView.vue'
-import NewQuoteView from '../views/NewQuoteView.vue'
-import NewProjectView from '../views/NewProjectView.vue'
-import ProjectsView from '../views/ProjectsView.vue'
-import ProjectDetailView from '../views/ProjectDetailView.vue'
-import PublicOrderLookupView from '../views/PublicOrderLookupView.vue'
-import PublicOrderTokenView from '../views/PublicOrderTokenView.vue'
-import PurchaseOrderDetailView from '../views/PurchaseOrderDetailView.vue'
-import PurchaseOrdersView from '../views/PurchaseOrdersView.vue'
-import QuotesView from '../views/QuotesView.vue'
-import ReceivingView from '../views/ReceivingView.vue'
-import ShippingView from '../views/ShippingView.vue'
-import VendorsView from '../views/VendorsView.vue'
+import { calculateLineTotals, roundCurrency } from './calculations'
+import type { Project } from '../types'
 
-const routes = [
-  { path: '/', name: 'dashboard', component: DashboardView },
-  { path: '/orders/track', name: 'public-order-lookup', component: PublicOrderLookupView },
-  { path: '/orders/track/:token', name: 'public-order-token', component: PublicOrderTokenView },
-  { path: '/projects', name: 'projects', component: ProjectsView },
-  { path: '/projects/new', name: 'new-project', component: NewProjectView },
-  { path: '/projects/:id/edit', name: 'edit-project', component: EditProjectView },
-  { path: '/projects/:id/quotes/new', name: 'new-project-quote', component: NewQuoteView },
-  { path: '/projects/:id/quotes/:quoteId/edit', name: 'edit-project-quote', component: NewQuoteView },
-  { path: '/projects/:id', name: 'project-detail', component: ProjectDetailView },
-  { path: '/quotes', name: 'quotes', component: QuotesView },
-  {
-    path: '/purchase-orders',
-    name: 'purchase-orders',
-    component: PurchaseOrdersView,
-  },
-  {
-    path: '/purchase-orders/:poId',
-    name: 'purchase-order-detail',
-    component: PurchaseOrderDetailView,
-  },
-  {
-    path: '/admin/orders',
-    name: 'customer-orders',
-    component: CustomerOrdersView,
-  },
-  {
-    path: '/admin/orders/:id',
-    name: 'customer-order-detail',
-    component: CustomerOrderDetailView,
-  },
-  {
-    path: '/admin/orders/:id/items',
-    name: 'customer-order-items',
-    component: CustomerOrderDetailView,
-  },
-  {
-    path: '/admin/orders/:id/tracking-link',
-    name: 'customer-order-tracking-link',
-    component: CustomerOrderDetailView,
-  },
-  { path: '/catalog', name: 'catalog', component: CatalogView },
-  { path: '/vendors', name: 'vendors', component: VendorsView },
-  { path: '/customers', name: 'customers', component: CustomersView },
-  { path: '/receiving', name: 'receiving', component: ReceivingView },
-  { path: '/kitting', name: 'kitting', component: KittingView },
-  { path: '/shipping', name: 'shipping', component: ShippingView },
-  { path: '/admin', name: 'admin', component: AdminView },
-]
+export type CheckbookLine = {
+  poId: string
+  poNumber: string
+  quoteNumber: string
+  vendor: string
+  dateIssued: string
+  description: string
+  requestor: string
+  ourCost: number
+  customerCost: number
+  grossProfit: number
+}
 
-export default createRouter({
-  history: createWebHistory(),
-  routes,
-})
+export function getCheckbookSummary(project: Project) {
+  const startingBalance = project.checkbookStartingBalance ?? 0
+  const lines = getCheckbookLines(project)
+  const ourCost = roundCurrency(lines.reduce((total, line) => total + line.ourCost, 0))
+  const customerCost = roundCurrency(lines.reduce((total, line) => total + line.customerCost, 0))
+  const remainingBalance = roundCurrency(startingBalance - customerCost)
+
+  return {
+    startingBalance,
+    ourCost,
+    customerCost,
+    grossProfit: roundCurrency(customerCost - ourCost),
+    remainingBalance,
+    lines,
+  }
+}
+
+/** Customer report detail uses quote selling prices, never supplier costs. */
+export function getCheckbookReport(project: Project) {
+  const lines = project.purchaseOrders.flatMap(po => {
+    const quote = project.quotes?.find(item => item.id === po.quoteId)
+    return po.lines.map((line, index) => {
+      const source = quote?.lines.find(item => item.id === line.id.replace(/^po-/, ''))
+      const unitCustomerCost = source ? calculateLineTotals(source).sellPrice : null
+      return {
+        quoteNumber: quote?.quoteNumber || 'Unassigned Quote / MEL',
+        lineNumber: source?.clin || line.itemNumber || line.clin || String(index + 1),
+        manufacturer: source?.manufacturer || line.manufacturer || '',
+        partNumber: source?.partNumber || line.partNumber,
+        description: source?.description || line.description,
+        quantity: line.quantityOrdered,
+        unitCustomerCost,
+        customerCost: unitCustomerCost === null ? null : roundCurrency(unitCustomerCost * line.quantityOrdered),
+      }
+    })
+  })
+  const missingPriceCount = lines.filter(line => line.customerCost === null).length
+  const customerCost = roundCurrency(lines.reduce((sum, line) => sum + (line.customerCost ?? 0), 0))
+  const startingBalance = project.checkbookStartingBalance ?? 0
+  return { lines, missingPriceCount, customerCost, startingBalance, remainingBalance: roundCurrency(startingBalance - customerCost) }
+}
+
+export function getCheckbookLines(project: Project): CheckbookLine[] {
+  return project.purchaseOrders.map(po => {
+    const quote = project.quotes?.find(item => item.id === po.quoteId)
+    const quoteLineIds = new Set(po.lines.map(line => line.id.replace(/^po-/, '')))
+    const matchingQuoteLines = quote?.lines.filter(line => quoteLineIds.has(line.id)) ?? []
+    const customerCost = matchingQuoteLines.length
+      ? matchingQuoteLines.reduce((total, line) => total + calculateLineTotals(line).extendedSellPrice, 0)
+      : po.customerTotalCost ?? po.totalCost
+
+    return {
+      poId: po.id,
+      poNumber: po.poNumber,
+      quoteNumber: quote?.quoteNumber ?? '-',
+      vendor: po.vendor,
+      dateIssued: po.dateIssued,
+      description: getPurchaseOrderDescription(po),
+      requestor: po.requestor ?? '',
+      ourCost: roundCurrency(po.totalCost),
+      customerCost: roundCurrency(customerCost),
+      grossProfit: roundCurrency(customerCost - po.totalCost),
+    }
+  })
+}
+
+function getPurchaseOrderDescription(po: Project['purchaseOrders'][number]) {
+  const poDescription = po.description?.trim()
+  if (poDescription) return poDescription
+
+  const lineDescriptions = Array.from(new Set(po.lines.map(line => line.description.trim()).filter(Boolean)))
+  if (!lineDescriptions.length) return ''
+  if (lineDescriptions.length === 1) return lineDescriptions[0]
+
+  return lineDescriptions.slice(0, 3).join('; ')
+}

@@ -1,6 +1,6 @@
 import type { CustomerQuote, Project, PurchaseOrderLine, QuoteLine, Status } from '../types'
 import { calculateLineTotals, calculateQuoteSummary } from './calculations'
-import { getCheckbookSummary } from './checkbook'
+import { getCheckbookReport } from './checkbook'
 import { getProjectDocumentContact } from './documentContacts'
 import { formatCustomerAddressLines, structuredCustomerFromProject } from './customerFormatting'
 import {
@@ -35,6 +35,8 @@ type WorkbookSheet = {
   freezePane?: string
   autoFilter?: string
   printTitleRows?: string
+  rowHeights?: Record<number, number>
+  reportTitle?: string
   landscape?: boolean
   image?: 'cronosLogo'
 }
@@ -74,37 +76,53 @@ export async function exportProjectTrackingWorkbook(project: Project) {
 export async function exportCheckbookFinancialWorkbook(project: Project) {
   const audit = createDocumentAudit('Checkbook Financial Workbook', project.projectNumber)
   validateProjectDocumentFields(audit, project)
-  const summary = getCheckbookSummary(project)
-  await downloadWorkbook(
-    [
-      {
-        name: 'Financial Summary',
-        rows: [
-          ['Project', documentValue(project.projectNumber)],
-          ['Customer', documentValue(project.customer)],
-          ['Starting Balance', summary.startingBalance],
-          ['Cost to Customer', summary.customerCost],
-          ['Remaining Balance', summary.remainingBalance],
-        ],
-      },
-      {
-        name: 'PO Detail',
-        rows: [
-          ['PO #', 'Quote #', 'Vendor', 'Description', 'Requestor', 'Date Issued', 'Cost to Customer'],
-          ...summary.lines.map(line => [
-            documentValue(line.poNumber),
-            documentValue(line.quoteNumber),
-            documentValue(line.vendor),
-            documentValue(line.description),
-            documentValue(line.requestor),
-            documentValue(line.dateIssued),
-            line.customerCost,
-          ]),
-        ],
-      },
-    ],
-    `Cronos-${sanitizeFileName(project.projectNumber)}-Checkbook-Tracking.xlsx`,
-  )
+  const summary = getCheckbookReport(project)
+  const generatedDate = new Intl.DateTimeFormat('en-US', { dateStyle: 'long' }).format(new Date())
+  const lastRow = 6 + Math.max(summary.lines.length, 1)
+  const detailRows: WorkbookCell[][] = summary.lines.map((line, index) => [
+    { value: line.quoteNumber, style: 22 },
+    { value: line.lineNumber, style: 19 },
+    { value: line.manufacturer, style: 22 },
+    { value: line.partNumber, style: 22 },
+    { value: line.description, style: 22 },
+    { value: line.quantity, style: 19 },
+    { value: line.unitCustomerCost ?? 'Price needed', style: 20 },
+    line.customerCost === null ? { value: 'Price needed', style: 20 }
+      : { formula: `ROUND(F${index + 7}*G${index + 7},2)`, value: line.customerCost, style: 20 },
+  ])
+  const note = summary.missingPriceCount
+    ? `${summary.missingPriceCount} line(s) need customer pricing. Totals include priced items only; balance is provisional.`
+    : 'Customer pricing for ordered line items. Shipping and contract fees are excluded.'
+  await downloadWorkbook([
+    {
+      name: 'Financial Summary', rowHeights: { 1: 34, 2: 28, 6: 28, 7: 34 }, columnWidths: [30, 24, 24, 24],
+      merges: ['A1:D1', 'A2:D2', 'A4:D4', 'A11:D11'], freezePane: 'A7',
+      rows: [
+        [{ value: 'Checkbook Financial Report', style: 14 }],
+        [{ value: `${project.projectName} | ${project.projectNumber} | ${project.customer}`, style: 15 }],
+        [], [{ value: `Report Date: ${generatedDate}`, style: 15 }], [],
+        ['Starting Balance', 'Cost to Customer', 'Remaining Balance', 'Line Items'].map(value => ({ value, style: 18 })),
+        [{ value: summary.startingBalance, style: 13 },
+          { formula: `SUM('Line Item Detail'!H7:H${lastRow})`, value: summary.customerCost, style: 13 },
+          { formula: 'A7-B7', value: summary.remainingBalance, style: 13 }, { value: summary.lines.length, style: 16 }],
+        [], [], [], [{ value: note, style: 22 }],
+      ],
+    },
+    {
+      name: 'Line Item Detail', rowHeights: { 1: 34, 2: 28, 6: 32 }, columnWidths: [23, 10, 22, 25, 65, 12, 22, 24],
+      merges: ['A1:H1', 'A2:H2', 'A4:H4'], freezePane: 'A7',
+      autoFilter: `A6:H${lastRow}`, printTitleRows: '1:6', landscape: true, reportTitle: 'Checkbook Financial Report',
+      rows: [
+        [{ value: 'Checkbook Line Item Detail', style: 14 }],
+        [{ value: `${project.projectName} | ${project.projectNumber} | ${project.customer} | ${generatedDate}`, style: 15 }],
+        [], [{ value: note, style: 22 }], [],
+        ['Quote / MEL', 'Line', 'Manufacturer', 'Part Number', 'Description', 'Quantity', 'Unit Cost to Customer', 'Line Cost to Customer'].map(value => ({ value, style: 18 })),
+        ...(detailRows.length ? detailRows : [[{ value: 'No ordered line items', style: 22 }]]),
+        [{ value: 'Total Cost to Customer', style: 12 }, '', '', '', '', '', '',
+          { formula: `SUM(H7:H${lastRow})`, value: summary.customerCost, style: 13 }],
+      ],
+    },
+  ], `Cronos-${sanitizeFileName(project.projectNumber)}-Checkbook-Tracking.xlsx`)
   finishDocumentAudit(audit)
 }
 
@@ -494,14 +512,14 @@ function worksheetXml(sheet: WorkbookSheet, sheetIndex: number, hasLogo: boolean
   const autoFilterXml = sheet.autoFilter ? `<autoFilter ref="${escapeXml(sheet.autoFilter)}"/>` : ''
   const drawingXml = sheetIndex === 0 && sheet.image === 'cronosLogo' && hasLogo ? '<drawing r:id="rId1"/>' : ''
   const pageSetupXml = sheet.landscape
-    ? '<printOptions horizontalCentered="1"/><pageMargins left="0.25" right="0.25" top="0.5" bottom="0.5" header="0.25" footer="0.25"/><pageSetup orientation="landscape" fitToWidth="1" fitToHeight="0"/><headerFooter><oddHeader>&amp;CMaterial Tracking Report</oddHeader><oddFooter>&amp;LAtlas Material Tracking&amp;RPage &amp;P of &amp;N</oddFooter></headerFooter>'
+    ? `<printOptions horizontalCentered="1"/><pageMargins left="0.25" right="0.25" top="0.5" bottom="0.5" header="0.25" footer="0.25"/><pageSetup orientation="landscape" fitToWidth="1" fitToHeight="0"/><headerFooter><oddHeader>&amp;C${escapeXml(sheet.reportTitle || 'Material Tracking Report')}</oddHeader><oddFooter>&amp;LAtlas ${escapeXml(sheet.reportTitle || 'Material Tracking')}&amp;RPage &amp;P of &amp;N</oddFooter></headerFooter>`
     : ''
   const body = sheet.rows
     .map((row, rowIndex) => {
       const cells = row
         .map((cell, columnIndex) => cellXml(cell, `${columnName(columnIndex + 1)}${rowIndex + 1}`))
         .join('')
-      const height = worksheetRowHeight(row)
+      const height = sheet.rowHeights?.[rowIndex + 1] ?? worksheetRowHeight(row)
       return `<row r="${rowIndex + 1}"${height ? ` ht="${height}" customHeight="1"` : ''}>${cells}</row>`
     })
     .join('')

@@ -1,6 +1,6 @@
 import type { CustomerQuote, Project, ProjectPurchaseOrder, PurchaseOrder } from '../types'
 import { calculateLineTotals, calculateQuoteSummary, currency } from './calculations'
-import { getCheckbookSummary } from './checkbook'
+import { getCheckbookReport } from './checkbook'
 import { documentContactLines, getProjectDocumentContact } from './documentContacts'
 import { formatCustomerAddressLines, structuredCustomerFromProject } from './customerFormatting'
 import { loadProject } from './localProjects'
@@ -342,7 +342,7 @@ function drawDarkTableHeader(
   columns: PdfTableColumn[],
 ) {
   doc.setFillColor(...NAVY)
-  doc.rect(40, y, 532, 24, 'F')
+  doc.rect(40, y, doc.internal.pageSize.getWidth() - 80, 24, 'F')
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(7.5)
   doc.setTextColor(255, 255, 255)
@@ -383,7 +383,7 @@ function calculatePdfTableRowHeight(doc: JsPdf, cells: PdfTableCell[], lineHeigh
 function AtlasTable(doc: JsPdf, y: number, height: number, cells: PdfTableCell[]) {
   doc.setDrawColor(224, 229, 237)
   doc.setLineWidth(0.5)
-  doc.rect(40, y, 532, height)
+  doc.rect(40, y, doc.internal.pageSize.getWidth() - 80, height)
   doc.setFont('helvetica', 'normal')
   doc.setTextColor(...TEXT)
   cells.forEach(cell => {
@@ -558,41 +558,47 @@ export async function exportCustomerTrackingUpdatePdf(po: PurchaseOrder | Projec
 export async function exportCheckbookReportPdf(project: Project) {
   const audit = createDocumentAudit('Checkbook Financial Report PDF', project.projectNumber)
   validateProjectDocumentFields(audit, project)
-  const summary = getCheckbookSummary(project)
-  const poc = getProjectDocumentContact(project)
-  const doc = await createDocument()
-  let y = await AtlasDocumentHeader(doc, 'Checkbook Financial Report')
-  y = drawKeyValue(doc, y, [
-    ['Project', `${project.projectNumber} - ${project.projectName}`],
-    ['Customer', project.customer],
-    ['Cronos POC', `${poc.name}${poc.email ? ` | ${poc.email}` : ''}${poc.phone ? ` | ${poc.phone}` : ''}`],
-    ['Starting Balance', currency(summary.startingBalance)],
-    ['Cost to Customer', currency(summary.customerCost)],
-    ['Remaining Balance', currency(summary.remainingBalance)],
-  ])
-
+  const summary = getCheckbookReport(project)
+  const doc = await createPdfDocument({ unit: 'pt', format: 'letter', orientation: 'landscape' })
+  await drawLandscapeReportHeader(doc, 'Checkbook Financial Report')
+  doc.setFontSize(10)
+  doc.text(`Project: ${project.projectNumber}`, 42, 116)
+  doc.text(`Customer: ${project.customer}`, 390, 116)
+  doc.text(AtlasCurrencyCell(doc, project.projectName, 340, 10), 42, 132)
+  doc.text(`Report Date: ${new Intl.DateTimeFormat('en-US').format(new Date())}`, 390, 132)
+  doc.setDrawColor(222, 229, 238); doc.setFillColor(248, 251, 255)
+  doc.roundedRect(42, 150, 708, 58, 4, 4, 'FD')
+  const metrics = [['Starting Balance', currency(summary.startingBalance)], ['Cost to Customer', currency(summary.customerCost)], ['Remaining Balance', currency(summary.remainingBalance)], ['Line Items', String(summary.lines.length)]]
+  metrics.forEach(([label, value], index) => {
+    const x = 54 + index * 176
+    doc.setFontSize(8); doc.setTextColor(82, 97, 121); doc.text(label, x, 172)
+    doc.setFontSize(14); doc.setTextColor(6, 22, 61); doc.text(value, x, 194)
+  })
+  doc.setFontSize(8)
+  doc.text(summary.missingPriceCount
+    ? `${summary.missingPriceCount} line(s) need customer pricing. Totals include priced items only; balance is provisional.`
+    : 'Customer pricing for ordered line items. Shipping and contract fees are excluded.', 42, 225)
   const columns: PdfTableColumn[] = [
-    { label: 'PO #', x: 40, width: 66, align: 'left', wrap: false },
-    { label: 'Vendor', x: 106, width: 92, align: 'left', wrap: true },
-    { label: 'Description', x: 198, width: 280, align: 'left', wrap: true },
-    { label: 'Customer Cost', x: 478, width: 82, align: 'right', numeric: true },
+    { label: 'Quote / MEL', x: 42, width: 86, align: 'left', wrap: true },
+    { label: 'Line', x: 128, width: 34, align: 'left', wrap: true },
+    { label: 'Part Number', x: 162, width: 96, align: 'left', wrap: true },
+    { label: 'Description', x: 258, width: 258, align: 'left', wrap: true },
+    { label: 'Qty', x: 516, width: 40, align: 'right', numeric: true },
+    { label: 'Customer Unit', x: 556, width: 94, align: 'right', numeric: true },
+    { label: 'Customer Total', x: 650, width: 100, align: 'right', numeric: true },
   ]
-  y = drawDarkTableHeader(doc, y + 16, columns)
+  let y = drawDarkTableHeader(doc, 240, columns)
   summary.lines.forEach(line => {
-    const cells = [
-      { column: columns[0], text: line.poNumber },
-      { column: columns[1], text: line.vendor || '-' },
-      { column: columns[2], text: line.description || '-' },
-      { column: columns[3], text: currency(line.customerCost) },
-    ]
+    const values = [line.quoteNumber, line.lineNumber, line.partNumber, line.description, String(line.quantity),
+      line.unitCustomerCost === null ? 'Price needed' : currency(line.unitCustomerCost),
+      line.customerCost === null ? 'Price needed' : currency(line.customerCost)]
+    const cells = values.map((text, index) => ({ column: columns[index], text }))
     const rowHeight = calculatePdfTableRowHeight(doc, cells)
-    if (y + rowHeight > PAGE_BOTTOM) {
-      doc.addPage()
-      y = drawDarkTableHeader(doc, 54, columns)
-    }
+    if (y + rowHeight > 550) { doc.addPage(); y = drawDarkTableHeader(doc, 54, columns) }
     AtlasTable(doc, y, rowHeight, cells)
     y += rowHeight
   })
+  if (!summary.lines.length) { doc.text('No ordered line items', 48, y + 18) }
 
   AtlasDocumentFooter(doc)
   finishDocumentAudit(audit)
