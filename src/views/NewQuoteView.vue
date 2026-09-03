@@ -768,19 +768,44 @@ function removeQuote() {
 }
 
 async function exportPdf() {
-  if (!quote.value || isExportingPdf.value) return
+  if (!quote.value || !project.value || isExportingPdf.value) return
 
   isExportingPdf.value = true
+  saveQuoteError.value = ''
+  rfqStatus.value = 'Saving quote before PDF export...'
+  let savedQuote: CustomerQuote
+  try {
+    const normalizedLines = normalizePricingForProject(
+      applySequentialClins(draftLines.value),
+      showPricingControls.value,
+    )
+    savedQuote = await updateQuoteForProjectStrict(project.value.id, quote.value.id, normalizedLines, {
+      contractFeeEnabled: contractFeeEnabled.value,
+      expirationDays: expirationDays.value,
+      quoteName: quoteName.value,
+      shippingCost: shippingCost.value,
+    })
+
+    quote.value = savedQuote
+    draftLines.value = savedQuote.lines
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'The quote could not be saved.'
+    saveQuoteError.value = `PDF export stopped because the quote could not be saved: ${message}`
+    rfqStatus.value = saveQuoteError.value
+    isExportingPdf.value = false
+    return
+  }
+
   rfqStatus.value = 'Generating quote PDF...'
   try {
-    const exported = await exportCustomerQuotePdf({ ...quote.value, lines: draftLines.value }, project.value)
+    const exported = await exportCustomerQuotePdf(savedQuote, project.value)
     rfqStatus.value = exported
-      ? `${quote.value.quoteNumber} PDF exported.`
-      : 'PDF not exported. Add the project shipping address, save the project, and try again.'
+      ? `${savedQuote.quoteNumber} saved and PDF exported.`
+      : 'Quote saved, but PDF not exported. Add the project shipping address and try again.'
   } catch (error) {
     rfqStatus.value = error instanceof Error
-      ? `PDF could not be generated: ${error.message}`
-      : 'PDF could not be generated. Refresh the page and try again.'
+      ? `Quote saved, but PDF could not be generated: ${error.message}`
+      : 'Quote saved, but PDF could not be generated. Refresh the page and try again.'
   } finally {
     isExportingPdf.value = false
   }
