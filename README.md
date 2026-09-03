@@ -1,12 +1,12 @@
-# Save Quote Before PDF Export
+# Sticky Quote Table Header and Line Item Column
 
 ## Changed file
 
-- `src/views/NewQuoteView.vue`
+- `src/style.css`
 
 ## Behavior
 
-Atlas now saves the current quote lines and pricing to Supabase before generating a PDF. PDF export stops when the save fails, preventing an exported PDF from containing pricing that was never persisted.
+The project quote editor now uses a bounded scrolling table. The header remains visible during vertical scrolling, and the Line Item column remains visible during horizontal scrolling.
 
 ## Validation
 

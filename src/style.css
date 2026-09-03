@@ -2983,8 +2983,9 @@ table {
 
 .quote-lines-scroll {
   max-width: 100%;
+  max-height: min(70vh, 720px);
   min-width: 0;
-  overflow-x: auto;
+  overflow: auto;
   border: 1px solid var(--app-border-soft);
   border-radius: 8px;
 }
@@ -3007,6 +3008,26 @@ table {
   text-align: left;
   font-size: 12px;
   font-weight: 900;
+}
+
+.quote-lines-table th:first-child,
+.quote-lines-table td:first-child {
+  position: sticky;
+  left: 0;
+  min-width: 88px;
+  width: 88px;
+  background: #fff;
+  border-right: 1px solid var(--app-border-soft);
+  box-shadow: 5px 0 8px rgb(15 23 42 / 6%);
+}
+
+.quote-lines-table th:first-child {
+  z-index: 6;
+  background: #f9fbfd;
+}
+
+.quote-lines-table td:first-child {
+  z-index: 3;
 }
 
 .quote-lines-table td {
@@ -6499,3 +6520,6 @@ textarea {
 .mel-review-table tr.needs-attention { background: #fffaf0; }
 .confidence-high { color: #18794e; font-weight: 700; }.confidence-review { color: #9a6700; font-weight: 700; }.confidence-low { color: #b42318; font-weight: 700; }
 .mel-review-actions { justify-content: flex-end; margin-top: 1rem; }
+
+/* Separate Atlas Customer Portal shell */
+.cp-shell{min-height:100vh;background:#f3f6f9;color:#172436;font-family:Inter,Arial,sans-serif}.cp-shell>header{height:76px;padding:0 clamp(20px,4vw,64px);display:flex;align-items:center;justify-content:space-between;background:#fff;border-bottom:1px solid #d7e0e8}.cp-brand{display:flex;align-items:center;gap:13px;color:#102c4c;text-decoration:none}.cp-brand img{width:42px;height:42px;object-fit:cover;border-radius:4px}.cp-brand span{display:grid;line-height:1}.cp-brand b{font-size:20px;letter-spacing:.14em}.cp-brand small{margin-top:6px;font-size:9px;letter-spacing:.22em;color:#5a6b7e}.cp-shell nav{display:flex;align-items:center;gap:28px}.cp-shell nav a,.cp-shell nav button{border:0;background:none;color:#47586b;font:600 13px inherit;text-decoration:none;cursor:pointer}.cp-shell nav a.router-link-exact-active{color:#0b5594}.cp-shell>main{min-height:calc(100vh - 120px)}.cp-shell>footer{padding:18px;text-align:center;color:#66778a;font-size:11px}.cp-page{max-width:1440px;margin:auto;padding:38px clamp(20px,4vw,64px)}.cp-heading,.cp-panel-head{display:flex;align-items:flex-start;justify-content:space-between;gap:24px}.cp-heading{margin-bottom:26px}.cp-heading h1,.cp-panel h2{margin:5px 0 7px;color:#132c46}.cp-heading h1{font-size:32px}.cp-heading p{margin:0;color:#607184}.cp-eyebrow{margin:0!important;color:#23679f!important;font-size:10px!important;font-weight:800;letter-spacing:.16em}.cp-fresh{text-align:right;font-size:11px!important}.cp-kpis{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;margin-bottom:22px}.cp-kpis article{padding:20px;background:#fff;border:1px solid #dce4eb;border-radius:8px;box-shadow:0 2px 8px #17324d0b}.cp-kpis span{display:block;min-height:30px;color:#66778a;font-size:11px;font-weight:700;text-transform:uppercase}.cp-kpis strong{font-size:27px;color:#153a5d}.cp-grid{display:grid;grid-template-columns:2fr 1fr;gap:18px}.cp-panel{background:#fff;border:1px solid #dce4eb;border-radius:8px;padding:24px;margin-bottom:18px;box-shadow:0 2px 10px #17324d0a}.cp-span2{grid-column:span 2}.cp-panel a{color:#0b5c9f;font-weight:700;text-decoration:none;font-size:12px}.cp-project-row{display:grid;grid-template-columns:minmax(260px,1fr) 110px 110px 110px;gap:20px;align-items:center;padding:18px 3px;border-top:1px solid #e7edf2;color:#172436!important}.cp-project-row div{display:grid;gap:4px}.cp-project-row span,.cp-project-row small,.cp-table-wrap td span{display:block;color:#66778a;font-size:12px}.cp-badge,.cp-status{display:inline-flex;width:max-content;padding:5px 8px;border-radius:4px;background:#eaf2f9;color:#174f7d;font-size:10px;font-weight:800;letter-spacing:.05em}.cp-badge.attention,.cp-attention{background:#fff3d9;color:#865b00}.cp-badge.critical{background:#fde8e8;color:#9c2020}.cp-badge.completed,.cp-badge.on-track{background:#e7f5ed;color:#17623a}.cp-alert-list,.cp-timeline{list-style:none;padding:0}.cp-alert-list li{display:grid;gap:4px;padding:12px 0;border-bottom:1px solid #e7edf2}.cp-alert-list span{color:#66778a;font-size:12px}.cp-timeline li{display:grid;grid-template-columns:65px 1fr;gap:15px;padding:13px 0;border-bottom:1px solid #e7edf2}.cp-timeline time{color:#23679f;font-size:11px;font-weight:800;text-transform:uppercase}.cp-timeline div{display:grid;gap:3px}.cp-timeline span{color:#718194;font-size:11px}.cp-toolbar{display:flex;gap:10px;margin:0 0 16px}.cp-toolbar input,.cp-toolbar select{height:40px;padding:0 12px;border:1px solid #cbd6df;border-radius:5px;background:#fff}.cp-toolbar input{min-width:280px}.cp-table-wrap{overflow:auto}.cp-table-wrap table{width:100%;min-width:1100px;border-collapse:collapse}.cp-table-wrap th{padding:11px;text-align:left;background:#f3f6f9;color:#587086;font-size:10px;text-transform:uppercase;letter-spacing:.07em}.cp-table-wrap td{padding:14px 11px;border-bottom:1px solid #e4eaf0;vertical-align:top;font-size:12px}.cp-attention{display:inline-block;margin-top:5px;padding:4px;font-size:9px;font-weight:800}.cp-panel button,.cp-login button{padding:11px 16px;border:0;border-radius:5px;background:#125a91;color:#fff;font-weight:700;cursor:pointer}.cp-alert{padding:18px 0;border-bottom:1px solid #e5ebf0}.cp-alert dl{display:grid;grid-template-columns:110px 1fr;gap:7px;margin:12px 0}.cp-alert dt{color:#66778a;font-size:11px;font-weight:700}.cp-alert dd{margin:0;font-size:12px}.cp-login{min-height:100vh;display:grid;grid-template-columns:1.1fr .9fr;background:#f1f5f8}.cp-login>section{display:grid;place-items:center;padding:40px}.cp-login-card{width:min(420px,100%);padding:42px;background:#fff;border:1px solid #d9e1e8;box-shadow:0 16px 50px #152e4620}.cp-login-card h1{color:#143b60;font-size:31px}.cp-login form,.cp-login label{display:grid;gap:8px}.cp-login form{gap:16px;margin:28px 0}.cp-login label{font-size:12px;font-weight:700}.cp-login input{height:44px;padding:0 12px;border:1px solid #bcc9d4;border-radius:4px}.cp-login aside{display:flex;flex-direction:column;justify-content:center;padding:9vw;background:linear-gradient(#0b2c4bd9,#0b2c4bf2),url('/assets/cronos-login-hero-v2.png') center/cover;color:#fff}.cp-login aside h2{font-size:40px;max-width:470px}.cp-login aside li{margin:16px 0}.cp-notice,.cp-login details{color:#657487;font-size:11px}.cp-error{padding:10px;background:#fff0f0;color:#9d1c1c;font-size:12px}.cp-loading{padding:80px;text-align:center;color:#607184}@media(max-width:900px){.cp-shell>header{height:auto;padding:18px;align-items:flex-start}.cp-shell nav{gap:12px;flex-wrap:wrap;justify-content:flex-end}.cp-kpis{grid-template-columns:repeat(3,1fr)}.cp-grid{grid-template-columns:1fr}.cp-span2{grid-column:auto}.cp-project-row{grid-template-columns:1fr 80px}.cp-project-row>div:nth-child(3){display:none}.cp-login{grid-template-columns:1fr}.cp-login aside{display:none}}@media(max-width:600px){.cp-brand small{display:none}.cp-shell nav a:nth-child(2){display:none}.cp-kpis{grid-template-columns:repeat(2,1fr)}.cp-toolbar{display:grid}.cp-toolbar input{min-width:0}.cp-heading{display:block}.cp-fresh{text-align:left!important;margin-top:15px!important}}
