@@ -1010,20 +1010,74 @@ function normalizeQuoteLineForSave(
   return {
     ...line,
     id: line.id ?? crypto.randomUUID(),
-    clin: String(line.clin ?? '').trim(),
-    partNumber: String(line.partNumber ?? '').trim(),
-    manufacturer: String(line.manufacturer ?? '').trim(),
-    description: String(line.description ?? '').trim(),
+    clin: persistedText(line.clin, 100),
+    partNumber: persistedText(line.partNumber, 500),
+    manufacturer: persistedText(line.manufacturer, 500),
+    description: persistedText(line.description, 10_000),
     quantity,
     unitCost,
     pricingMode: 'markup',
     markupPercent,
     marginPercent: undefined,
-    vendor: String(line.vendor ?? '').trim(),
-    quoteNumber: String(line.quoteNumber ?? '').trim(),
-    leadTime: String(line.leadTime ?? '').trim(),
+    vendor: persistedText(line.vendor, 500),
+    supplierPartNumber: line.supplierPartNumber === undefined ? undefined : persistedText(line.supplierPartNumber, 500),
+    quoteNumber: persistedText(line.quoteNumber, 500),
+    leadTime: persistedText(line.leadTime, 500),
+    melImport: normalizeMelImportProvenance(line.melImport),
     approved: line.approved ?? false,
   }
+}
+
+function normalizeMelImportProvenance(provenance: QuoteLine['melImport']): QuoteLine['melImport'] {
+  if (!provenance) return undefined
+
+  // MEL workbooks can contain hundreds of empty or extremely wide cells. Keeping
+  // all of them on every quote line makes the project JSON large enough for the
+  // remote save to fail. Row/sheet coordinates plus normalized values preserve
+  // the audit trail; a bounded set of populated source cells provides context.
+  const originalValues = Object.fromEntries(
+    Object.entries(provenance.originalValues ?? {})
+      .map(([column, value]) => [persistedText(column, 50), persistedText(value, 500)] as const)
+      .filter(([column, value]) => Boolean(column && value))
+      .slice(0, 32),
+  )
+
+  return {
+    sourceFilename: persistedText(provenance.sourceFilename, 260),
+    uploadedAt: persistedText(provenance.uploadedAt, 100),
+    importedBy: persistedText(provenance.importedBy, 500),
+    worksheet: persistedText(provenance.worksheet, 200),
+    sourceRow: nonNegativeInteger(provenance.sourceRow),
+    headerRow: nonNegativeInteger(provenance.headerRow),
+    parsingMethod: persistedText(provenance.parsingMethod, 100),
+    originalValues,
+    normalizedValues: {
+      quantity: numberFromUnknown(provenance.normalizedValues?.quantity),
+      partNumber: persistedText(provenance.normalizedValues?.partNumber, 500),
+      manufacturer: persistedText(provenance.normalizedValues?.manufacturer, 500),
+      description: persistedText(provenance.normalizedValues?.description, 10_000),
+    },
+    confidence: {
+      quantity: finiteNumber(provenance.confidence?.quantity),
+      partNumber: finiteNumber(provenance.confidence?.partNumber),
+      manufacturer: finiteNumber(provenance.confidence?.manufacturer),
+      description: finiteNumber(provenance.confidence?.description),
+      overall: finiteNumber(provenance.confidence?.overall),
+    },
+  }
+}
+
+function persistedText(value: unknown, maxLength: number) {
+  return String(value ?? '').replace(/\u0000/g, '').trim().slice(0, maxLength)
+}
+
+function finiteNumber(value: unknown) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function nonNegativeInteger(value: unknown) {
+  return Math.max(0, Math.trunc(finiteNumber(value)))
 }
 
 function syncPurchaseOrdersForQuote(project: Project, quote: CustomerQuote): QuotePoSyncResult {

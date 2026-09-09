@@ -1,14 +1,15 @@
-# Sticky Quote Table Header and Line Item Column
+# Quote Spreadsheet Save Fix
 
 ## Changed file
 
-- `src/style.css`
+- `src/services/localProjects.ts`
 
 ## Behavior
 
-The project quote editor now uses a bounded scrolling table. The header remains visible during vertical scrolling, and the Line Item column remains visible during horizontal scrolling.
+Atlas now sanitizes and compacts spreadsheet/CSV import provenance before saving quote lines. This prevents oversized or invalid project JSON from blocking Design & Install quote saves while retaining the source filename, worksheet, row coordinates, normalized values, confidence scores, and relevant populated source cells.
 
 ## Validation
 
 - `npm run type-check`
 - `npm run build`
+
