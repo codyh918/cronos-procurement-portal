@@ -73,5 +73,6 @@ test('Atlas user deletion removes the Supabase Auth identity and is exposed in t
   assert.match(apiSource, /export async function deleteAtlasUser/)
   assert.match(adminSource, /Type \$\{required\} to confirm/)
   assert.match(migrationSource, /atlas_user_profiles[\s\S]*cascade/i)
-  assert.match(migrationSource, /else 'set null'/)
+  assert.match(migrationSource, /on delete set null/i)
+  assert.doesNotMatch(migrationSource, /do \$\$|for constraint_row/i)
 })
