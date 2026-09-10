@@ -3,6 +3,7 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
+  "engines": { "node": ">=20 <23" },
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -10,7 +11,8 @@
     "test:server": "node --experimental-strip-types --test server/tests/*.test.mjs",
     "validate:documents": "node scripts/validate-documents.mjs",
     "preview": "vite preview --host 0.0.0.0",
-    "start": "node server.mjs"
+    "start": "node server.mjs",
+    "start:atlas": "node server.mjs"
   },
   "dependencies": {
     "@kenjiuno/msgreader": "^1.28.0",
