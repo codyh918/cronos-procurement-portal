@@ -2,6 +2,7 @@ import { createClient, type SupabaseClient } from '@supabase/supabase-js'
 import { getAppBaseUrl } from './environment'
 
 let client: SupabaseClient | null | undefined
+const volatileCollections = new Map<string, unknown[]>()
 
 function getClient() {
   if (client !== undefined) return client
@@ -179,26 +180,29 @@ export async function saveLocalAndRemoteCollectionStrict<T>(
   eventName?: string,
   options: CollectionSyncOptions = {},
 ) {
-  await saveRemoteCollection(recordType, recordKey, items, options)
+  const savedItems = await saveRemoteCollection(recordType, recordKey, items, options)
   backupLocalCollection(storageKey, `before-save-${recordType}`)
-  const localSaved = writeLocalCollection(storageKey, items)
+  const localSaved = writeLocalCollection(storageKey, savedItems)
   if (eventName) window.dispatchEvent(new Event(eventName))
   if (!localSaved) {
     window.dispatchEvent(new CustomEvent('cronos:remote-sync-error', {
-      detail: `Atlas saved this change to Supabase, but this browser cache is full. Project backups were cleared; refresh the page to reload from Supabase.`,
+      detail: `Atlas saved this change to Supabase. This browser cache is full, so Atlas is using the confirmed Supabase copy in this tab; refresh the page to reload it from Supabase.`,
     }))
   }
+
+  return savedItems
 }
 
 async function saveRemoteCollection<T>(recordType: string, recordKey: string, items: T[], options: CollectionSyncOptions) {
   if (!options.mergeById || !options.changedIds?.length) {
     await saveRemoteRecord(recordType, recordKey, items)
-    return
+    return items
   }
 
   const remote = await loadRemoteRecord<T[]>(recordType, recordKey)
   const merged = Array.isArray(remote) ? mergeCollectionByChangedIds(remote, items, options.changedIds, options.mergeItem) : items
   await saveRemoteRecord(recordType, recordKey, merged)
+  return merged
 }
 
 function mergeCollectionByChangedIds<T>(
@@ -239,6 +243,9 @@ function recordId(item: unknown) {
 }
 
 export function readLocalCollection<T>(storageKey: string) {
+  const volatile = volatileCollections.get(storageKey)
+  if (volatile) return volatile as T[]
+
   try {
     const raw = window.localStorage.getItem(storageKey)
     return raw ? (JSON.parse(raw) as T[]) : []
@@ -317,6 +324,7 @@ function writeLocalCollection<T>(storageKey: string, items: T[]) {
   const serialized = JSON.stringify(items)
   try {
     window.localStorage.setItem(storageKey, serialized)
+    volatileCollections.delete(storageKey)
     return true
   } catch (error) {
     if (!isQuotaExceededError(error)) throw error
@@ -328,10 +336,12 @@ function writeLocalCollection<T>(storageKey: string, items: T[]) {
 
   try {
     window.localStorage.setItem(storageKey, serialized)
+    volatileCollections.delete(storageKey)
     return true
   } catch (error) {
     if (!isQuotaExceededError(error)) throw error
     console.warn(`Unable to cache ${storageKey}; browser storage quota is full.`, error)
+    volatileCollections.set(storageKey, items)
     return false
   }
 }

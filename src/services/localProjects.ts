@@ -1032,14 +1032,14 @@ function normalizeMelImportProvenance(provenance: QuoteLine['melImport']): Quote
   if (!provenance) return undefined
 
   // MEL workbooks can contain hundreds of empty or extremely wide cells. Keeping
-  // all of them on every quote line makes the project JSON large enough for the
-  // remote save to fail. Row/sheet coordinates plus normalized values preserve
-  // the audit trail; a bounded set of populated source cells provides context.
+  // all of them on every quote line can exceed both the Supabase request limit and
+  // the browser storage quota. Coordinates and normalized values retain the audit
+  // trail; only a small bounded set of populated source cells is kept for context.
   const originalValues = Object.fromEntries(
     Object.entries(provenance.originalValues ?? {})
-      .map(([column, value]) => [persistedText(column, 50), persistedText(value, 500)] as const)
+      .map(([column, value]) => [persistedText(column, 50), persistedText(value, 250)] as const)
       .filter(([column, value]) => Boolean(column && value))
-      .slice(0, 32),
+      .slice(0, 8),
   )
 
   return {
