@@ -245,10 +245,16 @@
                 <button class="secondary-action admin-save-button" type="button" @click="sendPasswordReset(user.id)">Send reset</button>
               </td>
               <td>
-                <button class="secondary-action admin-save-button" type="button" @click="saveUser(user.id, user)">
-                  <Save :size="14" />
-                  Save
-                </button>
+                <div class="admin-user-actions">
+                  <button class="secondary-action admin-save-button" type="button" @click="saveUser(user.id, user)">
+                    <Save :size="14" />
+                    Save
+                  </button>
+                  <button class="danger-action admin-save-button" type="button" :disabled="deletingUserId === user.id || user.id === session?.id" @click="deleteUser(user)">
+                    <Trash2 :size="14" />
+                    {{ deletingUserId === user.id ? 'Deleting…' : 'Delete' }}
+                  </button>
+                </div>
               </td>
             </tr>
           </tbody>
@@ -260,7 +266,7 @@
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
-import { KeyRound, Plus, Save } from '@lucide/vue'
+import { KeyRound, Plus, Save, Trash2 } from '@lucide/vue'
 import {
   appRoles,
   cacheUsers,
@@ -269,7 +275,7 @@ import {
   loadUsers,
   setRolePreview,
 } from '../services/auth'
-import { createAtlasUser, initiateAtlasPasswordReset, listAtlasUsers, updateAtlasUser, type CreateAtlasUserInput } from '../services/authAdminApi'
+import { createAtlasUser, deleteAtlasUser, initiateAtlasPasswordReset, listAtlasUsers, updateAtlasUser, type CreateAtlasUserInput } from '../services/authAdminApi'
 import { getRemoteConfigStatus, listLocalCollectionBackups, restoreLocalCollectionBackup, testRemoteConnection } from '../services/remoteRecords'
 import { getTdSynnexStatus, searchTdSynnex, testTdSynnexConnection, type TdSynnexIntegrationStatus, type TdSynnexPriceAvailability } from '../services/tdSynnexApi'
 import type { AppRole, UserProfile, UserSession } from '../types'
@@ -292,6 +298,7 @@ const previewRole = ref<AppRole | null>(null)
 const message = ref('')
 const newUser = reactive<CreateAtlasUserInput>({ ...emptyUser })
 const creatingUser = ref(false)
+const deletingUserId = ref('')
 const remoteStatus = ref(getRemoteConfigStatus())
 const syncMessage = ref('')
 const syncOk = ref(false)
@@ -378,6 +385,26 @@ async function saveUser(userId: string, updates: Partial<UserProfile>) {
     message.value = 'User profile updated.'
   } catch (error) {
     window.alert(error instanceof Error ? error.message : 'Unable to update user.')
+  }
+}
+
+async function deleteUser(user: UserProfile) {
+  if (deletingUserId.value || user.id === session.value?.id) return
+  const required = user.username || user.email
+  const confirmation = window.prompt(`Permanently delete ${user.name}?\n\nThis removes the Atlas profile and Supabase login. Historical procurement records will be preserved. Type ${required} to confirm.`)
+  if (confirmation?.trim() !== required) {
+    if (confirmation !== null) window.alert('Confirmation did not match. Nothing was deleted.')
+    return
+  }
+  deletingUserId.value = user.id
+  try {
+    const result = await deleteAtlasUser(user.id)
+    users.value = cacheUsers(users.value.filter(item => item.id !== user.id))
+    message.value = result.message
+  } catch (error) {
+    window.alert(error instanceof Error ? error.message : 'Unable to delete user.')
+  } finally {
+    deletingUserId.value = ''
   }
 }
 

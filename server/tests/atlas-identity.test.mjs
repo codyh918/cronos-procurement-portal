@@ -61,3 +61,18 @@ test('Admin UI creates users through the server API and does not retain created 
   assert.doesNotMatch(source, /createdCredentials|Temporary password:|addUser\(/)
   assert.match(serverSource, /User created successfully\. The user can now sign in to Atlas\./)
 })
+
+test('Atlas user deletion removes the Supabase Auth identity and is exposed in the Admin UI', async () => {
+  const [serverSource, apiSource, adminSource, migrationSource] = await Promise.all([
+    readFile('server/atlas-auth-api.mjs', 'utf8'), readFile('src/services/authAdminApi.ts', 'utf8'),
+    readFile('src/views/AdminView.vue', 'utf8'), readFile('migrations/20260910_enable_atlas_user_deletion.sql', 'utf8'),
+  ])
+  assert.match(serverSource, /request\.method === 'DELETE'/)
+  assert.match(serverSource, /supabase\.auth\.admin\.deleteUser\(targetId\)/)
+  assert.match(serverSource, /You cannot delete your own Atlas account\./)
+  assert.match(apiSource, /export async function deleteAtlasUser/)
+  assert.match(adminSource, /Type \$\{required\} to confirm/)
+  assert.match(migrationSource, /atlas_user_profiles[\s\S]*cascade/i)
+  assert.match(migrationSource, /on delete set null/i)
+  assert.doesNotMatch(migrationSource, /do \$\$|for constraint_row/i)
+})

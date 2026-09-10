@@ -142,6 +142,24 @@ export async function handleAtlasAuthApi({ request, response, pathname, sendJson
       return true
     }
 
+    if (request.method === 'DELETE' && userMatch) {
+      if (!isAdmin) { sendJson(response, 403, { error: 'Insufficient administrator permission.' }); return true }
+      const targetId = userMatch[1]
+      if (targetId === auth.user.id) { sendJson(response, 400, { error: 'You cannot delete your own Atlas account.' }); return true }
+      const target = await getProfile(supabase, targetId)
+      if (!target) { sendJson(response, 404, { error: 'Atlas user profile not found.' }); return true }
+      const deleted = await supabase.auth.admin.deleteUser(targetId)
+      if (deleted.error) {
+        sendJson(response, 502, { error: 'Unable to delete the user from Supabase Authentication.' })
+        return true
+      }
+      await audit(supabase, auth.user, 'user.deleted', 'user', targetId, {
+        username: target.username, email: target.email, role: target.role,
+      })
+      sendJson(response, 200, { message: `${target.display_name} was deleted from Atlas and Supabase.` })
+      return true
+    }
+
     const resetMatch = pathname.match(/^\/api\/auth\/users\/([0-9a-f-]+)\/password-reset$/i)
     if (request.method === 'POST' && resetMatch) {
       if (!isAdmin) { sendJson(response, 403, { error: 'Insufficient administrator permission.' }); return true }

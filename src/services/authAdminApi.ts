@@ -43,6 +43,10 @@ export async function updateAtlasUser(userId: string, updates: { role?: AppRole;
   })).user
 }
 
+export async function deleteAtlasUser(userId: string) {
+  return authRequest<{ message: string }>(`/api/auth/users/${userId}`, { method: 'DELETE' })
+}
+
 export async function initiateAtlasPasswordReset(userId: string) {
   return authRequest<{ message: string }>(`/api/auth/users/${userId}/password-reset`, { method: 'POST', body: '{}' })
 }

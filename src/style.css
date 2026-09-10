@@ -1627,6 +1627,17 @@ table {
   vertical-align: middle;
 }
 
+.admin-user-actions {
+  display: grid;
+  gap: 6px;
+  min-width: 96px;
+}
+
+.admin-user-actions .admin-save-button {
+  width: 100%;
+  justify-content: center;
+}
+
 .kitting-page {
   display: grid;
   gap: 24px;
