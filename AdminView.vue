@@ -245,7 +245,7 @@
                 <button class="secondary-action admin-save-button" type="button" @click="sendPasswordReset(user.id)">Send reset</button>
               </td>
               <td>
-                <div class="row-actions">
+                <div class="admin-user-actions">
                   <button class="secondary-action admin-save-button" type="button" @click="saveUser(user.id, user)">
                     <Save :size="14" />
                     Save
