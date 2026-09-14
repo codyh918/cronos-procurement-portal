@@ -1,31 +1,23 @@
-# Atlas Managed Funds — one GitHub upload
+# Atlas login storage fix — one upload
 
-1. Extract GITHUB-SINGLE-UPLOAD-managed-funds.zip.
+1. Extract GITHUB-SINGLE-UPLOAD-atlas-login-storage-fix.zip.
 2. Open [your GitHub upload page](https://github.com/codyh918/cronos-procurement-portal/upload/main).
-3. Select ALL FIVE extracted files and upload them together at the repository root.
-4. Commit with: Install Managed Funds complete release.
-5. Let Railway finish the deployment, then open a Managed Funds project.
+3. Upload all FIVE extracted files together to the repository root and commit.
+4. Wait for the new Railway deployment to become Active.
+5. Refresh Atlas with Ctrl+Shift+R and sign in again.
 
-No folder uploads or individual destination steps are needed. Upload the five files, not the ZIP or outer folder. This replaces the earlier Managed Funds upload packages.
+No SQL changes, password reset, site-data clearing, or folder uploads are required. This package includes the complete corrected Managed Funds release and the login fix.
 
-The SQL migration already succeeded. Do not rerun SQL for this upload.
+The upload files are package.json, package-lock.json, atlas-prepare-release.mjs, atlas-managed-funds-release.json, and README-UPLOAD.md. Upload these files, not their enclosing folder or the ZIP.
 
-Files to upload together:
-- package.json
-- package-lock.json
-- atlas-prepare-release.mjs
-- atlas-managed-funds-release.json
-- README-UPLOAD.md
+## What changed
 
-How it works:
-Railway already runs npm run build. The build script first restores the 29 packaged source, migration, test, and documentation files into their correct directories, then builds the application. The release includes the corrected server entry and router, the Managed Funds API and UI, and the missing tracking dependency. The two package files complete the 31-file corrected release.
+Login tokens, the Atlas session, the signed-in users cache, and the remembered email can be saved even when localStorage is full. Authentication and record access now share one Supabase client and its storage adapter.
 
-The helper checks every file checksum and destination before writing. It updates missing files and exact previous versions captured from GitHub. It preserves later edits at the correct source paths and never deletes files or connects to the database.
+On a quota error, the adapter first removes only confirmed server-backed Managed Funds caches and backup copies whose exact contents are still present in the current local collection. It preserves current projects, unique backups, and local drafts. If persistent storage remains full, it uses sessionStorage for the current tab. If browser storage is blocked entirely, it uses memory for the current page. In fallback mode you may need to sign in again after closing the tab; no password is stored by this adapter.
 
-Maintenance:
-Keep the helper and release JSON in the repository while using this build command. The restored directories exist in the build output; uploading this package does not directly rearrange GitHub's source tree. To return to a conventional source layout later, run npm run prepare:release in a checkout, commit the restored files, and change the build command back to vite build before removing the helper and release JSON. Edit canonical files such as src/views/ManagedFundsView.vue for later changes; older misplaced files at the repository root are not used by the application.
+The build helper still restores files to their proper source paths before running Vite. Keep the helper and release JSON in the repository while using this build command. Later edits at canonical source paths are preserved.
 
-Verification:
-The five root files were overlaid onto GitHub commit 13414668579bfb51f033151a73d5051e92c44ed6, reproducing the exact upload procedure. The helper restored all 29 files, and a repeat build made no further changes. Six installer tests passed on Node 20.20.2, and all 15 Managed Funds tests passed on Node 22.20.0. The exact npm run build command passed on Node 20.20.2. The server started on Node 20.20.2 with no startup errors, returned HTTP 200 for the root and Managed Funds page, and returned HTTP 401 for an unauthenticated Managed Funds API request.
+## Verification
 
-The existing large-bundle warning remains. The GitHub source also contains unrelated misplaced duplicate files that affect repository-wide type checking; the corrected application itself previously passed its application-entry type check. Production success still depends on the Railway deployment completing and the existing Supabase environment configuration.
+All 161 local server regression tests passed, including eight tests for this storage fix. A headless Edge test filled localStorage to its actual quota and verified the real Atlas login form, page reload, dashboard, authenticated record request, and logout with mock authentication. The test preserved the unique local project and backup and recorded no page errors. The exact single-upload package passed the production npm build on Node 20.20.2 and type checking for the application's entry point. The pre-existing large-bundle warning and repository-wide errors from misplaced duplicate source files remain outside this fix.
