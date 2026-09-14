@@ -8,13 +8,14 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "vite build",
+    "build": "node atlas-prepare-release.mjs && vite build",
     "type-check": "vue-tsc --noEmit -p tsconfig.json",
     "test:server": "node --experimental-strip-types --test server/tests/*.test.mjs",
     "validate:documents": "node scripts/validate-documents.mjs",
     "preview": "vite preview --host 0.0.0.0",
     "start": "node server.mjs",
-    "start:atlas": "node server.mjs"
+    "start:atlas": "node server.mjs",
+    "prepare:release": "node atlas-prepare-release.mjs"
   },
   "dependencies": {
     "@kenjiuno/msgreader": "^1.28.0",
