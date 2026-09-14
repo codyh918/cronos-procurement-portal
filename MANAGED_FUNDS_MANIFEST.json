@@ -1,0 +1,125 @@
+{
+  "date": "2026-09-14",
+  "files": [
+    {
+      "file": "package.json",
+      "sha256": "29a6dd71a9ddd411f4bf3eaeb4f3d3a431f1a21596c08798bee75125c3729f07"
+    },
+    {
+      "file": "package-lock.json",
+      "sha256": "ef56ea5a895c6d0b4c5e15c2149255e83755aef00bb7e63a27e4f9becba0256b"
+    },
+    {
+      "file": "server.mjs",
+      "sha256": "ecd81b870b558a0cf746ce3eacb0336b414f127cb3c1515f2b6360ac2a5f5dc2"
+    },
+    {
+      "file": "server/managed-funds-api.mjs",
+      "sha256": "cd7198c97c25af4a8de2fe3f182df1911f6cf9c2ee62dace2f0c09e67b20319c"
+    },
+    {
+      "file": "src/domain/managedFunds.mjs",
+      "sha256": "432755fe586732f005cd46824fdcb7895ab818cf1e9484dbbfea10fe2a0649c4"
+    },
+    {
+      "file": "src/domain/managedFunds.d.mts",
+      "sha256": "c1b3647c45079d453a1eb1083f977b6efdb1988aa42ab538fd3ff7cffe7a7852"
+    },
+    {
+      "file": "src/types.ts",
+      "sha256": "e899ad0b540e763c71f39890969ebdf1a262d5eeffd1e338b67cc28a26447051"
+    },
+    {
+      "file": "src/router/index.ts",
+      "sha256": "6f8d6c16b525941edf3f44982551a90c5b468dbc6bffeceddeef5ad66d9ada6e"
+    },
+    {
+      "file": "src/services/managedFundsApi.ts",
+      "sha256": "5cc05bbc89e0168dd67096f5815bed1a5bb9ecff9f70620746ac92ca05ed783f"
+    },
+    {
+      "file": "src/services/remoteRecords.ts",
+      "sha256": "f35945f80c1b0d9c5c43f77f31a4357769a98a0064c54bf33949e9cb34a56307"
+    },
+    {
+      "file": "src/services/localProjects.ts",
+      "sha256": "46a827893828f67093b5cbc62d7107686d26b354d1d9c498219ca9c37e06d2ce"
+    },
+    {
+      "file": "src/services/checkbook.ts",
+      "sha256": "2892a081255c2e6657cc19d8c57a660245f68e929f8f4f00977e9471757da4bb"
+    },
+    {
+      "file": "src/services/checkbookImport.ts",
+      "sha256": "aec28d791a23f3b76c0c099ab50e382f439a3343fec90d5e8b68d890055ef17d"
+    },
+    {
+      "file": "src/services/pdfExports.ts",
+      "sha256": "a437344bc7032599ce3cd0716849e6152228e5c089b3a88b68f571a9b49cde95"
+    },
+    {
+      "file": "src/services/workbookExports.ts",
+      "sha256": "ec2ccff42bba36c9c53733d052c527f790e79c8249a6413f91c8906e2af617a2"
+    },
+    {
+      "file": "src/services/documentGeneration.ts",
+      "sha256": "51c759ffaa84584e553492f3359f19e5854d4d240fed37fbd15ad28bf4d3160d"
+    },
+    {
+      "file": "src/components/MaterialTrackingPanel.vue",
+      "sha256": "977417002bd4b602d85b29358d58d26675b38ed6b1c979fda55b2893a3342a13"
+    },
+    {
+      "file": "src/views/ManagedFundsView.vue",
+      "sha256": "9a3363617591f28b64062d4ecaf51950363308602ce1e80dcfe6cc8d09139170"
+    },
+    {
+      "file": "src/views/NewProjectView.vue",
+      "sha256": "1d4abc44913622cad1b203a76b5c889468ce8acd43e3a34aafa73c47178f04f5"
+    },
+    {
+      "file": "src/views/EditProjectView.vue",
+      "sha256": "952bc071d2fb386629d6d3af481ae73409e60064208033e9e0a75c297aec39ed"
+    },
+    {
+      "file": "src/views/ProjectDetailView.vue",
+      "sha256": "44cfc3d0456b64111a443c265d052043c9907b0f68652baf4b94269d359d2b60"
+    },
+    {
+      "file": "src/views/ProjectsView.vue",
+      "sha256": "5f91f30e0a691b8a109ced40ef42a5d67b297f4c3255bcd3050771e48b0a54a6"
+    },
+    {
+      "file": "src/views/NewQuoteView.vue",
+      "sha256": "db14928a823fdcf243423f7df75178e818820e066488b001611c5da4f25ba5ec"
+    },
+    {
+      "file": "src/views/PurchaseOrderDetailView.vue",
+      "sha256": "df4ff90ce3904fbafcbc628579ecdc3218a91ca92abec44705ac460e7feda608"
+    },
+    {
+      "file": "migrations/20260914_create_managed_funds.sql",
+      "sha256": "510794ce3eb9afdacf60d0323b9fb710cdbdfeddafec8e4f7826d3bea69cff57"
+    },
+    {
+      "file": "migrations/20260914_managed_funds_rollback.sql",
+      "sha256": "cabfc25fb2945a4fff437d438a649c21f8f3ec270cd84c6c73e2d278824ccdce"
+    },
+    {
+      "file": "server/tests/managed-funds.test.mjs",
+      "sha256": "58b05d594138eace97a6bbcbb0d2300b3fb45fbe48c4374b3228a734760233ae"
+    },
+    {
+      "file": "server/tests/managed-funds-database.test.mjs",
+      "sha256": "004c1d418a4b1df8117b43afd85c2628454175cbd9321de775af209d6d17426c"
+    },
+    {
+      "file": "docs/MANAGED_FUNDS_IMPLEMENTATION.md",
+      "sha256": "f02a0f8235455e7e2215a8291f5074ec4ed300eddc1cbbdaeb2e24db28459ce6"
+    },
+    {
+      "file": "docs/MANAGED_FUNDS_DEPLOYMENT.md",
+      "sha256": "8b83534a2ad22edbd52b2795a5bfc1f11abd21390df337f608ba4f4ef4fff555"
+    }
+  ]
+}

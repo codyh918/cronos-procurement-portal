@@ -3,12 +3,14 @@ import { join, extname, normalize, sep } from 'node:path'
 import { createServer } from 'node:http'
 import { handleSewpApi } from './server/sewp-api.mjs'
 import { handleDataApi } from './server/data-api.mjs'
+import { handleManagedFundsApi } from './server/managed-funds-api.mjs'
 import { getSewpSupabase } from './server/sewp-supabase.mjs'
 import { getSupabasePasswordAuthClient } from './server/sewp-supabase.mjs'
 import { handleAtlasAuthApi } from './server/atlas-auth-api.mjs'
 import { handleCatalogApi } from './server/catalog-api.mjs'
 import { handleTdSynnexApi } from './server/td-synnex-api.mjs'
 import { handlePricingVerificationApi } from './server/pricing-verification-api.mjs'
+import { handleCustomerPortalApi } from './server/customer-portal-api.mjs'
 
 const port = Number(process.env.PORT || 4173)
 const root = join(process.cwd(), 'dist')
@@ -49,13 +51,13 @@ function sendJson(response, statusCode, payload) {
   response.end(JSON.stringify(payload))
 }
 
-function readJsonBody(request) {
+function readJsonBody(request, maximumBytes = 1_000_000) {
   return new Promise((resolve, reject) => {
     let raw = ''
     request.setEncoding('utf8')
     request.on('data', chunk => {
       raw += chunk
-      if (raw.length > 1_000_000) {
+      if (Buffer.byteLength(raw) > maximumBytes) {
         reject(new Error('Request body too large'))
         request.destroy()
       }
@@ -268,11 +270,16 @@ async function handleCimsApi(request, response, pathname) {
 
 createServer(async (request, response) => {
   const pathname = decodeURIComponent(new URL(request.url || '/', 'http://localhost').pathname)
+  response.setHeader('Content-Security-Policy', "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'")
+  response.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()')
+  response.setHeader('X-Frame-Options', 'DENY')
+  if (await handleCustomerPortalApi({ request, response, pathname, sendJson, readJsonBody })) return
   if (await handleAtlasAuthApi({ request, response, pathname, sendJson, readJsonBody, supabase: getSewpSupabase(), passwordAuthClient: getSupabasePasswordAuthClient() })) return
   if (await handleTdSynnexApi({ request, response, pathname, sendJson, readJsonBody, authClient: getSupabasePasswordAuthClient() })) return
   if (await handlePricingVerificationApi({ request, response, pathname, sendJson, readJsonBody, authClient: getSupabasePasswordAuthClient(), supabase: getSewpSupabase() })) return
   if (await handleCatalogApi({ request, response, pathname, sendJson, readJsonBody, readBufferBody, supabase: getSewpSupabase() })) return
   if (await handleDataApi({ request, response, pathname, sendJson, readJsonBody, supabase: getSewpSupabase() })) return
+  if (await handleManagedFundsApi({ request, response, pathname, sendJson, readJsonBody, readBufferBody, supabase: getSewpSupabase() })) return
   if (await handleSewpApi({ request, response, pathname, sendJson, readJsonBody, readBufferBody })) return
   if (pathname.startsWith('/api/cims/') && await handleCimsApi(request, response, pathname)) return
 

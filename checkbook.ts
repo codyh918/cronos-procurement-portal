@@ -1,4 +1,5 @@
 import { calculateLineTotals, roundCurrency } from './calculations'
+import { financialSummary } from '../domain/managedFunds.mjs'
 import type { Project } from '../types'
 
 export type CheckbookLine = {
@@ -15,11 +16,11 @@ export type CheckbookLine = {
 }
 
 export function getCheckbookSummary(project: Project) {
-  const startingBalance = project.checkbookStartingBalance ?? 0
+  const startingBalance = project.managedFunds ? financialSummary(project.managedFunds).authorized / 100 : project.checkbookStartingBalance ?? 0
   const lines = getCheckbookLines(project)
   const ourCost = roundCurrency(lines.reduce((total, line) => total + line.ourCost, 0))
   const customerCost = roundCurrency(lines.reduce((total, line) => total + line.customerCost, 0))
-  const remainingBalance = roundCurrency(startingBalance - customerCost)
+  const remainingBalance = project.managedFunds ? financialSummary(project.managedFunds).available / 100 : roundCurrency(startingBalance - customerCost)
 
   return {
     startingBalance,

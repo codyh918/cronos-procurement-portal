@@ -1,141 +1,135 @@
-import { randomUUID } from 'node:crypto'
-import { DeterministicRfqExtractionProvider, RFQ_EXTRACTION_CONFIG } from './rfq-extraction.mjs'
-import { requirePermission } from './sewp-auth.mjs'
+import { createRouter, createWebHistory } from 'vue-router'
+import AppShell from '../components/AppShell.vue'
+import AuthGate from '../components/AuthGate.vue'
+import { adminOnlyPaths } from '../roles'
+import { fetchSession, normalizeRole } from '../services/auth'
+import AdminView from '../views/AdminView.vue'
+import CatalogView from '../views/CatalogView.vue'
+import ProductDetailView from '../views/ProductDetailView.vue'
+import CimsAppView from '../views/CimsAppView.vue'
+import CustomerOrderDetailView from '../views/CustomerOrderDetailView.vue'
+import CustomerOrdersView from '../views/CustomerOrdersView.vue'
+import CustomersView from '../views/CustomersView.vue'
+import DashboardView from '../views/DashboardView.vue'
+import EditProjectView from '../views/EditProjectView.vue'
+import EquityScoutView from '../views/EquityScoutView.vue'
+import NewProjectView from '../views/NewProjectView.vue'
+import NewQuoteView from '../views/NewQuoteView.vue'
+import PlaceholderView from '../views/PlaceholderView.vue'
+import ProjectDetailView from '../views/ProjectDetailView.vue'
+import ProjectsView from '../views/ProjectsView.vue'
+import ManagedFundsView from '../views/ManagedFundsView.vue'
+import PublicOrderLookupView from '../views/PublicOrderLookupView.vue'
+import PublicOrderTokenView from '../views/PublicOrderTokenView.vue'
+import PurchaseOrderDetailView from '../views/PurchaseOrderDetailView.vue'
+import PurchaseOrdersView from '../views/PurchaseOrdersView.vue'
+import QuotesView from '../views/QuotesView.vue'
+import VendorsView from '../views/VendorsView.vue'
+import SewpDashboardView from '../views/SewpDashboardView.vue'
+import SewpWorkQueueView from '../views/SewpWorkQueueView.vue'
+import NewSewpRfqView from '../views/NewSewpRfqView.vue'
+import SewpRfqDetailView from '../views/SewpRfqDetailView.vue'
+import SewpRfqImportView from '../views/SewpRfqImportView.vue'
+import SewpDeletedView from '../views/SewpDeletedView.vue'
+import CustomerPortalShell from '../components/CustomerPortalShell.vue'
+import CustomerLoginView from '../views/customer/CustomerLoginView.vue'
+import CustomerDashboardView from '../views/customer/CustomerDashboardView.vue'
+import CustomerProjectsView from '../views/customer/CustomerProjectsView.vue'
+import CustomerProjectView from '../views/customer/CustomerProjectView.vue'
+import CustomerAttentionView from '../views/customer/CustomerAttentionView.vue'
+import { getCustomerToken } from '../services/customerPortalApi'
+import DemoPortalShell from '../demo/customer/components/DemoPortalShell.vue'
+import DemoDashboardView from '../demo/customer/views/DemoDashboardView.vue'
+import DemoProjectsView from '../demo/customer/views/DemoProjectsView.vue'
+import DemoProjectView from '../demo/customer/views/DemoProjectView.vue'
+import DemoMaterialsView from '../demo/customer/views/DemoMaterialsView.vue'
+import DemoAttentionView from '../demo/customer/views/DemoAttentionView.vue'
+import DemoReportsView from '../demo/customer/views/DemoReportsView.vue'
+import DemoSupportView from '../demo/customer/views/DemoSupportView.vue'
 
-const provider = new DeterministicRfqExtractionProvider()
+const routes = [
+  {
+    path: '/',
+    component: AuthGate,
+    children: [
+      {
+        path: '',
+        component: AppShell,
+        children: [
+          { path: '', name: 'dashboard', component: DashboardView },
+          { path: 'projects', name: 'projects', component: ProjectsView },
+          { path: 'projects/new', name: 'new-project', component: NewProjectView },
+          { path: 'projects/:id', name: 'project-detail', component: ProjectDetailView },
+          { path: 'projects/:id/actions/:actionId', name: 'managed-funds-action', component: ManagedFundsView },
+          { path: 'projects/:id/edit', name: 'edit-project', component: EditProjectView },
+          { path: 'projects/:id/quotes/new', name: 'new-project-quote', component: NewQuoteView },
+          { path: 'projects/:id/quotes/:quoteId/edit', name: 'edit-project-quote', component: NewQuoteView },
+          { path: 'quotes', name: 'quotes', component: QuotesView },
+          { path: 'purchase-orders', name: 'purchase-orders', component: PurchaseOrdersView },
+          { path: 'purchase-orders/:poId', name: 'purchase-order-detail', component: PurchaseOrderDetailView },
+          { path: 'sewp-rfqs', redirect: '/sewp-rfqs/dashboard' },
+          { path: 'sewp-rfqs/dashboard', name: 'sewp-dashboard', component: SewpDashboardView },
+          { path: 'sewp-rfqs/work-queue', name: 'sewp-work-queue', component: SewpWorkQueueView },
+          { path: 'sewp-rfqs/new', name: 'new-sewp-rfq', component: NewSewpRfqView },
+          { path: 'sewp-rfqs/import', name: 'import-sewp-rfq', component: SewpRfqImportView },
+          { path: 'sewp-rfqs/deleted', name: 'deleted-sewp-rfqs', component: SewpDeletedView },
+          { path: 'sewp-rfqs/:rfqId', name: 'sewp-rfq-detail', component: SewpRfqDetailView },
+          { path: 'vendors', name: 'vendors', component: VendorsView },
+          { path: 'catalog', name: 'catalog', component: CatalogView },
+          { path: 'catalog/:productId', name: 'catalog-product', component: ProductDetailView },
+          { path: 'customers', name: 'customers', component: CustomersView },
+          { path: 'customer-orders', name: 'customer-orders', component: CustomerOrdersView },
+          { path: 'customer-orders/:orderNumber', name: 'customer-order-detail', component: CustomerOrderDetailView },
+          { path: 'users', name: 'users', component: AdminView, meta: { adminOnly: true } },
+          { path: 'roles', name: 'roles', component: AdminView, meta: { adminOnly: true } },
+          { path: 'settings', name: 'settings', component: AdminView, meta: { adminOnly: true } },
+          { path: 'audit-log', name: 'audit-log', component: PlaceholderView, meta: { title: 'Audit Log', adminOnly: true } },
+        ],
+      },
+    ],
+  },
+  { path: '/orders/:token', name: 'public-order-token', component: PublicOrderTokenView },
+  { path: '/order-status', name: 'public-order-lookup', component: PublicOrderLookupView },
+  { path: '/cims', name: 'cims-explicit', component: CimsAppView },
+  { path: '/equity-scout', name: 'equity-scout', component: EquityScoutView },
+  { path: '/customer/login', name: 'customer-login', component: CustomerLoginView, meta: { customerPublic: true } },
+  { path: '/customer', component: CustomerPortalShell, meta: { customerProtected: true }, children: [
+    { path: '', name: 'customer-dashboard', component: CustomerDashboardView },
+    { path: 'projects', name: 'customer-projects', component: CustomerProjectsView },
+    { path: 'projects/:projectId', name: 'customer-project', component: CustomerProjectView },
+    { path: 'projects/:projectId/materials', redirect: (to: any) => `/customer/projects/${to.params.projectId}` },
+    { path: 'projects/:projectId/activity', redirect: (to: any) => `/customer/projects/${to.params.projectId}` },
+    { path: 'attention', name: 'customer-attention', component: CustomerAttentionView },
+  ]},
+  { path: '/demo/customer', component: DemoPortalShell, children: [
+    { path: '', name: 'demo-customer-dashboard', component: DemoDashboardView },
+    { path: 'projects', name: 'demo-customer-projects', component: DemoProjectsView },
+    { path: 'projects/:projectId', name: 'demo-customer-project', component: DemoProjectView },
+    { path: 'materials', name: 'demo-customer-materials', component: DemoMaterialsView },
+    { path: 'attention', name: 'demo-customer-attention', component: DemoAttentionView },
+    { path: 'reports', name: 'demo-customer-reports', component: DemoReportsView },
+    { path: 'support', name: 'demo-customer-support', component: DemoSupportView },
+  ]},
+  { path: '/:pathMatch(.*)*', redirect: '/' },
+]
 
-export async function handleSewpImportApi(context) {
-  const { request, response, pathname, sendJson, readJsonBody, readBufferBody, supabase, auth, requestId } = context
-  if (!pathname.startsWith('/api/sewp-rfqs/imports')) return false
+const router = createRouter({
+  history: createWebHistory(),
+  routes,
+})
 
-  if (request.method === 'POST' && pathname === '/api/sewp-rfqs/imports') {
-    const allowed = requirePermission(auth, 'sewp.rfq.upload')
-    if (!allowed.ok) return deny(response, sendJson, allowed, requestId)
-    const filename = decodeURIComponent(String(request.headers['x-atlas-filename'] || ''))
-    try {
-      const buffer = await readBufferBody(request, RFQ_EXTRACTION_CONFIG.maxFileSize)
-      const extraction = provider.extract(buffer, filename)
-      const duplicate = await supabase.from('sewp_rfq_imports').select('id,status,created_rfq_id,created_project_id')
-        .eq('original_file_hash', extraction.originalFileHash).maybeSingle()
-      if (duplicate.error) return dbError(response, sendJson, duplicate.error, requestId)
-      if (duplicate.data) {
-        sendJson(response, 409, { error: 'This exact Outlook message has already been imported.', duplicate: duplicate.data, requestId })
-        return true
-      }
-      const importId = randomUUID()
-      const originalKey = `imports/${importId}/original/${safeFilename(filename)}`
-      const upload = await supabase.storage.from('sewp-rfq-documents').upload(originalKey, buffer, {
-        contentType: 'application/vnd.ms-outlook', upsert: false,
-      })
-      if (upload.error) return dbError(response, sendJson, upload.error, requestId)
-      const attachmentRows = []
-      try {
-        for (const attachment of extraction.attachments) {
-          const key = `imports/${importId}/attachments/${randomUUID()}-${safeFilename(attachment.filename)}`
-          const stored = await supabase.storage.from('sewp-rfq-documents').upload(key, attachment.content, {
-            contentType: attachment.mimeType, upsert: false,
-          })
-          if (stored.error) throw stored.error
-          attachmentRows.push({
-            import_id: importId, filename: attachment.filename, mime_type: attachment.mimeType,
-            file_size: attachment.size, file_hash: attachment.sha256, storage_key: key,
-            document_type: /\.(xlsx|xls)$/i.test(attachment.filename) ? 'equipment_list' : 'supporting',
-            parse_status: 'completed',
-          })
-        }
-        const extractionData = {
-          ...extraction,
-          attachments: extraction.attachments.map(({ content, ...metadata }) => metadata),
-        }
-        const inserted = await supabase.from('sewp_rfq_imports').insert({
-          id: importId, status: 'review_required', original_filename: filename,
-          original_file_size: buffer.length,
-          original_file_hash: extraction.originalFileHash, original_storage_key: originalKey,
-          message_subject: extraction.message.subject, message_id: extraction.message.messageId || null,
-          sewp_request_id: extraction.fields.request_id || null, agency_id: extraction.fields.agency_id || null,
-          modification_level: extraction.fields.modification_level || null, imported_by: auth.user.id,
-          parser_version: extraction.parserVersion, extraction_version: extraction.extractionVersion,
-          extraction_data: extractionData, warnings: extraction.warnings,
-        }).select('*').single()
-        if (inserted.error) throw inserted.error
-        if (attachmentRows.length) {
-          const attachments = await supabase.from('sewp_rfq_import_attachments').insert(attachmentRows)
-          if (attachments.error) throw attachments.error
-        }
-        await audit(supabase, auth.user.id, 'rfq_import.uploaded', importId, requestId, { filename, sha256: extraction.originalFileHash })
-        sendJson(response, 201, { import: inserted.data, requestId })
-      } catch (error) {
-        await cleanupStorage(supabase, originalKey, attachmentRows.map(row => row.storage_key))
-        throw error
-      }
-    } catch (error) {
-      sendJson(response, error?.message === 'Request body too large' ? 413 : 400, { error: safeError(error), requestId })
-    }
-    return true
+router.beforeEach(to => {
+  if (to.matched.some(record => record.meta.customerProtected) && !getCustomerToken()) return '/customer/login'
+  if (to.meta.customerPublic && getCustomerToken()) return '/customer'
+  const session = fetchSession()
+  const path = to.path.replace(/\/$/, '') || '/'
+  const isAdminRoute = to.matched.some(record => record.meta.adminOnly) || adminOnlyPaths.some(adminPath => path === adminPath || path.startsWith(`${adminPath}/`))
+
+  if (isAdminRoute && normalizeRole(session?.role) !== 'admin') {
+    return '/'
   }
 
-  const detail = pathname.match(/^\/api\/sewp-rfqs\/imports\/([0-9a-f-]+)$/i)
-  if (detail && request.method === 'GET') {
-    const allowed = requirePermission(auth, 'sewp.rfq.view')
-    if (!allowed.ok) return deny(response, sendJson, allowed, requestId)
-    const result = await supabase.from('sewp_rfq_imports').select('*,sewp_rfq_import_attachments(*)').eq('id', detail[1]).maybeSingle()
-    if (result.error) return dbError(response, sendJson, result.error, requestId)
-    if (!result.data) return sendJson(response, 404, { error: 'RFQ import not found.', requestId }), true
-    sendJson(response, 200, { import: result.data, requestId })
-    return true
-  }
+  return true
+})
 
-  if (detail && request.method === 'PATCH') {
-    const allowed = requirePermission(auth, 'sewp.rfq.verify_fields')
-    if (!allowed.ok) return deny(response, sendJson, allowed, requestId)
-    try {
-      const body = await readJsonBody(request)
-      const current = await supabase.from('sewp_rfq_imports').select('status,extraction_data').eq('id', detail[1]).maybeSingle()
-      if (current.error) return dbError(response, sendJson, current.error, requestId)
-      if (!current.data || !['review_required', 'ready_for_approval'].includes(current.data.status)) {
-        sendJson(response, 409, { error: 'Only an import under review can be changed.', requestId }); return true
-      }
-      const extraction = mergeEditable(current.data.extraction_data, body.extractionData)
-      const updated = await supabase.from('sewp_rfq_imports').update({
-        extraction_data: extraction, status: body.readyForApproval ? 'ready_for_approval' : 'review_required', updated_at: new Date().toISOString(),
-      }).eq('id', detail[1]).select('*').single()
-      if (updated.error) return dbError(response, sendJson, updated.error, requestId)
-      await audit(supabase, auth.user.id, 'rfq_import.corrected', detail[1], requestId)
-      sendJson(response, 200, { import: updated.data, requestId })
-    } catch (error) { sendJson(response, 400, { error: safeError(error), requestId }) }
-    return true
-  }
-
-  const approve = pathname.match(/^\/api\/sewp-rfqs\/imports\/([0-9a-f-]+)\/approve$/i)
-  if (approve && request.method === 'POST') {
-    const allowed = requirePermission(auth, 'sewp.rfq.create')
-    if (!allowed.ok) return deny(response, sendJson, allowed, requestId)
-    try {
-      const body = await readJsonBody(request)
-      if (!body.idempotencyKey || String(body.idempotencyKey).length > 100) {
-        sendJson(response, 400, { error: 'A valid idempotency key is required.', requestId }); return true
-      }
-      const result = await supabase.rpc('approve_sewp_rfq_import', {
-        p_import_id: approve[1], p_actor_user_id: auth.user.id,
-        p_idempotency_key: body.idempotencyKey, p_request_id: requestId,
-      })
-      if (result.error) return dbError(response, sendJson, result.error, requestId)
-      sendJson(response, 201, { result: result.data, requestId })
-    } catch (error) { sendJson(response, 400, { error: safeError(error), requestId }) }
-    return true
-  }
-  return false
-}
-
-function mergeEditable(current, proposed) {
-  if (!proposed || typeof proposed !== 'object' || Array.isArray(proposed)) throw new Error('extractionData must be an object.')
-  return { ...current, fields: { ...current.fields, ...(proposed.fields || {}) }, lines: Array.isArray(proposed.lines) ? proposed.lines : current.lines }
-}
-function safeFilename(value) { return String(value || 'email.msg').replace(/[<>:"/\\|?*\x00-\x1f]/g, '_').replace(/^\.+/, '').slice(0, 180) }
-function safeError(error) { return error instanceof Error ? error.message.replace(/[\r\n]+/g, ' ').slice(0, 300) : 'Import failed.' }
-function deny(response, sendJson, allowed, requestId) { sendJson(response, allowed.status, { error: allowed.error, requestId }); return true }
-function dbError(response, sendJson, error, requestId) { console.error('SEWP import database operation failed', { requestId, code: error?.code }); sendJson(response, 500, { error: 'The RFQ import database operation failed.', requestId }); return true }
-async function cleanupStorage(supabase, original, attachments) { await supabase.storage.from('sewp-rfq-documents').remove([original, ...attachments]) }
-async function audit(supabase, actor, action, entityId, requestId, value = null) {
-  await supabase.from('sewp_rfq_audit_events').insert({ actor_type: 'User', actor_user_id: actor, action, entity_type: 'rfq_import', entity_id: entityId, new_value: value, request_id: requestId })
-}
+export default router

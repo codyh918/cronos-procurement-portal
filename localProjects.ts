@@ -9,6 +9,9 @@ import type { TrackingImportInput } from './trackingImport'
 import { loadVendorDirectory } from './vendorDirectory'
 import { normalizeCustomerFields } from './customerFormatting'
 import { createCustomerFromProject, findAddressById, findCustomerById, rememberCustomerUse, snapshotFromCustomerAddress, upsertAddressForProject } from './customerRecords'
+import { migrateLegacyMaterialTracking } from './materialTracking'
+import { cachedFunds } from './managedFundsApi'
+import { isManagedFunds } from '../domain/managedFunds.mjs'
 
 const STORAGE_KEY = 'cronos.projects'
 const REMOTE_TYPE = 'projects'
@@ -44,6 +47,8 @@ export function saveProject(input: ProjectFormInput): Project {
     inventory: [],
     kitStatus: 'Quoted',
     shipmentStatus: 'Quoted',
+    materialShipments: [],
+    materialTrackingActivity: [],
   }
 
   const linkedProject = linkProjectCustomer(project)
@@ -51,14 +56,28 @@ export function saveProject(input: ProjectFormInput): Project {
   return linkedProject
 }
 
+export async function saveProjectStrict(input: ProjectFormInput): Promise<Project> {
+  const project: Project = { ...input, id: crypto.randomUUID(), createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(), quotes: [], quoteLines: [], purchaseOrders: [], inventory: [], kitStatus: 'Quoted', shipmentStatus: 'Quoted', materialShipments: [], materialTrackingActivity: [] }
+  const linked = linkProjectCustomer(project)
+  await saveProjectsStrict([linked, ...loadProjects()], linked.id)
+  return loadProject(linked.id) || linked
+}
+
 export function loadProject(id: string): Project | undefined {
   return loadProjects().find(project => project.id === id)
+}
+
+export function saveMaterialTrackingProject(project: Project) {
+  const normalized = normalizeProject(project)
+  saveProjects(loadProjects().map(current => (current.id === normalized.id ? normalized : current)), normalized.id)
+  return normalized
 }
 
 export function updateProjectFromInput(id: string, input: ProjectFormInput): Project | undefined {
   let updatedProject: Project | undefined
   const projects = loadProjects().map(project => {
     if (project.id !== id) return project
+    if (isManagedFunds(project) && (input.projectType !== 'Managed Funds' || Number(input.checkbookStartingBalance) !== Number(project.checkbookStartingBalance))) throw new Error('Original funding and project type are locked. Create a Funding Modification Action.')
 
     const oldProjectNumber = project.projectNumber
     const projectNumber = input.projectNumber.trim()
@@ -100,6 +119,7 @@ export function deleteProject(projectId: string) {
   if (!projectToDelete) {
     throw new Error('Project not found.')
   }
+  if (isManagedFunds(projectToDelete)) throw new Error('Managed Funds projects retain their financial history and cannot be deleted.')
 
   saveProjects(projects.filter(project => project.id !== projectId))
   return projectToDelete
@@ -108,7 +128,7 @@ export function deleteProject(projectId: string) {
 export function createQuoteForProject(
   projectId: string,
   lines: Array<Omit<QuoteLine, 'id' | 'approved'>>,
-  options: { contractFeeEnabled?: boolean; expirationDays?: 30 | 60 | 90; quoteName?: string; shippingCost?: number } = {},
+  options: { actionId?: string; contractFeeEnabled?: boolean; expirationDays?: 30 | 60 | 90; quoteName?: string; shippingCost?: number } = {},
 ): CustomerQuote {
   const { quote, projects } = prepareQuoteCreate(projectId, lines, options)
   saveProjects(projects, quote.projectId)
@@ -118,7 +138,7 @@ export function createQuoteForProject(
 export async function createQuoteForProjectStrict(
   projectId: string,
   lines: Array<Omit<QuoteLine, 'id' | 'approved'>>,
-  options: { contractFeeEnabled?: boolean; expirationDays?: 30 | 60 | 90; quoteName?: string; shippingCost?: number } = {},
+  options: { actionId?: string; contractFeeEnabled?: boolean; expirationDays?: 30 | 60 | 90; quoteName?: string; shippingCost?: number } = {},
 ): Promise<CustomerQuote> {
   const { quote, projects } = prepareQuoteCreate(projectId, lines, options)
   await saveProjectsStrict(projects, quote.projectId)
@@ -128,7 +148,7 @@ export async function createQuoteForProjectStrict(
 function prepareQuoteCreate(
   projectId: string,
   lines: Array<Omit<QuoteLine, 'id' | 'approved'>>,
-  options: { contractFeeEnabled?: boolean; expirationDays?: 30 | 60 | 90; quoteName?: string; shippingCost?: number } = {},
+  options: { actionId?: string; contractFeeEnabled?: boolean; expirationDays?: 30 | 60 | 90; quoteName?: string; shippingCost?: number } = {},
 ) {
   const project = loadProject(projectId)
   if (!project) {
@@ -144,6 +164,8 @@ function prepareQuoteCreate(
     projectName: project.projectName,
     customer: project.customer,
     quoteName: options.quoteName?.trim() ?? '',
+    actionId: options.actionId,
+    actionNumber: project.managedFunds?.actions.find(a => a.id === options.actionId)?.number,
     status: 'Quoted',
     createdAt: new Date().toISOString(),
     expirationDays: options.expirationDays ?? 30,
@@ -169,7 +191,7 @@ export function updateQuoteForProject(
   projectId: string,
   quoteId: string,
   lines: Array<Omit<QuoteLine, 'id' | 'approved'> & Partial<Pick<QuoteLine, 'id' | 'approved'>>>,
-  options: { contractFeeEnabled?: boolean; expirationDays?: 30 | 60 | 90; quoteName?: string; shippingCost?: number } = {},
+  options: { actionId?: string; contractFeeEnabled?: boolean; expirationDays?: 30 | 60 | 90; quoteName?: string; shippingCost?: number } = {},
 ): CustomerQuote {
   const { updatedQuote, updatedProject, projects, syncResult } = prepareQuoteUpdate(projectId, quoteId, lines, options)
 
@@ -182,7 +204,7 @@ export async function updateQuoteForProjectStrict(
   projectId: string,
   quoteId: string,
   lines: Array<Omit<QuoteLine, 'id' | 'approved'> & Partial<Pick<QuoteLine, 'id' | 'approved'>>>,
-  options: { contractFeeEnabled?: boolean; expirationDays?: 30 | 60 | 90; quoteName?: string; shippingCost?: number } = {},
+  options: { actionId?: string; contractFeeEnabled?: boolean; expirationDays?: 30 | 60 | 90; quoteName?: string; shippingCost?: number } = {},
 ): Promise<CustomerQuote> {
   const { updatedQuote, updatedProject, projects, syncResult } = prepareQuoteUpdate(projectId, quoteId, lines, options)
 
@@ -192,6 +214,7 @@ export async function updateQuoteForProjectStrict(
 }
 
 export function deleteQuoteForProject(projectId: string, quoteId: string) {
+  if (isManagedFunds(loadProject(projectId))) throw new Error('Managed Funds documents retain their history and cannot be deleted.')
   const project = loadProject(projectId)
   if (!project) {
     throw new Error('Project not found.')
@@ -230,7 +253,7 @@ function prepareQuoteUpdate(
   projectId: string,
   quoteId: string,
   lines: Array<Omit<QuoteLine, 'id' | 'approved'> & Partial<Pick<QuoteLine, 'id' | 'approved'>>>,
-  options: { contractFeeEnabled?: boolean; expirationDays?: 30 | 60 | 90; quoteName?: string; shippingCost?: number } = {},
+  options: { actionId?: string; contractFeeEnabled?: boolean; expirationDays?: 30 | 60 | 90; quoteName?: string; shippingCost?: number } = {},
 ) {
   const project = loadProject(projectId)
   if (!project) {
@@ -508,10 +531,10 @@ export function importCheckbookPurchaseOrders(projectId: string, rows: Checkbook
         lines: [
           {
             id: crypto.randomUUID(),
-            clin: 'CHECKBOOK',
+            clin: 'MF',
             partNumber: row.poNumber.trim(),
             manufacturer: row.vendor.trim(),
-            description: row.description.trim() || `Checkbook PO ${row.poNumber.trim()}`,
+            description: row.description.trim() || `Managed Funds PO ${row.poNumber.trim()}`,
             quantityOrdered: 1,
             quantityReceived: 0,
             unitCost: totalCost,
@@ -539,7 +562,7 @@ export function importCheckbookPurchaseOrders(projectId: string, rows: Checkbook
 
   const updatedProject = normalizeProject({
     ...project,
-    projectType: 'Checkbook',
+    projectType: 'Managed Funds',
     status: project.status === 'Quoted' ? 'PO Issued' : project.status,
     purchaseOrders: [...project.purchaseOrders, ...newPurchaseOrders],
   })
@@ -835,11 +858,13 @@ export function importPurchaseOrderTracking(projectId: string, rows: TrackingImp
 
 function normalizeProject(project: Project): Project {
   const normalizedCustomer = normalizeCustomerFields(project)
-  return {
+  const normalized: Project = {
     ...normalizedCustomer,
     customerId: normalizedCustomer.customerId ?? '',
     customerAddressId: normalizedCustomer.customerAddressId ?? '',
-    projectType: project.projectType ?? 'Design & Install',
+    projectType: isManagedFunds(project) ? 'Managed Funds' : project.projectType ?? 'Design & Install',
+    managedFunds: isManagedFunds(project) ? cachedFunds(project.id) ?? project.managedFunds : undefined,
+    managedFundsRevision: isManagedFunds(project) ? cachedFunds(project.id)?.revision ?? project.managedFundsRevision : undefined,
     checkbookStartingBalance: Number(project.checkbookStartingBalance || 0),
     materialBudget: Number(project.materialBudget || 0),
     assignedUserIds: Array.isArray(project.assignedUserIds) ? project.assignedUserIds : [],
@@ -860,6 +885,7 @@ function normalizeProject(project: Project): Project {
     kitStatus: project.kitStatus ?? 'Quoted',
     shipmentStatus: project.shipmentStatus ?? 'Quoted',
   }
+  return migrateLegacyMaterialTracking(normalized)
 }
 
 function linkProjectCustomer(project: Project): Project {
@@ -887,6 +913,10 @@ function linkProjectCustomer(project: Project): Project {
 }
 
 function saveProjects(projects: Project[], changedProjectId?: string) {
+  if (changedProjectId && isManagedFunds(projects.find(p => p.id === changedProjectId))) {
+    void saveProjectsStrict(projects, changedProjectId).catch(error => window.dispatchEvent(new CustomEvent('cronos:remote-sync-error', { detail: error instanceof Error ? error.message : 'Managed Funds save failed.' })))
+    return
+  }
   const { normalizedProjects, changedIds } = prepareProjectsForSave(projects, changedProjectId)
 
   saveLocalAndRemoteCollection(STORAGE_KEY, REMOTE_TYPE, REMOTE_KEY, normalizedProjects, 'cronos:projects-changed', {
@@ -958,6 +988,8 @@ function mergeProjectPreservingNestedRecords(remoteItem: unknown, localItem: unk
     quoteLines,
     purchaseOrders: mergeNestedById(remoteProject.purchaseOrders, localProject.purchaseOrders),
     inventory: mergeNestedById(remoteProject.inventory, localProject.inventory),
+    materialShipments: mergeNestedById(remoteProject.materialShipments, localProject.materialShipments),
+    materialTrackingActivity: mergeNestedById(remoteProject.materialTrackingActivity, localProject.materialTrackingActivity),
   })
 }
 
@@ -998,20 +1030,74 @@ function normalizeQuoteLineForSave(
   return {
     ...line,
     id: line.id ?? crypto.randomUUID(),
-    clin: String(line.clin ?? '').trim(),
-    partNumber: String(line.partNumber ?? '').trim(),
-    manufacturer: String(line.manufacturer ?? '').trim(),
-    description: String(line.description ?? '').trim(),
+    clin: persistedText(line.clin, 100),
+    partNumber: persistedText(line.partNumber, 500),
+    manufacturer: persistedText(line.manufacturer, 500),
+    description: persistedText(line.description, 10_000),
     quantity,
     unitCost,
     pricingMode: 'markup',
     markupPercent,
     marginPercent: undefined,
-    vendor: String(line.vendor ?? '').trim(),
-    quoteNumber: String(line.quoteNumber ?? '').trim(),
-    leadTime: String(line.leadTime ?? '').trim(),
+    vendor: persistedText(line.vendor, 500),
+    supplierPartNumber: line.supplierPartNumber === undefined ? undefined : persistedText(line.supplierPartNumber, 500),
+    quoteNumber: persistedText(line.quoteNumber, 500),
+    leadTime: persistedText(line.leadTime, 500),
+    melImport: normalizeMelImportProvenance(line.melImport),
     approved: line.approved ?? false,
   }
+}
+
+function normalizeMelImportProvenance(provenance: QuoteLine['melImport']): QuoteLine['melImport'] {
+  if (!provenance) return undefined
+
+  // MEL workbooks can contain hundreds of empty or extremely wide cells. Keeping
+  // all of them on every quote line can exceed both the Supabase request limit and
+  // the browser storage quota. Coordinates and normalized values retain the audit
+  // trail; only a small bounded set of populated source cells is kept for context.
+  const originalValues = Object.fromEntries(
+    Object.entries(provenance.originalValues ?? {})
+      .map(([column, value]) => [persistedText(column, 50), persistedText(value, 250)] as const)
+      .filter(([column, value]) => Boolean(column && value))
+      .slice(0, 8),
+  )
+
+  return {
+    sourceFilename: persistedText(provenance.sourceFilename, 260),
+    uploadedAt: persistedText(provenance.uploadedAt, 100),
+    importedBy: persistedText(provenance.importedBy, 500),
+    worksheet: persistedText(provenance.worksheet, 200),
+    sourceRow: nonNegativeInteger(provenance.sourceRow),
+    headerRow: nonNegativeInteger(provenance.headerRow),
+    parsingMethod: persistedText(provenance.parsingMethod, 100),
+    originalValues,
+    normalizedValues: {
+      quantity: numberFromUnknown(provenance.normalizedValues?.quantity),
+      partNumber: persistedText(provenance.normalizedValues?.partNumber, 500),
+      manufacturer: persistedText(provenance.normalizedValues?.manufacturer, 500),
+      description: persistedText(provenance.normalizedValues?.description, 10_000),
+    },
+    confidence: {
+      quantity: finiteNumber(provenance.confidence?.quantity),
+      partNumber: finiteNumber(provenance.confidence?.partNumber),
+      manufacturer: finiteNumber(provenance.confidence?.manufacturer),
+      description: finiteNumber(provenance.confidence?.description),
+      overall: finiteNumber(provenance.confidence?.overall),
+    },
+  }
+}
+
+function persistedText(value: unknown, maxLength: number) {
+  return String(value ?? '').replace(/\u0000/g, '').trim().slice(0, maxLength)
+}
+
+function finiteNumber(value: unknown) {
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
+function nonNegativeInteger(value: unknown) {
+  return Math.max(0, Math.trunc(finiteNumber(value)))
 }
 
 function syncPurchaseOrdersForQuote(project: Project, quote: CustomerQuote): QuotePoSyncResult {

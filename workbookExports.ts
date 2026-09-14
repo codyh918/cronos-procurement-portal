@@ -1,6 +1,7 @@
 import type { CustomerQuote, Project, PurchaseOrderLine, QuoteLine, Status } from '../types'
 import { calculateLineTotals, calculateQuoteSummary } from './calculations'
 import { getCheckbookReport } from './checkbook'
+import { loadFundsWorkspace } from './managedFundsApi'
 import { getProjectDocumentContact } from './documentContacts'
 import { formatCustomerAddressLines, structuredCustomerFromProject } from './customerFormatting'
 import {
@@ -16,8 +17,37 @@ import {
 } from './documentGeneration'
 import { loadVendorDirectory } from './vendorDirectory'
 import { customerTrackingSummaryCounts, shipmentLineExportRows } from './materialTracking'
+import { actionFinancials, billingStatus, financialSummary, procurementStatus } from '../domain/managedFunds.mjs'
+import type { FundsState } from '../domain/managedFunds.mjs'
 
 const CRONOS_CAGE_CODE = '8NPB1'
+
+export async function exportManagedFundsWorkbook(project: Project, state: FundsState, actionIds = state.actions.map(a => a.id)) {
+  const audit = createDocumentAudit('Managed Funds Financial Workbook', project.projectNumber)
+  const money = (n: number): WorkbookCell => ({ value: n / 100, style: 20 })
+  const header = (names: string[]) => names.map(value => ({ value, style: 18 }))
+  const summary = financialSummary(state), last = Math.max(2, state.transactions.length + 1)
+  const ledger: WorkbookCell[][] = state.actions.filter(a => actionIds.includes(a.id)).map(a => {
+    const t = actionFinancials(state, a.id)
+    return [project.projectNumber, a.number, a.requestDate, a.type, a.description, a.requestor, a.status, procurementStatus(project, a), billingStatus(state, a), money(a.type==='Funding Modification'? t.authorized : a.authorizedAmount), money(t.committed), money(t.actualCost), money(t.billAmount), money(t.invoiced), money(t.variance), a.ownerName, a.vendors.join('; ')]
+  })
+  const tx: WorkbookCell[][] = state.transactions.map(t => [project.projectNumber, state.actions.find(a => a.id === t.actionId)?.number || 'Project', t.occurredAt, t.kind, ...[t.authorized,t.committed,t.actualCost,t.billAmount,t.invoiced,t.paid].map(money), t.reference || '', t.userName, t.reason || '', t.id, t.adjustmentActionId || '', t.invoiceId || ''])
+  const invoiceRows: WorkbookCell[][] = state.invoices.flatMap(i => i.allocations.map(a => [project.projectNumber, i.number, i.status, i.invoiceDate, i.dueDate, a.actionNumber, a.description, money(a.amount), money(state.transactions.filter(t => t.invoiceId === i.id && t.actionId === a.actionId).reduce((n,t) => n + t.invoiced - t.paid,0))]))
+  const auditRows: WorkbookCell[][] = state.audit.flatMap(entry => {
+    const old = JSON.stringify(entry.previous) || '', next = JSON.stringify(entry.next) || ''
+    return Array.from({length: Math.max(1,Math.ceil(Math.max(old.length,next.length)/30000))},(_,i) => [entry.id, entry.occurredAt, entry.userName, entry.operation, entry.targetId, i+1, old.slice(i*30000,(i+1)*30000), next.slice(i*30000,(i+1)*30000), entry.reason])
+  })
+  await downloadWorkbook([
+    { name:'Summary',columnWidths:[30,25,60],rows:[header(['Project','Customer','Report']),[project.projectNumber,project.customer,'Managed Funds — USD; ledger filters apply only to Actions sheet'],[],header(['Financial Metric','Amount','Basis']),...(['Authorized Funding','Committed','Actual Cost','Customer Invoiced'] as const).map((label,i) => [label,{formula:`SUM(Transactions!${['E','F','G','I'][i]}2:${['E','F','G','I'][i]}${last})`,value:[summary.authorized,summary.committed,summary.actualCost,summary.invoiced][i]/100,style:20},'All underlying project transactions'] as WorkbookCell[]),['Available Balance',{formula:'B5-B6',value:summary.available/100,style:20},'Authorized − committed'],['Unbilled Balance',{formula:'B5-B8',value:summary.unbilled/100,style:20},'Authorized − customer invoiced']] },
+    {name:'Actions',freezePane:'C2',autoFilter:`A1:Q${ledger.length+1}`,landscape:true,columnWidths:[18,15,16,28,55,25,22,22,22,22,22,22,22,22,25,25,30],rows:[header(['Project','Action','Date','Type','Description','Requestor','Action Status','Procurement','Billing','Authorized','Committed','Actual Cost','Bill Amount','Invoiced','Uninvoiced Commitment','Owner','Vendors']),...ledger]},
+    {name:'Transactions',freezePane:'A2',autoFilter:`A1:P${last}`,landscape:true,columnWidths:[18,16,28,28,22,22,22,22,22,22,30,25,60,40,40,40],rows:[header(['Project','Action','Date/Time','Type','Funding Change','Commitment Change','Actual Cost Change','Bill Change','Invoiced Change','Paid Change','Reference','User','Reason','Transaction ID','Adjustment Action ID','Invoice ID']),...tx]},
+    {name:'Invoices',freezePane:'A2',columnWidths:[18,35,15,18,18,15,55,22,22],rows:[header(['Project','Invoice','Status','Invoice Date','Due Date','Action','Description','Allocation','Unpaid']),...invoiceRows]},
+    {name:'Audit',freezePane:'A2',columnWidths:[40,28,25,30,40,10,80,80,60],rows:[header(['Audit ID','Date/Time','User','Operation','Affected Record','Part','Previous Value','New Value','Reason']),...auditRows]},
+    {name:'Migration Review',columnWidths:[25,40,80,15,80],rows:[header(['Record Type','Record ID','Issue','Resolved','Resolution']),...state.review.map(r=>[r.recordType,r.recordId,r.reason,r.resolved?'Yes':'No',r.resolution||''])]},
+    {name:'Documents',columnWidths:[18,18,55,28,28,40,90],rows:[header(['Project','Action','Filename','Kind','Uploaded','Uploaded By','Storage Reference']),...state.documents.map(d=>[project.projectNumber,state.actions.find(a=>a.id===d.actionId)?.number||'',d.name,d.kind,d.uploadedAt,d.uploadedBy,d.storagePath])]},
+  ], `${sanitizeFileName(project.projectNumber)}-Managed-Funds.xlsx`)
+  finishDocumentAudit(audit)
+}
 
 type WorkbookCell =
   | string
@@ -74,7 +104,8 @@ export async function exportProjectTrackingWorkbook(project: Project) {
 }
 
 export async function exportCheckbookFinancialWorkbook(project: Project) {
-  const audit = createDocumentAudit('Checkbook Financial Workbook', project.projectNumber)
+  if (project.projectType === 'Managed Funds') { const current = await loadFundsWorkspace(project.id); return exportManagedFundsWorkbook(current.project,current.state) }
+  const audit = createDocumentAudit('Managed Funds Financial Workbook', project.projectNumber)
   validateProjectDocumentFields(audit, project)
   const summary = getCheckbookReport(project)
   const generatedDate = new Intl.DateTimeFormat('en-US', { dateStyle: 'long' }).format(new Date())
@@ -98,7 +129,7 @@ export async function exportCheckbookFinancialWorkbook(project: Project) {
       name: 'Financial Summary', rowHeights: { 1: 34, 2: 28, 6: 28, 7: 34 }, columnWidths: [30, 24, 24, 24],
       merges: ['A1:D1', 'A2:D2', 'A4:D4', 'A11:D11'], freezePane: 'A7',
       rows: [
-        [{ value: 'Checkbook Financial Report', style: 14 }],
+        [{ value: 'Managed Funds Financial Report', style: 14 }],
         [{ value: `${project.projectName} | ${project.projectNumber} | ${project.customer}`, style: 15 }],
         [], [{ value: `Report Date: ${generatedDate}`, style: 15 }], [],
         ['Starting Balance', 'Cost to Customer', 'Remaining Balance', 'Line Items'].map(value => ({ value, style: 18 })),
@@ -111,9 +142,9 @@ export async function exportCheckbookFinancialWorkbook(project: Project) {
     {
       name: 'Line Item Detail', rowHeights: { 1: 34, 2: 28, 6: 32 }, columnWidths: [23, 10, 22, 25, 65, 12, 22, 24],
       merges: ['A1:H1', 'A2:H2', 'A4:H4'], freezePane: 'A7',
-      autoFilter: `A6:H${lastRow}`, printTitleRows: '1:6', landscape: true, reportTitle: 'Checkbook Financial Report',
+      autoFilter: `A6:H${lastRow}`, printTitleRows: '1:6', landscape: true, reportTitle: 'Managed Funds Financial Report',
       rows: [
-        [{ value: 'Checkbook Line Item Detail', style: 14 }],
+        [{ value: 'Managed Funds Line Item Detail', style: 14 }],
         [{ value: `${project.projectName} | ${project.projectNumber} | ${project.customer} | ${generatedDate}`, style: 15 }],
         [], [{ value: note, style: 22 }], [],
         ['Quote / MEL', 'Line', 'Manufacturer', 'Part Number', 'Description', 'Quantity', 'Unit Cost to Customer', 'Line Cost to Customer'].map(value => ({ value, style: 18 })),
@@ -122,7 +153,7 @@ export async function exportCheckbookFinancialWorkbook(project: Project) {
           { formula: `SUM(H7:H${lastRow})`, value: summary.customerCost, style: 13 }],
       ],
     },
-  ], `Cronos-${sanitizeFileName(project.projectNumber)}-Checkbook-Tracking.xlsx`)
+  ], `Cronos-${sanitizeFileName(project.projectNumber)}-Managed Funds-Tracking.xlsx`)
   finishDocumentAudit(audit)
 }
 
@@ -166,7 +197,7 @@ export async function exportCustomerQuoteWorkbook(quote: CustomerQuote, project?
           ['', '', '', '', { value: `Cage Code: ${CRONOS_CAGE_CODE}`, style: 2 }, '', { value: 'Date:', style: 3 }, { value: documentValue(formatDateForWorkbook(quote.createdAt)), style: 4 }],
           ['', '', '', '', { value: 'cronosllc.com', style: 2 }, '', { value: 'Expires:', style: 3 }, { value: getQuoteExpirationDateForWorkbook(quote), style: 4 }],
           [],
-          ['', '', '', '', { value: `Project: ${documentValue(quote.projectNumber)} - ${documentValue(quote.projectName)}`, style: 5 }],
+          ['', '', '', '', { value: `Project: ${documentValue(quote.projectNumber)} - ${documentValue(quote.projectName)}${quote.actionNumber ? ` | Action: ${quote.actionNumber}` : ''}`, style: 5 }],
           [],
           ['', { value: 'Customer:', style: 3 }, '', { value: documentValue(customer.companyName), style: 4 }, '', '', { value: 'Cronos POC:', style: 3 }, { value: documentValue(poc.name), style: 4 }],
           ['', { value: 'Attention:', style: 3 }, '', { value: documentValue(customer.attention), style: 4 }, '', '', { value: 'Email:', style: 3 }, { value: documentValue(poc.email), style: 4 }],
@@ -191,20 +222,20 @@ export async function exportCustomerQuoteWorkbook(quote: CustomerQuote, project?
 }
 
 function buildCheckbookQuoteBudgetRows(project: Project | undefined, materialQuoted: number): WorkbookCell[][] {
-  if (project?.projectType !== 'Checkbook') return []
+  if (project?.projectType !== 'Managed Funds') return []
 
   const materialBudget = project.checkbookStartingBalance || 0
   const remainingBalance = materialBudget - materialQuoted
 
   return [
     [],
-    ['', '', '', '', '', { value: 'Total Material Budget', style: 10 }, '', { value: materialBudget, style: 11 }],
+    ['', '', '', '', '', { value: 'Authorized Funding', style: 10 }, '', { value: materialBudget, style: 11 }],
     ['', '', '', '', '', { value: 'Total Material Quoted', style: 10 }, '', { value: materialQuoted, style: 11 }],
-    ['', '', '', '', '', { value: 'Balance Remaining', style: 12 }, '', { value: remainingBalance, style: 13 }],
+    ['', '', '', '', '', { value: 'Available Funding', style: 12 }, '', { value: remainingBalance, style: 13 }],
   ]
 }
 
-export async function exportVendorRfqPackage(project: Project, lines: QuoteLine[]) {
+export async function exportVendorRfqPackage(project: Project, lines: QuoteLine[], actionNumber?: string) {
   const audit = createDocumentAudit('Vendor RFQ Workbook', project.projectNumber)
   validateProjectDocumentFields(audit, project)
   validateQuoteLines(audit, lines)
@@ -214,11 +245,11 @@ export async function exportVendorRfqPackage(project: Project, lines: QuoteLine[
   for (const [vendor, vendorLines] of vendors) {
     await downloadWorkbook(
       [
-        buildVendorRfqSheet(project, vendor, vendorLines),
+        buildVendorRfqSheet(project, vendor, vendorLines, actionNumber),
         buildVendorRfqSummarySheet(project, vendor, vendorLines),
         buildVendorRfqInstructionsSheet(),
       ],
-      `Cronos-${sanitizeFileName(project.projectNumber)}-${sanitizeFileName(vendor)}-RFQ.xlsx`,
+      `Cronos-${sanitizeFileName(project.projectNumber)}${actionNumber ? `-${sanitizeFileName(actionNumber)}` : ''}-${sanitizeFileName(vendor)}-RFQ.xlsx`,
     )
   }
 
@@ -268,12 +299,14 @@ function groupQuoteLinesByVendor(lines: QuoteLine[]) {
   }, {})
 }
 
-function buildVendorRfqSheet(project: Project, vendor: string, lines: QuoteLine[]): WorkbookSheet {
+function buildVendorRfqSheet(project: Project, vendor: string, lines: QuoteLine[], actionNumber?: string): WorkbookSheet {
   const poc = getProjectDocumentContact(project)
   const customer = structuredCustomerFromProject(project)
   const vendorRecord = findVendorRecord(vendor)
   const vendorContact = [vendorRecord?.primaryContact, vendorRecord?.email, vendorRecord?.phone].filter(Boolean).join(' | ')
-  const rfqNumber = `${project.projectNumber}-${sanitizeFileName(vendor)}-RFQ`
+  const lineIds = new Set(lines.map(l=>l.id))
+  const actionNumbers = actionNumber || [...new Set((project.quotes || []).filter(q=>q.lines.some(l=>lineIds.has(l.id))).map(q=>q.actionNumber).filter(Boolean))].join(', ')
+  const rfqNumber = `${project.projectNumber}${actionNumbers ? `-${actionNumbers}` : ''}-${sanitizeFileName(vendor)}-RFQ`
   const dueDate = vendorRfqDueDate()
   const headerRow = 15
   const firstDataRow = headerRow + 1

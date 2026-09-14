@@ -1,11 +1,14 @@
 import type { CustomerQuote, Project, ProjectPurchaseOrder, PurchaseOrder } from '../types'
 import { calculateLineTotals, calculateQuoteSummary, currency } from './calculations'
 import { getCheckbookReport } from './checkbook'
+import { loadFundsWorkspace } from './managedFundsApi'
 import { documentContactLines, getProjectDocumentContact } from './documentContacts'
 import { formatCustomerAddressLines, structuredCustomerFromProject } from './customerFormatting'
 import { loadProject } from './localProjects'
 import { createPdfDocument } from './pdfRuntime.mjs'
 import { customerTrackingSummaryCounts, shipmentLineExportRows } from './materialTracking'
+import { financialSummary } from '../domain/managedFunds.mjs'
+import type { FundsInvoice, FundsState } from '../domain/managedFunds.mjs'
 import {
   createDocumentAudit,
   documentValue,
@@ -19,6 +22,37 @@ import {
 } from './documentGeneration'
 
 type JsPdf = import('jspdf').jsPDF
+
+export async function exportManagedFundsInvoicePdf(project: Project, invoice: FundsInvoice, state: FundsState) {
+  const audit = createDocumentAudit('Customer Invoice PDF', invoice.number)
+  const customer = { ...project, ...(invoice.customerSnapshot || {}) }
+  const doc = await createDocument()
+  await AtlasDocumentHeader(doc, invoice.status === 'Draft' ? 'DRAFT INVOICE' : invoice.status === 'Void' ? 'VOID INVOICE' : 'Customer Invoice')
+  let y = drawKeyValue(doc, 142, [['Invoice', invoice.number], ['Project', `${customer.projectNumber} - ${customer.projectName}`], ['Customer', customer.customer], ['Invoice Date / Due', `${invoice.invoiceDate} / ${invoice.dueDate}`]])
+  doc.setFontSize(9)
+  const address = formatCustomerAddressLines(structuredCustomerFromProject(customer))
+  for (const line of address) { y = AtlasPageBreakHandler(doc, y + 12, 18); doc.text(line, 40, y) }
+  y += 22
+  const columns: PdfTableColumn[] = [{ label: 'Action', x: 40, width: 80, align: 'left' }, { label: 'Description', x: 120, width: 332, align: 'left', wrap: true }, { label: 'Amount', x: 452, width: 120, align: 'right', numeric: true }]
+  y = drawDarkTableHeader(doc, y, columns)
+  for (const allocation of invoice.allocations) {
+    doc.setFontSize(8)
+    const lines = doc.splitTextToSize(allocation.description, 315) as string[]
+    for (let start = 0; start < lines.length; start += 25) {
+      const part = lines.slice(start, start + 25)
+      const height = Math.max(30, part.length * 10 + 16)
+      if (y + height > PAGE_BOTTOM) { doc.addPage(); y = drawDarkTableHeader(doc, 54, columns) }
+      AtlasTable(doc, y, height, [{ column: columns[0], text: allocation.actionNumber }, { column: columns[1], text: part }, { column: columns[2], text: start === 0 ? currency(allocation.amount / 100) : '' }])
+      y += height
+    }
+  }
+  const postings = state.transactions.filter(t => t.invoiceId === invoice.id)
+  const credits = postings.filter(t => t.invoiced < 0).reduce((n, t) => n + t.invoiced, 0)
+  const paid = postings.reduce((n, t) => n + t.paid, 0)
+  y = AtlasPageBreakHandler(doc, y + 24, 110)
+  drawTotals(doc, y, [['Invoice Total', currency(invoice.total / 100)], ...(credits ? [['Customer Credits', currency(credits / 100)]] : []), ...(paid ? [['Payments', currency(paid / 100)]] : []), ['Amount Due', currency((invoice.status === 'Void' ? 0 : invoice.total + credits - paid) / 100)]], 'Invoice Summary')
+  AtlasDocumentFooter(doc); finishDocumentAudit(audit); doc.save(`${invoice.number}.pdf`)
+}
 type PdfTableColumn = {
   label: string
   x: number
@@ -78,6 +112,7 @@ export async function exportCustomerQuotePdf(quote: CustomerQuote, project?: Pro
     { label: 'Date:', value: formatPdfDate(quote.createdAt || new Date().toISOString()), wrap: false },
     { label: 'Expires:', value: getQuoteExpirationDate(quote), wrap: false },
     { label: 'Project:', value: quote.projectNumber, wrap: false },
+    ...(quote.actionNumber ? [{ label: 'Action:', value: quote.actionNumber, wrap: false }] : []),
   ])
 
   const infoBoxY = Math.max(150, metadataBottom + 16)
@@ -124,6 +159,7 @@ export async function exportPurchaseOrderPdf(po: PurchaseOrder | ProjectPurchase
     { label: 'Date:', value: formatPdfDate(po.dateIssued), wrap: false },
     { label: 'Terms:', value: po.terms || 'NET30', wrap: false },
     { label: 'PO #:', value: po.poNumber, wrap: false },
+    ...(po.actionNumber ? [{ label: 'Action:', value: po.actionNumber, wrap: false }] : []),
     { label: 'Project:', value: project ? project.projectNumber : 'projectNumber' in po ? po.projectNumber : '', wrap: false },
   ])
 
@@ -556,11 +592,18 @@ export async function exportCustomerTrackingUpdatePdf(po: PurchaseOrder | Projec
 }
 
 export async function exportCheckbookReportPdf(project: Project) {
-  const audit = createDocumentAudit('Checkbook Financial Report PDF', project.projectNumber)
+  if (project.projectType === 'Managed Funds') {
+    const current = await loadFundsWorkspace(project.id); const t=financialSummary(current.state); const doc=await createDocument();
+    await AtlasDocumentHeader(doc,'Managed Funds');
+    let y=drawKeyValue(doc,144,[['Project',`${project.projectNumber} - ${project.projectName}`],['Customer',project.customer],['Authorized Funding',currency(t.authorized/100)],['Committed',currency(t.committed/100)],['Actual Cost',currency(t.actualCost/100)],['Customer Invoiced',currency(t.invoiced/100)],['Available Funding',currency(t.available/100)],['Unbilled Funding',currency(t.unbilled/100)]]);
+    for (const tx of current.state.transactions.filter(tx=>tx.kind==='Funding Modification')) { y=AtlasPageBreakHandler(doc,y+20,30);doc.setFontSize(9);doc.text(`${tx.occurredAt.slice(0,10)}  ${tx.reference}  ${currency(tx.authorized/100)}`,40,y) }
+    AtlasDocumentFooter(doc);doc.save(`${project.projectNumber}-managed-funds.pdf`);return
+  }
+  const audit = createDocumentAudit('Managed Funds Financial Report PDF', project.projectNumber)
   validateProjectDocumentFields(audit, project)
   const summary = getCheckbookReport(project)
   const doc = await createPdfDocument({ unit: 'pt', format: 'letter', orientation: 'landscape' })
-  await drawLandscapeReportHeader(doc, 'Checkbook Financial Report')
+  await drawLandscapeReportHeader(doc, 'Managed Funds Financial Report')
   doc.setFontSize(10)
   doc.text(`Project: ${project.projectNumber}`, 42, 116)
   doc.text(`Customer: ${project.customer}`, 390, 116)
@@ -602,7 +645,7 @@ export async function exportCheckbookReportPdf(project: Project) {
 
   AtlasDocumentFooter(doc)
   finishDocumentAudit(audit)
-  doc.save(`${project.projectNumber}-checkbook-report.pdf`)
+  doc.save(`${project.projectNumber}-managed-funds-report.pdf`)
 }
 
 export async function exportCustomerConsolidatedTrackingReportPdf(project: Project) {
@@ -840,7 +883,7 @@ function drawTableHeader(doc: JsPdf, y: number, headers: string[]) {
   return y + 28
 }
 
-function drawTotals(doc: JsPdf, startY: number, rows: string[][]) {
+function drawTotals(doc: JsPdf, startY: number, rows: string[][], title = 'Cost Summary') {
   const boxHeight = 30 + rows.length * 20
   doc.setFillColor(248, 251, 255)
   doc.setDrawColor(222, 229, 238)
@@ -850,7 +893,7 @@ function drawTotals(doc: JsPdf, startY: number, rows: string[][]) {
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(8)
   doc.setTextColor(255, 255, 255)
-  doc.text('Cost Summary', 386, startY + 16)
+  doc.text(title, 386, startY + 16)
 
   let y = startY + 42
   rows.forEach(([label, value], index) => {

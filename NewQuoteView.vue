@@ -374,6 +374,8 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { saveFundsProject } from '../services/managedFundsApi'
+import type { Status } from '../types'
 import { BadgeDollarSign, CheckCircle2, Download, FileSpreadsheet, FileUp, Plus, Save, Send, Trash2, Upload, XCircle } from '@lucide/vue'
 import FormField from '../components/FormField.vue'
 import MelImportReview from '../components/MelImportReview.vue'
@@ -523,6 +525,7 @@ onUnmounted(() => {
 
 function loadQuoteDraft(force = false) {
   const loadedProject = loadProject(String(route.params.id))
+  if (loadedProject?.projectType === 'Managed Funds' && !isEditMode.value && !route.query.actionId) { void router.replace(`/projects/${loadedProject.id}`); return }
   const loadedQuote = loadedProject?.quotes.find(item => item.id === routeQuoteId.value || item.quoteNumber === routeQuoteId.value)
   project.value = loadedProject
   quote.value = loadedQuote
@@ -722,19 +725,20 @@ async function saveQuote() {
         quoteName: quoteName.value,
         shippingCost: shippingCost.value,
       })
-      router.push(`/projects/${project.value.id}?quote=${encodeURIComponent(updatedQuote.quoteNumber)}`)
+      router.push(updatedQuote.actionId ? `/projects/${project.value.id}/actions/${updatedQuote.actionId}` : `/projects/${project.value.id}?quote=${encodeURIComponent(updatedQuote.quoteNumber)}`)
       return
     }
 
     const newQuoteLines = normalizedLines.map(({ id: _id, approved: _approved, ...line }) => line)
     const createdQuote = await createQuoteForProjectStrict(project.value.id, newQuoteLines, {
+      actionId: String(route.query.actionId || '') || undefined,
       contractFeeEnabled: contractFeeEnabled.value,
       expirationDays: expirationDays.value,
       quoteName: quoteName.value,
       shippingCost: shippingCost.value,
     })
 
-    router.push(`/projects/${project.value.id}?quote=${encodeURIComponent(createdQuote.quoteNumber)}`)
+    router.push(createdQuote.actionId ? `/projects/${project.value.id}/actions/${createdQuote.actionId}` : `/projects/${project.value.id}?quote=${encodeURIComponent(createdQuote.quoteNumber)}`)
   } catch (error) {
     saveQuoteError.value = error instanceof Error ? error.message : 'Quote could not be saved.'
   } finally {
@@ -742,10 +746,18 @@ async function saveQuote() {
   }
 }
 
-function toggleApproval() {
+async function toggleApproval() {
   if (!project.value || !quote.value) return
 
   const approved = quote.value.status !== 'Customer Approved'
+  if (project.value.projectType === 'Managed Funds') {
+    try {
+      const next = { ...project.value, quotes: project.value.quotes.map(q => q.id === quote.value!.id ? { ...q, status: (approved ? 'Customer Approved' : 'Quoted') as Status, lines: q.lines.map(l => ({ ...l, approved })) } : q) }
+      const saved = await saveFundsProject(next)
+      project.value = saved.project; quote.value = saved.project.quotes.find(q => q.id === quote.value!.id)
+    } catch (error) { saveQuoteError.value = error instanceof Error ? error.message : 'Approval failed.' }
+    return
+  }
   const result = setQuoteApprovalStatus(project.value.id, quote.value.id, approved)
   project.value = result.project
   quote.value = result.quote
@@ -768,19 +780,44 @@ function removeQuote() {
 }
 
 async function exportPdf() {
-  if (!quote.value || isExportingPdf.value) return
+  if (!quote.value || !project.value || isExportingPdf.value) return
 
   isExportingPdf.value = true
+  saveQuoteError.value = ''
+  rfqStatus.value = 'Saving quote before PDF export...'
+  let savedQuote: CustomerQuote
+  try {
+    const normalizedLines = normalizePricingForProject(
+      applySequentialClins(draftLines.value),
+      showPricingControls.value,
+    )
+    savedQuote = await updateQuoteForProjectStrict(project.value.id, quote.value.id, normalizedLines, {
+      contractFeeEnabled: contractFeeEnabled.value,
+      expirationDays: expirationDays.value,
+      quoteName: quoteName.value,
+      shippingCost: shippingCost.value,
+    })
+
+    quote.value = savedQuote
+    draftLines.value = savedQuote.lines
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'The quote could not be saved.'
+    saveQuoteError.value = `PDF export stopped because the quote could not be saved: ${message}`
+    rfqStatus.value = saveQuoteError.value
+    isExportingPdf.value = false
+    return
+  }
+
   rfqStatus.value = 'Generating quote PDF...'
   try {
-    const exported = await exportCustomerQuotePdf({ ...quote.value, lines: draftLines.value }, project.value)
+    const exported = await exportCustomerQuotePdf(savedQuote, project.value)
     rfqStatus.value = exported
-      ? `${quote.value.quoteNumber} PDF exported.`
-      : 'PDF not exported. Add the project shipping address, save the project, and try again.'
+      ? `${savedQuote.quoteNumber} saved and PDF exported.`
+      : 'Quote saved, but PDF not exported. Add the project shipping address and try again.'
   } catch (error) {
     rfqStatus.value = error instanceof Error
-      ? `PDF could not be generated: ${error.message}`
-      : 'PDF could not be generated. Refresh the page and try again.'
+      ? `Quote saved, but PDF could not be generated: ${error.message}`
+      : 'Quote saved, but PDF could not be generated. Refresh the page and try again.'
   } finally {
     isExportingPdf.value = false
   }
@@ -796,14 +833,16 @@ async function exportExcel() {
 async function exportRfqPackage() {
   if (!draftLines.value.length || !project.value) return
 
-  const inferredLines = applySequentialClins(draftLines.value).map(inferQuoteLineVendor)
-  draftLines.value = inferredLines
-  const exportedCount = await exportVendorRfqPackage(project.value, inferredLines)
+  const preparedLines = applySequentialClins(draftLines.value)
+  draftLines.value = preparedLines
+  const exportedCount = await exportVendorRfqPackage(project.value, preparedLines, quote.value?.actionNumber || project.value.managedFunds?.actions.find(a=>a.id===String(route.query.actionId || ''))?.number)
   rfqStatus.value = `${exportedCount} vendor RFQ workbook${exportedCount === 1 ? '' : 's'} exported. Send each vendor their matching Cronos RFQ workbook, then import completed responses here.`
 }
 
 async function handleImport(event: Event) {
-  const file = (event.target as HTMLInputElement).files?.[0]
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  input.value = ''
   if (!file) {
     importStatus.value = ''
     return
@@ -813,15 +852,23 @@ async function handleImport(event: Event) {
     importStatus.value = `Analyzing ${file.name}...`
     if (/\.pdf$/i.test(file.name)) {
       const importedLines = await parseQuoteImportFile(file)
-      const materialLines = importedLines.map(line => inferQuoteLineVendor(buildDraftLine({ ...line, pricingMode: showPricingControls.value ? line.pricingMode ?? 'markup' : 'markup', markupPercent: showPricingControls.value ? line.markupPercent : 0, marginPercent: 0 })))
+      const materialLines = importedLines.map(line => buildDraftLine({ ...line, pricingMode: showPricingControls.value ? line.pricingMode ?? 'markup' : 'markup', markupPercent: showPricingControls.value ? line.markupPercent : 0, marginPercent: 0 }))
       draftLines.value = normalizePricingForProject(applySequentialClins([...draftLines.value, ...materialLines]), showPricingControls.value)
       importStatus.value = `Added ${materialLines.length} PDF line item(s). Spreadsheet imports provide the full review workflow.`
       return
     }
     const analysis = await analyzeMelImportFile(file)
     await matchMelItemsToCatalog(analysis.items)
+    const includedItems = analysis.items.filter(item => item.included)
+    if (includedItems.length && !analysis.needsManualMapping) {
+      approveMelImport(includedItems)
+      return
+    }
+
     melImportAnalysis.value = analysis
-    importStatus.value = analysis.diagnostics
+    importStatus.value = includedItems.length
+      ? `${analysis.diagnostics} Review the detected rows below, confirm the column mapping, then select Import to Quote.`
+      : `${analysis.diagnostics} No importable rows were found. Review the column mapping below.`
   } catch (error) {
     importStatus.value = error instanceof Error ? error.message : 'Could not import this file.'
   }
@@ -850,7 +897,7 @@ function approveMelImport(items: MelItem[]) {
   const materialLines = items.map(item => {
     const line = melItemToQuoteLine(item)
     if (line.melImport) line.melImport.importedBy = importedBy
-    return inferQuoteLineVendor(buildDraftLine({ ...line, clin: line.clin || String(draftLines.value.length + 1), pricingMode: showPricingControls.value ? line.pricingMode ?? 'markup' : 'markup', markupPercent: showPricingControls.value ? line.markupPercent : 0, marginPercent: 0 }))
+    return buildDraftLine({ ...line, clin: line.clin || String(draftLines.value.length + 1), pricingMode: showPricingControls.value ? line.pricingMode ?? 'markup' : 'markup', markupPercent: showPricingControls.value ? line.markupPercent : 0, marginPercent: 0 })
   })
   draftLines.value = normalizePricingForProject(applySequentialClins([...draftLines.value, ...materialLines]), showPricingControls.value)
   importStatus.value = `Imported ${materialLines.length} reviewed MEL line item${materialLines.length === 1 ? '' : 's'} into the quote draft.`
@@ -912,13 +959,6 @@ function applySequentialClins(lines: QuoteLine[]) {
     ...line,
     clin: String(index + 1),
   }))
-}
-
-function inferQuoteLineVendor<T extends Pick<QuoteLine, 'partNumber' | 'manufacturer' | 'description' | 'vendor'>>(line: T): T {
-  return {
-    ...line,
-    vendor: line.vendor || recommendVendorForPart(line.partNumber, line.manufacturer, line.description),
-  }
 }
 
 function normalizePricingForProject(lines: QuoteLine[], controlsVisible: boolean) {
