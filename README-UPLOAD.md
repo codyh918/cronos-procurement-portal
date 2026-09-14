@@ -1,23 +1,28 @@
-# Atlas login storage fix — one upload
+# Atlas quote persistence fix — one GitHub upload
 
-1. Extract GITHUB-SINGLE-UPLOAD-atlas-login-storage-fix.zip.
-2. Open [your GitHub upload page](https://github.com/codyh918/cronos-procurement-portal/upload/main).
-3. Upload all FIVE extracted files together to the repository root and commit.
-4. Wait for the new Railway deployment to become Active.
-5. Refresh Atlas with Ctrl+Shift+R and sign in again.
+1. Extract GITHUB-SINGLE-UPLOAD-atlas-quote-persistence-fix.zip.
+2. Open [the GitHub upload page](https://github.com/codyh918/cronos-procurement-portal/upload/main).
+3. Select all FIVE extracted files and upload them together to the repository root. Commit the upload.
+4. Wait for the resulting Railway deployment to become Active.
+5. Close older Atlas tabs, then reopen Atlas and refresh with Ctrl+Shift+R.
 
-No SQL changes, password reset, site-data clearing, or folder uploads are required. This package includes the complete corrected Managed Funds release and the login fix.
+Upload these files: package.json, package-lock.json, atlas-prepare-release.mjs, atlas-managed-funds-release.json, README-UPLOAD.md. Upload the files themselves, not the ZIP or its enclosing folder.
 
-The upload files are package.json, package-lock.json, atlas-prepare-release.mjs, atlas-managed-funds-release.json, and README-UPLOAD.md. Upload these files, not their enclosing folder or the ZIP.
+No SQL changes are needed. This package includes the existing Managed Funds and login storage fixes.
 
-## What changed
+## What this fixes
 
-Login tokens, the Atlas session, the signed-in users cache, and the remembered email can be saved even when localStorage is full. Authentication and record access now share one Supabase client and its storage adapter.
+- Refresh uses the Supabase collection instead of merging old browser quotes, lines, or deleted projects back into it.
+- A failed remote read shows a sync error and never uploads the browser cache automatically.
+- Quote edits, deletions, and approval changes wait for Supabase confirmation before updating the saved browser copy. Failed deletions keep the quote visible with an error.
+- Saves replace changed projects only, preserve unrelated server projects, and reject a stale edit if the same project changed in Supabase. Conditional writes retry concurrent changes without an unconditional overwrite.
+- The quote editor refreshes unchanged drafts from Supabase. An unsaved draft stays intact and gets a conflict message if it would overwrite newer server data.
+- Managed Funds continues to use its authenticated API and retain its financial history.
 
-On a quota error, the adapter first removes only confirmed server-backed Managed Funds caches and backup copies whose exact contents are still present in the current local collection. It preserves current projects, unique backups, and local drafts. If persistent storage remains full, it uses sessionStorage for the current tab. If browser storage is blocked entirely, it uses memory for the current page. In fallback mode you may need to sign in again after closing the tab; no password is stored by this adapter.
+If a project changed in another tab, reload Atlas, review the latest copy, and retry the change. This release prevents future stale-cache replay; it does not infer which quotes were intended to be deleted before installation. Delete any such quotes after the deployment is active.
 
-The build helper still restores files to their proper source paths before running Vite. Keep the helper and release JSON in the repository while using this build command. Later edits at canonical source paths are preserved.
+The build helper restores each release file to its required directory and preserves unrecognized later source edits. Keep the helper and release JSON in the repository while using this build command.
 
 ## Verification
 
-All 161 local server regression tests passed, including eight tests for this storage fix. A headless Edge test filled localStorage to its actual quota and verified the real Atlas login form, page reload, dashboard, authenticated record request, and logout with mock authentication. The test preserved the unique local project and backup and recorded no page errors. The exact single-upload package passed the production npm build on Node 20.20.2 and type checking for the application's entry point. The pre-existing large-bundle warning and repository-wide errors from misplaced duplicate source files remain outside this fix.
+The 161 existing server regression tests and six new persistence tests passed locally. Nine headless Edge checks passed using the actual quote services and editor against a simulated Supabase endpoint, covering refresh, edits, deletion, write failures, read failures, concurrent writes and stale drafts, with no page errors. Type checking passed for both the workspace and the application entry point in the GitHub snapshot. All 421 GitHub source files were verified against their recorded hashes before overlaying this package. All 40 installed release files matched their SHA-256 checksums. The exact upload passed the production Vite build on Node 20.20.2; the existing large-bundle warning remains. No production quotes were modified during testing.
