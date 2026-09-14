@@ -1,41 +1,17 @@
-# Atlas Managed Funds — GitHub upload package
+# Managed Funds startup repair
 
-This package updates an existing Atlas repository. It contains 30 changed source, migration, test, and deployment-documentation files; it is not a standalone copy of the application.
+The failed Railway deployment reports ERR_MODULE_NOT_FOUND for /app/server/managed-funds-api.mjs, imported by /app/server.mjs. This package supplies that API module and its shared domain module. Both files are unchanged from the original verified Managed Funds release.
 
-## 1. Apply the database migration before uploading
+1. Extract GITHUB-ROOT-UPLOAD-managed-funds-startup-fix.zip.
+2. Open the existing Atlas GitHub repository root, where package.json and server.mjs are located.
+3. Choose Add file > Upload files.
+4. Drag both extracted folders, server and src, into the upload area together. Upload the folders themselves so their nested paths are preserved. Do not upload the ZIP, the outer package folder, or README-UPLOAD.md.
+5. Before committing, confirm the upload lists exactly these application paths:
+   - server/managed-funds-api.mjs
+   - src/domain/managedFunds.mjs
+6. Commit with: Include Managed Funds server runtime files.
+7. Let Railway deploy the new commit. Check that it becomes Active and then open a Managed Funds project.
 
-Back up the Supabase database using your normal process. Run the contents of migrations/20260914_create_managed_funds.sql in the Supabase SQL Editor as the database owner, and confirm success before committing the application update. If GitHub commits trigger Railway deployments, this order is required.
+The SQL migration already succeeded; this repair does not require rerunning SQL or changing environment variables.
 
-Uploading the SQL file to GitHub does not execute it. The migration has not been applied to production as part of preparing this package.
-
-Read docs/MANAGED_FUNDS_DEPLOYMENT.md for permissions, migration review, staging checks, and rollback limitations. The rollback file is included for reference; do not run it during installation.
-
-## 2. Upload the extracted contents to the existing repository root
-
-1. Extract GITHUB-ROOT-UPLOAD-managed-funds.zip.
-2. Open the extracted folder containing src, server, migrations, docs, and package.json.
-3. On GitHub, open your existing Atlas repository root, then select Add file > Upload files.
-4. Drag these four folders and three files together into the upload area:
-   - src/
-   - server/
-   - migrations/
-   - docs/
-   - server.mjs
-   - package.json
-   - package-lock.json
-5. Confirm paths appear as src/views/ManagedFundsView.vue, server/managed-funds-api.mjs, and migrations/20260914_create_managed_funds.sql. Preserve all nested paths.
-6. Commit with a message such as: Replace Checkbook with Managed Funds architecture.
-
-Upload the contents, not the ZIP or its outer folder. The folders contain only changed files; retain other existing repository files. README-UPLOAD.md and MANAGED_FUNDS_MANIFEST.json are package instructions and verification metadata and do not need to be uploaded.
-
-## 3. Deploy and verify
-
-Use the existing deployment process: npm ci, npm run build, and npm start. Ensure the server has SUPABASE_URL (or the existing URL fallback) and SUPABASE_SERVICE_ROLE_KEY, and keep the service-role key server-only. Retain the existing public Vite Supabase settings for browser login.
-
-After deployment, follow docs/MANAGED_FUNDS_DEPLOYMENT.md. An Admin should open migrated projects and reconcile historical cost/billing items in Migration Review. Verify Supabase authentication, private document storage, and financial workflows in staging.
-
-## Package verification
-
-The 30 release files match the SHA-256 hashes in MANAGED_FUNDS_MANIFEST.json and the previously verified local update package. Local validation completed: 153 server tests passed, type checking, production build, and PDF/Excel verification. Production deployment and real Supabase Auth/Storage verification remain pending.
-
-No credentials, environment files, node_modules, build output, or sample invoices are included.
+If the same missing-module error remains, confirm both paths exist on the GitHub branch connected to Railway and that Railway deployed the new commit. If they do, inspect the build configuration for exclusions from the runtime image. Send the latest Deploy Logs for any new startup error.
