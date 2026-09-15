@@ -1,28 +1,22 @@
-# Managed Funds customer reports - one GitHub upload
+# Managed Funds Charge Type - GitHub upload
 
-1. Extract GITHUB-SINGLE-UPLOAD-managed-funds-customer-reports.zip.
-2. Open [your GitHub upload page](https://github.com/codyh918/cronos-procurement-portal/upload/main).
-3. Upload all FIVE extracted files together to the repository root and commit.
-4. Wait for the Railway deployment to become Active, then refresh Atlas with Ctrl+Shift+R.
-5. Open a Managed Funds opportunity and choose Customer Reports. Select Financial PDF or Financial Excel. Open an individual Action's Customer Reports tab for an Action-only report.
+1. Open https://github.com/codyh918/cronos-procurement-portal/upload/main.
+2. Upload all FIVE files from this folder together at the repository root:
+   - package.json
+   - package-lock.json
+   - atlas-prepare-release.mjs
+   - atlas-managed-funds-release.json
+   - README-UPLOAD.md
+3. Commit with: Add editable Managed Funds Charge Types.
+4. Wait for Railway to finish deploying, then refresh Atlas with Ctrl+Shift+R.
+5. Open project 26-087 > MF-002 Nine30 PO > Overview. Select Subcontractor Labor and click Save Charge Type.
+6. Refresh and download the Customer Financial Report / Line Item Detail Excel to verify the live correction and unchanged $315,000 amount and project balance.
 
-Upload package.json, package-lock.json, atlas-prepare-release.mjs, atlas-managed-funds-release.json and README-UPLOAD.md. Upload the files themselves, not their enclosing folder or the ZIP.
+Upload the five files themselves, not this enclosing folder or the ZIP.
+No additional SQL migration is required if Managed Funds is already installed.
 
-No SQL changes are needed. This release includes the preceding quote-persistence, Managed Funds and login-storage fixes.
+This cumulative release includes the preceding Managed Funds, customer report, quote-persistence and login-storage fixes. During npm run build the release helper restores files to their required source paths. Existing financial records remain intact. Charge Type is editable per Action even after POs, invoices, or completion, and changes are recorded in the audit history. Reports and financial summaries use the current saved classification.
 
-## Included
+The source passed 31 focused tests, browser acceptance checks using a local PostgreSQL fixture, TypeScript checks, and a production build. The supplied Nine30 case was verified locally with unchanged financial postings, PO, invoice, amount and balance. No live project record was changed by preparing this package.
 
-- Customer financial reports in PDF and Excel: Action/quote reference, manufacturer, part, description, quantity, customer unit price and line amount.
-- Funding balances and Action-level commitments, bill amounts, net invoiced, paid and outstanding balances.
-- Shipping, contract fees, direct expense charges, and clearly labeled unitemized amounts to reconcile detail to the current Action bill amount.
-- Customer pricing only. Vendor costs, margins and internal notes are excluded.
-- Material tracking PDF and Excel downloads beside the financial reports.
-- Each download reloads the latest saved data; an unavailable server stops the export.
-
-Invoices and payments are recorded by Action, so they are not allocated to individual material lines. Unapproved quotes are excluded from line pricing. A missing customer price is shown explicitly. Funding totals cover the whole opportunity even when the line report is scoped to one Action.
-
-## Verification
-
-All 177 server regression tests passed, including ten tests for the new customer reports. Browser checks passed for both report formats, fresh server data, Action scope, exclusion of internal costs, and failed-read handling. Sample PDF pages were rendered for layout review and checked for complete long descriptions. The package was installed over the verified GitHub source at commit fad14af37036e5de6db6f6257ae7c22cc6021d99. Type checking passed for the workspace and GitHub application entry point, and the production Vite build passed on Node 20.20.2. The existing large-bundle warning remains. Testing used sample data and did not change production records.
-
-Keep the release helper and JSON in the repository while using this build command. The helper restores files to their required paths and preserves unrecognized later source edits.
+Keep the helper and release JSON in the repository while using this build command. The installer preserves unrecognized later source edits; review any 'Keeping later source edit' messages in deployment logs.
