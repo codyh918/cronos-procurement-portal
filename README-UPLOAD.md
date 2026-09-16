@@ -1,22 +1,30 @@
-# Atlas XLSX export fix - GitHub upload
+# Atlas quote save and approval fix — September 16, 2026
 
-1. Open https://github.com/codyh918/cronos-procurement-portal/upload/main.
-2. Upload all FIVE files from this folder together at the repository root:
-   - package.json
-   - package-lock.json
-   - atlas-prepare-release.mjs
-   - atlas-managed-funds-release.json
-   - README-UPLOAD.md
-3. Commit with: Fix Excel workbook recovery warnings across Atlas exports.
-4. Wait for Railway to finish deploying, then refresh Atlas with Ctrl+Shift+R.
-5. Generate a new Customer Financial Report from project 26-087 and open it in Microsoft Excel. Both report sheets should open directly, with frozen rows at A13 and A7.
+This update fixes conflicts when teammates save different quotes in the same opportunity and refreshes stale approval statuses when opening an opportunity or returning to its tab.
 
-Upload the five files themselves, not this enclosing folder or ZIP. No SQL migration is needed for this XLSX fix. Existing downloads must be regenerated after deployment.
+## Install
 
-This cumulative release includes the previous Managed Funds Charge Type and Edit Action changes, customer reports, quote persistence and login storage fixes. Charge Type remains in Edit Action. Every active Atlas XLSX writer uses the corrected shared pane and workbook metadata helpers.
+1. Extract GITHUB-SINGLE-UPLOAD-atlas-quote-approval-fix.zip.
+2. Open https://github.com/codyh918/cronos-procurement-portal/upload/main.
+3. Upload all FIVE extracted files together to the repository root and commit the upload. Upload the files themselves, not the ZIP or enclosing folder.
+4. Wait for the Railway deployment to become Active.
+5. Have everyone close older Atlas tabs and reopen Atlas with Ctrl+Shift+R.
 
-The fix covers row-only, column-only and combined freezes, matching selections and workbook views, and the required creation-date type in core workbook metadata. Values, formulas, report formatting and financial calculations are preserved.
+The five files are package.json, package-lock.json, atlas-prepare-release.mjs, atlas-managed-funds-release.json, and README-UPLOAD.md. No new SQL migration is needed for this fix. Existing Managed Funds migrations remain required for Managed Funds.
 
-Validation: 20 focused tests passed, including generated XLSX validation for 11 report/export types. All 11 workbooks (25 worksheets) opened normally in Microsoft Excel 16.0 build 20326 with alerts enabled and no repair mode. The full and Nine30-scoped Customer Financial Reports were identical to pre-fix output except pane/workbook views and creation metadata. TypeScript and the production build passed. Verification used local acceptance fixtures; no live project record was changed.
+## Behavior
 
-Keep the helper and release JSON while using this build command. The installer preserves unrecognized later edits; review any 'Keeping later source edit' messages in deployment logs. Implementation and repeatable validation commands are in docs/xlsx-export-validation.md after installation.
+- Ordinary quote edits, approvals, creation and deletion are applied to the latest opportunity, preserving changes to other quotes, approvals, notes and unrelated purchase orders.
+- If the SAME quote changed, was deleted, or a linked purchase order changed before an edit/deletion, Atlas still stops the save. The editor keeps the unsaved draft. Copy needed edits before reloading and reviewing the latest saved quote.
+- Conditional Supabase writes retain concurrency protection. New quote numbers are recalculated on a retry to prevent duplicates.
+- The opportunity and quote screens reload project data on opening and when focus returns. The opportunity screen now updates when fresh data arrives.
+- Approval buttons show a pending state and prevent overlapping approval/save/delete/PDF actions. A failed approval does not become a saved approval in the browser.
+- Managed Funds keeps its authenticated API and financial revision checks. An older quote draft cannot adopt a newer cached revision to overwrite current data.
+
+This package includes the previous quote-persistence release. The build helper preserves source edits it does not recognize; review any 'Keeping later source edit' build messages for the modified files if your repository has newer changes.
+
+## Validation
+
+Local server regression tests, type checking, a production build, and browser scenarios using the actual quote services and Vue screens were run. Database/API traffic in browser testing was simulated; production quotes were not changed. The build helper and archive checksums are verified separately.
+
+This update prevents future conflicts and stale displays. It does not reconstruct historical approvals or automatically approve existing quotes. This package has not been deployed by Codex.
