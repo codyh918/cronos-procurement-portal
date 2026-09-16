@@ -1,30 +1,30 @@
-# Atlas quote save and approval fix — September 16, 2026
+# Atlas project refresh and confirmed-save fix — September 16, 2026
 
-This update fixes conflicts when teammates save different quotes in the same opportunity and refreshes stale approval statuses when opening an opportunity or returning to its tab.
+This fixes the Projects list showing an old browser cache while a fresh/incognito session can see newly saved projects. It also closes a gap in the prior upload: all project types and project duplication now wait for Supabase confirmation before completing.
 
 ## Install
 
-1. Extract GITHUB-SINGLE-UPLOAD-atlas-quote-approval-fix.zip.
-2. Open https://github.com/codyh918/cronos-procurement-portal/upload/main.
-3. Upload all FIVE extracted files together to the repository root and commit the upload. Upload the files themselves, not the ZIP or enclosing folder.
-4. Wait for the Railway deployment to become Active.
-5. Have everyone close older Atlas tabs and reopen Atlas with Ctrl+Shift+R.
+1. Extract GITHUB-SINGLE-UPLOAD-atlas-project-refresh-fix.zip.
+2. Upload all FIVE extracted files together to the root of https://github.com/codyh918/cronos-procurement-portal/upload/main and commit them. Upload the files themselves, not the ZIP or its enclosing folder.
+3. Wait for the Railway deployment to become Active.
+4. Close older Atlas tabs. Reopen Atlas and press Ctrl+Shift+R once to load the new application.
 
-The five files are package.json, package-lock.json, atlas-prepare-release.mjs, atlas-managed-funds-release.json, and README-UPLOAD.md. No new SQL migration is needed for this fix. Existing Managed Funds migrations remain required for Managed Funds.
+Files: package.json, package-lock.json, atlas-prepare-release.mjs, atlas-managed-funds-release.json, README-UPLOAD.md. This includes the previous quote/approval fixes. No new SQL migration is required for this update.
 
-## Behavior
+## What changes
 
-- Ordinary quote edits, approvals, creation and deletion are applied to the latest opportunity, preserving changes to other quotes, approvals, notes and unrelated purchase orders.
-- If the SAME quote changed, was deleted, or a linked purchase order changed before an edit/deletion, Atlas still stops the save. The editor keeps the unsaved draft. Copy needed edits before reloading and reviewing the latest saved quote.
-- Conditional Supabase writes retain concurrency protection. New quote numbers are recalculated on a retry to prevent duplicates.
-- The opportunity and quote screens reload project data on opening and when focus returns. The opportunity screen now updates when fresh data arrives.
-- Approval buttons show a pending state and prevent overlapping approval/save/delete/PDF actions. A failed approval does not become a saved approval in the browser.
-- Managed Funds keeps its authenticated API and financial revision checks. An older quote draft cannot adopt a newer cached revision to overwrite current data.
+- Projects reloads from Supabase whenever you enter the page, return focus to its window, or return to its browser tab.
+- A Refresh Projects button lets you request the latest list. Refresh failures remain visible and retain the last saved list.
+- New Design & Install, Resale, and Managed Funds projects all wait for confirmation before navigating away. Save is disabled while pending, and failures keep the form entries with an inline message.
+- A save response that omits the new project is treated as an unconfirmed save, not as success.
+- Project duplication also waits for a confirmed save.
 
-This package includes the previous quote-persistence release. The build helper preserves source edits it does not recognize; review any 'Keeping later source edit' build messages for the modified files if your repository has newer changes.
+If a project appears in incognito, do not recreate it. In the normal window, press Ctrl+Shift+R, choose All on the Projects page, and clear any search/status/type/customer/assigned-user filters. You do not need to clear all browser data to install this fix.
 
-## Validation
+## Verification
 
-Local server regression tests, type checking, a production build, and browser scenarios using the actual quote services and Vue screens were run. Database/API traffic in browser testing was simulated; production quotes were not changed. The build helper and archive checksums are verified separately.
+The stale-session behavior was reproduced using the previous deployed package and simulated data: the existing session missed a newly saved project while a fresh session saw it. The corrected application passed ten project browser scenarios. Quote regression tests, type checking and an exact-package production build are also checked before delivery. Browser tests use mocked Supabase/API responses; no production projects are created, deleted, or restored by these tests.
 
-This update prevents future conflicts and stale displays. It does not reconstruct historical approvals or automatically approve existing quotes. This package has not been deployed by Codex.
+The release is based on GitHub commit 63eb8332c3c2aa9203c3619a62890ced1569f560. Its source files match the verified snapshot except for the prior release manifest/readme. The build helper preserves unrecognized later source edits; review any such messages during deployment.
+
+This update has not been deployed by Codex. It changes display refresh and future save behavior; it does not recreate Project 26-162 or alter existing project records.
