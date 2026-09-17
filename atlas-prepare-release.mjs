@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url'
 
 // Upload this file beside package.json and atlas-managed-funds-release.json.
 // Restore only missing files or exact versions recorded when the release was made.
-// Later edits at the correct source paths are preserved on subsequent builds.
+// Unrecognized edits to this release's required persistence files stop the build for review.
 const root = await realpath(path.dirname(fileURLToPath(import.meta.url)))
 const checkOnly = process.argv.includes('--check')
 const sha256 = bytes => createHash('sha256').update(bytes).digest('hex')
@@ -65,6 +65,8 @@ try {
 
   const pending = plans.filter(plan => plan.action === 'install')
   const preserved = plans.filter(plan => plan.action === 'preserve')
+  const conflicts = preserved.filter(plan => release.strictPaths?.includes(plan.path))
+  if (conflicts.length) throw new Error('Conflicting source files require reconciliation with this database release: ' + conflicts.map(p=>p.path).join(', '))
   for (const plan of preserved) console.log(`[Atlas release] Keeping later source edit: ${plan.path}`)
   if (checkOnly) {
     console.log(`[Atlas release] ${pending.length} file(s) require installation; ${preserved.length} later edit(s) preserved.`)
